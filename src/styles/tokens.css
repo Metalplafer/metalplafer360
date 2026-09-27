@@ -1,0 +1,60 @@
+/* =====================================================================
+   METALPLAFER360 · TOKENS DE DISEÑO
+   Todo el aspecto de la aplicación se controla desde aquí.
+   Cuando estén disponibles los logos oficiales, ajusta --blue y
+   --steel-900 a los colores exactos del logo corporativo.
+   ===================================================================== */
+:root {
+  /* Azul Metalplafer y aceros */
+  --blue: #1D4F91;
+  --blue-700: #173F75;
+  --blue-50: #E8EFF8;
+  --steel-900: #14243A;
+  --steel-800: #1C3150;
+  --steel-600: #3A5373;
+
+  /* Superficies (gris galvanizado) */
+  --surface: #EEF1F4;
+  --panel: #FFFFFF;
+  --panel-2: #F7F9FB;
+  --line: #D6DCE3;
+  --line-strong: #B9C3CF;
+
+  /* Texto */
+  --ink: #1A2433;
+  --muted: #5B6778;
+  --faint: #8792A2;
+
+  /* Señalización industrial: se usa con moderación, solo para avisar */
+  --signal: #F2B705;
+  --signal-50: #FFF6D6;
+  --ok: #2E7D5B;      --ok-50: #E5F3EC;
+  --warn: #A8660A;    --warn-50: #FBEFD9;
+  --danger: #B23A2A;  --danger-50: #F9E6E3;
+  --violet: #6A4FA3;  --violet-50: #EEE9F7;
+
+  /* Colores por tipo de evento (calendario, fases siguientes) */
+  --ev-fabricacion: #1D4F91;
+  --ev-montaje: #2E7D5B;
+  --ev-material: #A8660A;
+  --ev-visita: #6A4FA3;
+  --ev-aviso: #B23A2A;
+
+  /* Tipografía: Barlow (texto) + Barlow Condensed (cifras y rótulos) */
+  --font: 'Barlow', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-cond: 'Barlow Condensed', 'Barlow', 'Arial Narrow', sans-serif;
+
+  /* Escala de espaciado */
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 22px; --s6: 32px;
+
+  /* Bordes y sombras: discretas, nada de efectos exagerados */
+  --r-sm: 4px; --r-md: 8px; --r-lg: 12px;
+  --shadow-1: 0 1px 2px rgba(20, 36, 58, .08);
+  --shadow-pop: 0 12px 32px rgba(20, 36, 58, .18);
+  --focus: 0 0 0 3px rgba(29, 79, 145, .35);
+
+  /* Medidas de la interfaz */
+  --sidebar-w: 236px;
+  --topbar-h: 60px;
+  --tabbar-h: 68px;
+}

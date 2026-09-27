@@ -1,0 +1,120 @@
+/* =====================================================================
+   METALPLAFER360 · INTERFAZ DEL TRABAJADOR (pensada primero para móvil)
+   Botones grandes, lectura rápida, uso con una mano.
+   ===================================================================== */
+.w-shell { min-height: 100dvh; padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom)); background: var(--surface); }
+
+/* En el taller se pulsa con el dedo, a veces con guantes: aquí ningún
+   botón baja de 44 px, aunque en el escritorio ese mismo botón sea
+   pequeño. Se pone en la raíz de la zona del trabajador para que no se
+   pueda olvidar al añadir una pantalla nueva. */
+.w-shell .btn,
+.w-shell .btn-sm { min-height: 44px; }
+.w-shell .btn-sm { padding: 0 14px; font-size: .9rem; }
+.w-shell .icon-btn { width: 44px; }
+
+.w-header {
+  position: sticky; top: 0; z-index: 30; display: flex; align-items: center; justify-content: space-between;
+  gap: var(--s3); padding: calc(10px + env(safe-area-inset-top)) var(--s4) 10px;
+  background: #fff; border-bottom: 1px solid var(--line);
+}
+.w-content { padding: var(--s4); max-width: 720px; margin: 0 auto; }
+
+.w-tabbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+  display: grid; grid-template-columns: repeat(5, 1fr);
+  background: #fff; border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom);
+}
+.w-tabbar a {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  height: var(--tabbar-h); color: var(--faint); font-size: .74rem; font-weight: 600; text-decoration: none;
+}
+.w-tabbar a svg { width: 24px; height: 24px; }
+.w-tabbar a.active { color: var(--blue); }
+.w-tabbar a.active svg { stroke-width: 2.4; }
+.w-tabbar a:hover { text-decoration: none; }
+
+.w-greeting { margin: var(--s1) 0 18px; }
+.w-greeting h1 { font-family: var(--font-cond); font-size: 2rem; font-weight: 600; }
+.w-section { margin-bottom: var(--s5); }
+.w-section > h2 { font-size: .95rem; color: var(--steel-600); margin: 0 0 10px; display: flex; align-items: center; gap: var(--s2); }
+.w-block { background: #fff; border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--s4); margin-bottom: 14px; }
+.w-block > h3 { font-size: .95rem; margin-bottom: 10px; display: flex; align-items: center; gap: var(--s2); color: var(--steel-800); }
+.w-block > h3 svg { width: 18px; height: 18px; color: var(--blue); }
+.w-big-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.w-big-actions .btn { min-height: 56px; flex-direction: column; gap: var(--s1); font-size: .88rem; }
+.w-big-actions .btn svg { width: 22px; height: 22px; }
+
+@media (min-width: 900px) {
+  .w-tabbar { max-width: 720px; margin: 0 auto; border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
+}
+
+/* =====================================================================
+   FASE 4 · Órdenes en el móvil del trabajador
+   ===================================================================== */
+.ot-card {
+  position: relative; display: block; padding: 14px 40px 14px 14px;
+  background: #fff; border: 1px solid var(--line); border-left: 4px solid var(--blue);
+  border-radius: var(--r-lg); color: inherit; text-decoration: none;
+}
+.ot-card:hover { text-decoration: none; border-color: var(--line-strong); }
+.ot-card.future { border-left-color: var(--line-strong); background: var(--panel-2); }
+.ot-card-top { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); margin-bottom: 8px; }
+.ot-card-title { display: block; font-size: 1rem; line-height: 1.25; }
+.ot-card-desc {
+  margin: 4px 0 8px; color: var(--muted); font-size: .9rem; line-height: 1.4;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.ot-card-meta { display: grid; gap: 3px; font-size: .84rem; color: var(--steel-600); }
+.ot-card-meta span { display: flex; align-items: center; gap: 6px; }
+.ot-card-go { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: var(--faint); }
+
+.ot-head { margin: var(--s1) 0 16px; display: grid; gap: 8px; }
+.ot-head h1 { font-family: var(--font-cond); font-size: 1.6rem; font-weight: 600; line-height: 1.15; }
+
+.w-note { margin: 0; font-size: .85rem; color: var(--muted); padding: 0 2px; }
+.w-actions {
+  position: sticky; bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 8px); z-index: 20;
+  display: grid; grid-template-columns: 1fr 1.4fr; gap: 10px; margin: 18px 0;
+}
+.w-actions .btn { min-height: 52px; font-size: .95rem; }
+
+.kv.tight { grid-template-columns: 120px 1fr; font-size: .9rem; }
+.input.big { font-size: 1.3rem; font-weight: 600; text-align: center; letter-spacing: .02em; }
+
+.team-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.team-list li { display: flex; align-items: center; gap: var(--s2); font-size: .93rem; }
+
+/* Fotografías */
+.photo-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.photo-grid li { position: relative; aspect-ratio: 1; border-radius: var(--r-md); overflow: hidden; border: 1px solid var(--line); }
+.photo-grid img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.photo-placeholder {
+  display: grid; place-items: center; width: 100%; height: 100%; padding: 6px;
+  font-size: .7rem; color: var(--faint); text-align: center; background: var(--panel-2);
+}
+.photo-remove {
+  position: absolute; top: 4px; right: 4px; width: 30px; height: 30px; border: 0; cursor: pointer;
+  display: grid; place-items: center; border-radius: 50%;
+  background: rgba(20, 36, 58, .72); color: #fff;
+}
+
+/* Firma con el dedo */
+.sign-canvas {
+  display: block; width: 100%; height: 190px; touch-action: none;
+  background: #fff; border: 2px dashed var(--line-strong); border-radius: var(--r-md);
+}
+.sign-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.sign-actions .btn { flex: 1; min-height: 46px; }
+.sign-preview { display: grid; gap: 8px; justify-items: start; }
+.sign-preview img {
+  width: 100%; max-width: 320px; border: 1px solid var(--line); border-radius: var(--r-md); background: #fff;
+}
+
+/* Calendario del trabajador: solo lectura, sin arrastrar nada. */
+.cal-wrap.worker .cal-toolbar { gap: 8px; }
+.cal-wrap.worker .cal-title { font-size: 1rem; }
+.cal-wrap.worker .cal-day { min-height: 62px; }
+.cal-wrap.worker .cal-legend { gap: 5px; }
+.cal-wrap.worker .cal-filters { gap: 8px; }
+.cal-wrap.worker .cal-legend-item { padding: 4px 8px; font-size: .78rem; }

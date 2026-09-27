@@ -1,0 +1,954 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>METALPLAFER360 · Manual de puesta en marcha</title>
+<style>
+  @page { size: A4; margin: 20mm 18mm 22mm 18mm; }
+  @page :first { margin: 0; }
+
+  :root {
+    --tinta: #14243A;
+    --acero: #5B6778;
+    --azul: #1F4E86;
+    --azul-claro: #EEF3FA;
+    --linea: #D7DEE6;
+    --aviso: #FFF8E1;
+    --aviso-borde: #F2B705;
+    --peligro: #FDF0EE;
+    --peligro-borde: #B4442F;
+    --ok: #EFF7F2;
+    --ok-borde: #2E7D5B;
+  }
+
+  * { box-sizing: border-box; }
+  html { font-size: 10.5pt; }
+  body {
+    margin: 0;
+    font-family: "DejaVu Sans", "Liberation Sans", Arial, sans-serif;
+    color: var(--tinta);
+    line-height: 1.55;
+  }
+
+  /* ---------- Portada ---------- */
+  .portada {
+    height: 297mm; padding: 34mm 24mm;
+    background: linear-gradient(160deg, #14243A 0%, #1C3150 55%, #22405F 100%);
+    color: #fff; display: flex; flex-direction: column; justify-content: space-between;
+    page-break-after: always;
+  }
+  .portada .marca {
+    font-size: 30pt; font-weight: 700; letter-spacing: .02em; line-height: 1.05;
+  }
+  .portada .marca span { color: #F2B705; }
+  .portada h1 { font-size: 21pt; font-weight: 600; margin: 0 0 6mm; line-height: 1.25; }
+  .portada .sub { font-size: 12pt; color: #C9D3DF; max-width: 120mm; }
+  .portada .pie { font-size: 9.5pt; color: #9FB0C4; border-top: 1px solid rgba(255,255,255,.18); padding-top: 5mm; }
+  .portada .sello {
+    display: inline-block; border: 1px solid #F2B705; color: #F2B705;
+    padding: 2mm 5mm; border-radius: 2mm; font-size: 9.5pt; font-weight: 600;
+    letter-spacing: .06em; text-transform: uppercase; margin-bottom: 8mm;
+  }
+
+  /* ---------- Índice ---------- */
+  .indice { page-break-after: always; }
+  .indice ol { list-style: none; padding: 0; margin: 0; counter-reset: ap; }
+  .indice li {
+    counter-increment: ap; display: flex; gap: 4mm; align-items: baseline;
+    padding: 2.4mm 0; border-bottom: 1px dotted var(--linea); font-size: 11pt;
+  }
+  .indice li::before {
+    content: counter(ap); min-width: 9mm; font-weight: 700; color: var(--azul);
+    font-variant-numeric: tabular-nums;
+  }
+  .indice li small { color: var(--acero); font-size: 9pt; display: block; }
+
+  /* ---------- Estructura ---------- */
+  h2 {
+    font-size: 15pt; margin: 0 0 4mm; padding-bottom: 2mm;
+    border-bottom: 2px solid var(--azul); page-break-after: avoid;
+  }
+  h2 .n {
+    display: inline-block; background: var(--azul); color: #fff;
+    min-width: 9mm; text-align: center; border-radius: 2mm;
+    padding: 0 2mm; margin-right: 3mm; font-size: 12pt;
+  }
+  h3 { font-size: 11.5pt; margin: 6mm 0 2mm; color: var(--azul); page-break-after: avoid; }
+  section { page-break-before: always; }
+  section.seguida { page-break-before: auto; }
+  p { margin: 0 0 3mm; }
+  ul, ol { margin: 0 0 3mm; padding-left: 6mm; }
+  li { margin-bottom: 1.6mm; }
+  strong { font-weight: 700; }
+
+  /* ---------- Pasos numerados ---------- */
+  .pasos { counter-reset: paso; list-style: none; padding: 0; }
+  .pasos > li {
+    counter-increment: paso; position: relative; padding-left: 10mm; margin-bottom: 3.5mm;
+  }
+  .pasos > li::before {
+    content: counter(paso); position: absolute; left: 0; top: 0;
+    width: 6.5mm; height: 6.5mm; border-radius: 50%;
+    background: var(--azul-claro); color: var(--azul);
+    font-weight: 700; font-size: 9pt; display: flex; align-items: center; justify-content: center;
+  }
+
+  /* ---------- Avisos ---------- */
+  .caja {
+    border-left: 3px solid var(--linea); background: #F7F9FB;
+    padding: 3mm 4mm; margin: 4mm 0; border-radius: 0 2mm 2mm 0;
+    page-break-inside: avoid; font-size: 9.8pt;
+  }
+  .caja p:last-child { margin-bottom: 0; }
+  .caja .titulo { font-weight: 700; display: block; margin-bottom: 1.5mm; }
+  .aviso   { background: var(--aviso);   border-left-color: var(--aviso-borde); }
+  .peligro { background: var(--peligro); border-left-color: var(--peligro-borde); }
+  .ok      { background: var(--ok);      border-left-color: var(--ok-borde); }
+  .nota    { background: var(--azul-claro); border-left-color: var(--azul); }
+
+  /* ---------- Código y rutas ---------- */
+  code {
+    font-family: "DejaVu Sans Mono", "Liberation Mono", monospace;
+    font-size: 9pt; background: #EEF1F5; padding: .4mm 1.4mm; border-radius: 1mm;
+    border: 1px solid #DDE3EA;
+  }
+  pre {
+    font-family: "DejaVu Sans Mono", "Liberation Mono", monospace;
+    font-size: 8.6pt; background: #14243A; color: #E6EDF5;
+    padding: 3mm 4mm; border-radius: 2mm; overflow-wrap: anywhere; white-space: pre-wrap;
+    page-break-inside: avoid; margin: 3mm 0;
+  }
+  .ruta {
+    font-weight: 600; color: var(--azul);
+  }
+
+  /* ---------- Tablas ---------- */
+  table { width: 100%; border-collapse: collapse; margin: 3mm 0; font-size: 9.4pt; page-break-inside: avoid; }
+  th {
+    text-align: left; background: #EEF1F5; color: var(--acero);
+    font-size: 8.6pt; text-transform: uppercase; letter-spacing: .04em;
+    padding: 2mm 2.5mm; border-bottom: 1px solid var(--linea);
+  }
+  td { padding: 2mm 2.5mm; border-bottom: 1px solid var(--linea); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+
+  .mini { font-size: 9pt; color: var(--acero); }
+</style>
+</head>
+<body>
+
+<!-- ================= PORTADA ================= -->
+<div class="portada">
+  <div>
+    <div class="marca">Metalplafer<br><span>360</span></div>
+  </div>
+  <div>
+    <span class="sello">Manual de puesta en marcha</span>
+    <h1>Cómo montar METALPLAFER360<br>desde cero, paso a paso</h1>
+    <p class="sub">
+      Escrito para quien no es programador. Se explica qué hacer, dónde hacerlo,
+      qué botón pulsar y qué copiar. No hace falta instalar nada en el ordenador:
+      casi todo se hace desde el navegador.
+    </p>
+  </div>
+  <div class="pie">
+    Aplicación interna de gestión para Metalplafer · Sabadell<br>
+    Fichas, proyectos, órdenes de trabajo, material, horas, documentos y copias de seguridad.
+  </div>
+</div>
+
+<!-- ================= ÍNDICE ================= -->
+<div class="indice">
+  <h2 style="border-color:var(--tinta)">Qué vas a encontrar aquí</h2>
+  <p class="mini" style="margin-bottom:5mm">
+    Los apartados 1 al 9 son los imprescindibles: con ellos la aplicación ya funciona.
+    Del 10 en adelante son mejoras que puedes dejar para otro día.
+  </p>
+  <ol>
+    <li><div>Crear la cuenta de Supabase <small>Dónde vivirán los datos de la empresa</small></div></li>
+    <li><div>Crear el proyecto <small>Contraseña de la base de datos y región</small></div></li>
+    <li><div>Ejecutar el SQL <small>Los archivos que crean la aplicación por dentro</small></div></li>
+    <li><div>Las tablas <small>Qué se guarda y dónde, explicado en castellano</small></div></li>
+    <li><div>Los permisos (RLS) <small>Por qué un trabajador no puede ver lo de administración</small></div></li>
+    <li><div>El acceso de las personas <small>Usuarios y contraseñas, sin correos electrónicos</small></div></li>
+    <li><div>El almacén de archivos <small>Fotos, planos, vídeos y firmas</small></div></li>
+    <li><div>Crear el primer administrador <small>La primera persona que entra manda</small></div></li>
+    <li><div>Las claves de conexión <small>Qué se copia a GitHub y qué no se copia jamás</small></div></li>
+    <li><div>Google Drive <small>Para que las copias se guarden fuera de Supabase</small></div></li>
+    <li><div>Las copias de seguridad <small>A mano y automáticas, todos los días a las 02:00</small></div></li>
+    <li><div>Restaurar una copia <small>Cuando algo se ha perdido o estropeado</small></div></li>
+    <li><div>GitHub <small>Dónde vive el programa y cómo se publica</small></div></li>
+    <li><div>Publicar la aplicación <small>La dirección en la que entrará la gente</small></div></li>
+    <li><div>Entrar por primera vez <small>Y qué hacer los primeros diez minutos</small></div></li>
+    <li><div>Dar de alta trabajadores <small>Altas, contraseñas y bajas</small></div></li>
+    <li><div>Los datos de ejemplo <small>Para aprender sin miedo, y cómo limpiarlos</small></div></li>
+    <li><div>Actualizaciones <small>Qué hacer cuando llegue una versión nueva</small></div></li>
+    <li><div>Si algo no funciona <small>Los problemas más habituales, con su solución</small></div></li>
+  </ol>
+
+  <div class="caja nota">
+    <span class="titulo">Antes de empezar, ten a mano</span>
+    <ul style="margin-bottom:0">
+      <li>Una cuenta de correo electrónico.</li>
+      <li>La cuenta de GitHub donde está el programa.</li>
+      <li>Aproximadamente <strong>40 minutos</strong> para los apartados 1 al 9.</li>
+    </ul>
+  </div>
+
+  <div class="caja peligro">
+    <span class="titulo">La regla de oro sobre las contraseñas</span>
+    <p>
+      En este manual vas a manejar algunas claves. Hay una que <strong>no se pega nunca</strong>
+      en GitHub ni en ningún archivo del programa: la que Supabase llama
+      <code>service_role</code>. Lo mismo vale para el archivo de credenciales de Google.
+      Esas dos cosas solo se pegan dentro de Supabase, que es un sitio privado.
+      Si dudas: si parece una contraseña o una clave larguísima, no va a GitHub.
+    </p>
+  </div>
+</div>
+
+<!-- ================= 1 ================= -->
+<section class="seguida">
+  <h2><span class="n">1</span>Crear la cuenta de Supabase</h2>
+  <p>
+    Supabase es el servicio donde vivirán los datos de la empresa: los clientes, los
+    presupuestos, las horas, las fotografías. Es gratis para un taller de este tamaño.
+  </p>
+  <ol class="pasos">
+    <li>Entra en <span class="ruta">supabase.com</span> y pulsa <strong>Start your project</strong>.</li>
+    <li>Regístrate con la cuenta de Google de la empresa o con un correo y una contraseña.</li>
+    <li>Si te pide confirmar el correo, abre el mensaje que te envían y pulsa el enlace.</li>
+  </ol>
+  <div class="caja">
+    <p>
+      Apunta en un sitio seguro con qué correo te has registrado. Es la llave de todo lo demás.
+    </p>
+  </div>
+</section>
+
+<!-- ================= 2 ================= -->
+<section>
+  <h2><span class="n">2</span>Crear el proyecto</h2>
+  <ol class="pasos">
+    <li>Pulsa <strong>New project</strong>.</li>
+    <li>En <em>Name</em> escribe <code>metalplafer360</code>.</li>
+    <li>En <em>Database Password</em> pulsa <strong>Generate a password</strong> y
+        <strong>cópiala a un sitio seguro</strong>. No la vas a necesitar para el día a día,
+        pero si la pierdes no se puede recuperar.</li>
+    <li>En <em>Region</em> elige <strong>West EU (Ireland)</strong> o
+        <strong>Central EU (Frankfurt)</strong>: son las más cercanas y la aplicación irá más rápida.</li>
+    <li>Pulsa <strong>Create new project</strong> y espera un par de minutos.</li>
+  </ol>
+  <div class="caja aviso">
+    <span class="titulo">Los proyectos gratuitos se duermen</span>
+    <p>
+      Si nadie entra durante una semana, Supabase pausa el proyecto y la aplicación
+      dejará de conectar. Se despierta entrando en supabase.com y pulsando
+      <strong>Restore project</strong>. Usándola a diario no pasa nunca.
+    </p>
+  </div>
+</section>
+
+<!-- ================= 3 ================= -->
+<section>
+  <h2><span class="n">3</span>Ejecutar el SQL</h2>
+  <p>
+    Ahora vas a crear la aplicación por dentro. Son unos archivos de texto que se copian
+    y se pegan en Supabase, <strong>en orden</strong>. No hay que entender lo que dicen.
+  </p>
+  <ol class="pasos">
+    <li>En el menú de la izquierda de Supabase, pulsa <strong>SQL Editor</strong>.</li>
+    <li>Pulsa <strong>New query</strong>.</li>
+    <li>Abre en GitHub el archivo <code>supabase/sql/01_schema.sql</code>, pulsa el botón de
+        copiar (el icono de dos hojas, arriba a la derecha) y pégalo en la ventana de Supabase.</li>
+    <li>Pulsa <strong>Run</strong> (abajo a la derecha). Debe aparecer
+        <strong>Success. No rows returned</strong>.</li>
+    <li>Borra la ventana y repite con cada archivo de la lista, en este orden exacto.</li>
+  </ol>
+
+  <table>
+    <tr><th>Orden</th><th>Archivo</th><th>Qué crea</th></tr>
+    <tr><td>1</td><td><code>01_schema.sql</code></td><td>Las tablas base</td></tr>
+    <tr><td>2</td><td><code>02_functions.sql</code></td><td>Alta de usuarios, numeración anual e historial</td></tr>
+    <tr><td>3</td><td><code>03_security.sql</code></td><td>Los permisos</td></tr>
+    <tr><td>4</td><td><code>04_storage.sql</code></td><td>El almacén de archivos</td></tr>
+    <tr><td>5</td><td><code>06_schema_clientes_fichas.sql</code></td><td>Clientes, contactos y fichas</td></tr>
+    <tr><td>6</td><td><code>07_funciones_clientes_fichas.sql</code></td><td>Códigos, estados y sugerencias</td></tr>
+    <tr><td>7</td><td><code>08_seguridad_clientes_fichas.sql</code></td><td>Permisos de clientes y fichas</td></tr>
+    <tr><td>8</td><td><code>09_schema_proyectos.sql</code></td><td>Proyectos y subestados</td></tr>
+    <tr><td>9</td><td><code>10_funciones_proyectos.sql</code></td><td>Fases y conversión de presupuestos</td></tr>
+    <tr><td>10</td><td><code>11_seguridad_proyectos.sql</code></td><td>Permisos de proyectos</td></tr>
+    <tr><td>11</td><td><code>12_schema_ordenes.sql</code></td><td>Órdenes de trabajo y partes</td></tr>
+    <tr><td>12</td><td><code>13_funciones_ordenes.sql</code></td><td>Revisión, devolución y avisos</td></tr>
+    <tr><td>13</td><td><code>14_seguridad_ordenes.sql</code></td><td>Permisos de las órdenes</td></tr>
+    <tr><td>14</td><td><code>15_schema_material.sql</code></td><td>Material, avisos del taller y cobros</td></tr>
+    <tr><td>15</td><td><code>16_funciones_material.sql</code></td><td>Proveedores, retrasos y calendario</td></tr>
+    <tr><td>16</td><td><code>17_seguridad_material.sql</code></td><td>Permisos de material y facturación</td></tr>
+    <tr><td>17</td><td><code>18_schema_informes.sql</code></td><td>Registro de copias y almacenamiento</td></tr>
+    <tr><td>18</td><td><code>19_funciones_informes.sql</code></td><td>Panel, informes, copias y restauración</td></tr>
+    <tr><td>19</td><td><code>20_seguridad_informes.sql</code></td><td>Permisos de informes y copias</td></tr>
+    <tr><td>20</td><td><code>22_correcciones_auditoria.sql</code></td><td>Correcciones de seguridad e índices</td></tr>
+  </table>
+
+  <div class="caja">
+    <p>
+      <strong>Los archivos 05, 21 y 23 no se ejecutan ahora.</strong>
+      El <code>05</code> son consultas de apoyo para más adelante; el <code>21</code> programa la
+      copia automática (apartado 11) y el <code>23</code> pone los datos de ejemplo (apartado 17).
+    </p>
+  </div>
+
+  <div class="caja aviso">
+    <p>
+      Si sale un aviso amarillo que empieza por <code>NOTICE:</code>, no pasa nada: es
+      informativo. Solo es un problema si aparece en rojo la palabra <strong>ERROR</strong>.
+    </p>
+  </div>
+
+  <h3>Comprobar que ha ido bien</h3>
+  <p>Pega esto en una ventana nueva y pulsa Run. Las cuatro filas deben decir <strong>CORRECTO</strong>:</p>
+  <pre>select 'Tablas creadas' as comprobacion,
+       case when count(*) = 18 then 'CORRECTO' else 'FALTAN TABLAS' end as resultado
+  from pg_tables where schemaname = 'public'
+   and tablename in ('profiles','app_settings','code_counters','audit_log',
+                     'clients','client_contacts','fichas','documents','comments',
+                     'projects','project_substatuses','work_orders',
+                     'work_order_workers','notifications','materials',
+                     'material_requests','payments','backups')
+union all
+select 'Seguridad activada',
+       case when bool_and(rowsecurity) then 'CORRECTO' else 'HAY TABLAS SIN PROTEGER' end
+  from pg_tables where schemaname = 'public'
+union all
+select 'Almacén de archivos',
+       case when exists (select 1 from storage.buckets
+                          where id = 'documentos' and not public)
+            then 'CORRECTO' else 'FALTA' end
+union all
+select 'Panel, informes y copias',
+       case when count(*) = 11 then 'CORRECTO' else 'FALTAN FUNCIONES' end
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+ where n.nspname = 'public'
+   and p.proname in ('dashboard_summary','report_projects','report_projects_by_phase',
+                     'report_hours_by_worker','report_hours_by_project','report_materials',
+                     'report_suppliers','start_backup','finish_backup','restore_data',
+                     'restore_table');</pre>
+</section>
+
+<!-- ================= 4 ================= -->
+<section>
+  <h2><span class="n">4</span>Las tablas: qué se guarda y dónde</h2>
+  <p>
+    No hace falta que toques nada de esto, pero conviene saber qué hay dentro por si
+    algún día quieres mirar un dato directamente en Supabase
+    (<strong>Table Editor</strong> en el menú de la izquierda).
+  </p>
+  <table>
+    <tr><th>Tabla</th><th>Qué guarda</th></tr>
+    <tr><td><code>profiles</code></td><td>Quién es cada persona y si es administración o trabajador</td></tr>
+    <tr><td><code>clients</code> · <code>client_contacts</code></td><td>Clientes y sus personas de contacto</td></tr>
+    <tr><td><code>fichas</code></td><td>Presupuestos, visitas y avisos, con su código anual</td></tr>
+    <tr><td><code>projects</code> · <code>project_substatuses</code></td><td>Proyectos, su fase y sus subestados</td></tr>
+    <tr><td><code>work_orders</code></td><td>Órdenes de fabricación y de montaje</td></tr>
+    <tr><td><code>work_order_workers</code></td><td>El parte de cada persona: qué hizo y cuántas horas</td></tr>
+    <tr><td><code>materials</code> · <code>material_requests</code></td><td>Material pendiente y lo que comunica el taller</td></tr>
+    <tr><td><code>payments</code></td><td>Cobros parciales (sin número de factura, a propósito)</td></tr>
+    <tr><td><code>documents</code></td><td>Fotos, planos, vídeos y firmas, con su papelera</td></tr>
+    <tr><td><code>comments</code></td><td>Comentarios de texto de fichas, proyectos y órdenes</td></tr>
+    <tr><td><code>audit_log</code></td><td>El historial: quién hizo qué y cuándo. No se puede modificar</td></tr>
+    <tr><td><code>backups</code></td><td>Qué copia de seguridad se hizo y dónde quedó</td></tr>
+    <tr><td><code>app_settings</code> · <code>code_counters</code></td><td>Datos de la empresa y numeración anual</td></tr>
+  </table>
+
+  <div class="caja ok">
+    <span class="titulo">Aquí no se borra nada</span>
+    <p>
+      Los clientes, fichas, proyectos, órdenes y materiales se <strong>archivan</strong>:
+      desaparecen del listado pero conservan su historial. Los documentos van a una
+      <strong>papelera</strong> de la que se pueden recuperar. Un cobro apuntado por error
+      se <strong>anula</strong> y se queda tachado a la vista. Y a las personas no se les
+      borra: se les <strong>desactiva</strong>.
+    </p>
+  </div>
+</section>
+
+<!-- ================= 5 ================= -->
+<section>
+  <h2><span class="n">5</span>Los permisos: por qué esto es seguro</h2>
+  <p>
+    Esta es la parte más importante del manual, aunque no tengas que hacer nada.
+  </p>
+  <p>
+    La seguridad de METALPLAFER360 <strong>no está en la pantalla</strong>. No se trata
+    de esconderle botones al trabajador: eso sería fácil de saltarse. Está en la propia
+    base de datos, con una tecnología que se llama <em>seguridad a nivel de fila</em>
+    (RLS, por sus siglas en inglés).
+  </p>
+  <p>
+    Cada vez que la aplicación pide un dato, PostgreSQL comprueba quién lo pide y
+    <strong>solo le devuelve lo que le corresponde</strong>. Da igual que alguien manipule
+    la aplicación desde el navegador, que escriba una dirección a mano o que use
+    herramientas de programador: el candado está en el servidor, no en el botón.
+  </p>
+  <table>
+    <tr><th>Quién</th><th>Qué ve</th></tr>
+    <tr><td>Administración</td><td>Todo</td></tr>
+    <tr><td>Trabajador</td><td>
+      Solo sus órdenes, los proyectos y clientes de esas órdenes, sus propias horas,
+      sus avisos y su historial
+    </td></tr>
+    <tr><td>Trabajador</td><td>
+      <strong>Nunca</strong>: informes, configuración, facturación, cobros, copias de
+      seguridad, numeración ni los datos de otros compañeros
+    </td></tr>
+  </table>
+  <div class="caja nota">
+    <p>
+      Esto está comprobado con más de 500 pruebas automáticas que se ejecutan contra una
+      base de datos de verdad, incluidas las que intentan saltarse los permisos a mala fe.
+    </p>
+  </div>
+</section>
+
+<!-- ================= 6 ================= -->
+<section>
+  <h2><span class="n">6</span>El acceso de las personas</h2>
+  <p>
+    En METALPLAFER360 cada persona entra con un <strong>nombre de usuario</strong> y una
+    contraseña. No hace falta que nadie tenga correo electrónico de empresa.
+  </p>
+  <p>
+    Por dentro, Supabase necesita una dirección de correo para identificar a cada
+    persona, así que la aplicación le añade sola un dominio interno: si el usuario es
+    <code>juan</code>, por dentro se guarda como <code>juan@metalplafer.com</code>.
+    <strong>No se envía ningún correo electrónico nunca</strong>: es solo un identificador.
+  </p>
+
+  <h3>Desactivar los registros públicos</h3>
+  <p>Para que nadie pueda darse de alta por su cuenta:</p>
+  <ol class="pasos">
+    <li>En Supabase, menú de la izquierda → <strong>Authentication</strong>.</li>
+    <li>Pestaña <strong>Sign In / Providers</strong> (o <strong>Providers</strong>).</li>
+    <li>Busca <strong>Allow new users to sign up</strong> y <strong>desactívalo</strong>.</li>
+    <li>Guarda.</li>
+  </ol>
+  <div class="caja aviso">
+    <p>
+      Hazlo <strong>después</strong> de crear el primer administrador (apartado 8),
+      no antes, o no podrás crearlo.
+    </p>
+  </div>
+</section>
+
+<!-- ================= 7 ================= -->
+<section>
+  <h2><span class="n">7</span>El almacén de archivos</h2>
+  <p>
+    Las fotografías de obra, los planos, los vídeos y las firmas no se guardan en la
+    base de datos: van a un almacén aparte que el archivo <code>04_storage.sql</code>
+    ya creó, y que se llama <code>documentos</code>.
+  </p>
+  <p>
+    Ese almacén es <strong>privado</strong>. Nadie puede abrir una fotografía con solo
+    conocer su dirección: la aplicación pide un enlace temporal cada vez, y ese enlace
+    caduca. Y un trabajador solo obtiene enlaces de los archivos de sus propias órdenes.
+  </p>
+  <h3>El tamaño máximo por archivo</h3>
+  <p>
+    De serie son <strong>100 MB</strong>, que da de sobra para fotos y vídeos de móvil.
+    Se cambia desde la propia aplicación, en
+    <span class="ruta">Configuración → Almacenamiento</span>, y el límite lo aplica la
+    base de datos, no solo la pantalla.
+  </p>
+  <p>
+    En <span class="ruta">Configuración → Almacenamiento</span> también ves cuánto
+    ocupan las fotografías, los vídeos, las firmas y los documentos, y cuánto hay
+    esperando en la papelera.
+  </p>
+</section>
+
+<!-- ================= 8 ================= -->
+<section>
+  <h2><span class="n">8</span>Crear el primer administrador</h2>
+  <p>
+    La <strong>primera</strong> persona que se da de alta se convierte automáticamente en
+    administración. Las siguientes nacen como trabajadores. Esto es a propósito: así
+    nadie puede concederse permisos por su cuenta.
+  </p>
+  <ol class="pasos">
+    <li>En Supabase: <strong>Authentication</strong> → <strong>Users</strong> →
+        <strong>Add user</strong> → <strong>Create new user</strong>.</li>
+    <li>En <em>Email</em> escribe <code>salvi@metalplafer.com</code>
+        (el nombre de usuario que quieras, seguido de <code>@metalplafer.com</code>).</li>
+    <li>En <em>Password</em> pon una contraseña de al menos 8 caracteres y apúntala.</li>
+    <li>Marca <strong>Auto Confirm User</strong>.</li>
+    <li>Pulsa <strong>Create user</strong>.</li>
+  </ol>
+  <p>Para comprobar que ha nacido como administración, ejecuta en el SQL Editor:</p>
+  <pre>select full_name as nombre, username as usuario, role as rol, active as activo
+  from public.profiles;</pre>
+  <p>Debe salir una fila con <code>rol = admin</code>.</p>
+  <div class="caja">
+    <p>
+      Si por lo que sea saliera <code>worker</code>, se arregla con:<br>
+      <code>update public.profiles set role = 'admin' where username = 'salvi';</code>
+    </p>
+  </div>
+</section>
+
+<!-- ================= 9 ================= -->
+<section>
+  <h2><span class="n">9</span>Las claves de conexión</h2>
+  <p>
+    La aplicación necesita saber dónde está su base de datos. Son dos datos que se
+    copian de Supabase a GitHub.
+  </p>
+  <h3>Cogerlos en Supabase</h3>
+  <ol class="pasos">
+    <li><strong>Project Settings</strong> (la rueda dentada, abajo a la izquierda).</li>
+    <li>Apartado <strong>Data API</strong>: copia <strong>Project URL</strong>.
+        Es algo como <code>https://abcdefgh.supabase.co</code>.</li>
+    <li>Apartado <strong>API Keys</strong>: copia la clave <strong>anon</strong>
+        (también llamada <em>public</em>). Es un texto larguísimo.</li>
+  </ol>
+
+  <div class="caja ok">
+    <span class="titulo">La clave «anon» sí puede ir a GitHub</span>
+    <p>
+      Parece una contraseña, pero no lo es: solo sirve para decir «soy la aplicación de
+      Metalplafer». Quien la tenga no puede ver ni un dato, porque los permisos los
+      aplica la base de datos según quién haya iniciado sesión. Está diseñada para
+      viajar al navegador.
+    </p>
+  </div>
+
+  <div class="caja peligro">
+    <span class="titulo">La clave «service_role» NO va a GitHub. Nunca.</span>
+    <p>
+      En esa misma pantalla verás otra clave llamada <code>service_role</code> o
+      <em>secret</em>. Esa <strong>se salta todos los permisos</strong>. No se pega en
+      GitHub, ni en el programa, ni en un correo, ni en un WhatsApp. Solo se usa dentro
+      de Supabase, y de eso se encarga el apartado 10.
+    </p>
+  </div>
+
+  <h3>Pegarlos en GitHub</h3>
+  <ol class="pasos">
+    <li>Entra en el repositorio en GitHub.</li>
+    <li><strong>Settings</strong> → <strong>Secrets and variables</strong> →
+        <strong>Actions</strong> → pestaña <strong>Variables</strong>.</li>
+    <li>Pulsa <strong>New repository variable</strong> y crea estas tres:</li>
+  </ol>
+  <table>
+    <tr><th>Nombre</th><th>Valor</th></tr>
+    <tr><td><code>VITE_SUPABASE_URL</code></td><td>La Project URL que copiaste</td></tr>
+    <tr><td><code>VITE_SUPABASE_ANON_KEY</code></td><td>La clave anon</td></tr>
+    <tr><td><code>VITE_LOGIN_DOMAIN</code></td><td><code>metalplafer.com</code></td></tr>
+  </table>
+  <div class="caja aviso">
+    <p>
+      Fíjate en que sea la pestaña <strong>Variables</strong> y no <strong>Secrets</strong>.
+      Si las pones en Secrets, la aplicación se publicará sin conexión y en la pantalla
+      de acceso dirá que no está configurada.
+    </p>
+  </div>
+</section>
+
+<!-- ================= 10 ================= -->
+<section>
+  <h2><span class="n">10</span>Google Drive (opcional)</h2>
+  <p>
+    Esto se puede dejar para otro día. Sin hacer nada de este apartado, la aplicación ya
+    hace copias de seguridad: en
+    <span class="ruta">Configuración → Copias de seguridad</span> tienes el botón
+    <strong>GENERAR BACKUP AHORA</strong>, que descarga un ZIP a tu ordenador.
+  </p>
+  <p>
+    Lo que se configura aquí es que esa copia se haga <strong>sola, todas las noches, y
+    se guarde en Google Drive</strong>, fuera de Supabase.
+  </p>
+
+  <h3>10.1 · Crear la cuenta de servicio en Google</h3>
+  <p>Una «cuenta de servicio» es un usuario de Google que no es una persona: es el programa que sube las copias.</p>
+  <ol class="pasos">
+    <li>Entra en <span class="ruta">console.cloud.google.com</span> con la cuenta de la empresa.</li>
+    <li>Arriba a la izquierda, <strong>New project</strong>. Llámalo <code>metalplafer360</code> y créalo.</li>
+    <li>En el buscador de arriba escribe <strong>Google Drive API</strong>, ábrela y pulsa <strong>Enable</strong>.</li>
+    <li>En el buscador escribe <strong>Service accounts</strong> y ábrelo.</li>
+    <li><strong>Create service account</strong> → nombre <code>copias-metalplafer360</code> →
+        <strong>Create and continue</strong> → <strong>Done</strong>.</li>
+    <li>Copia su <strong>dirección de correo</strong>, que acaba en
+        <code>.iam.gserviceaccount.com</code>. La necesitarás dos veces.</li>
+    <li>Pulsa sobre ella → pestaña <strong>Keys</strong> → <strong>Add key</strong> →
+        <strong>Create new key</strong> → formato <strong>JSON</strong> → <strong>Create</strong>.</li>
+  </ol>
+  <div class="caja peligro">
+    <p>
+      Se te descarga un archivo <code>.json</code>. <strong>Ese archivo es la llave de la
+      caja fuerte.</strong> No lo subas a ningún sitio y bórralo de tu ordenador en cuanto
+      termines este apartado.
+    </p>
+  </div>
+
+  <h3>10.2 · Crear la carpeta en Drive y compartirla</h3>
+  <ol class="pasos">
+    <li>En <span class="ruta">drive.google.com</span>, crea una carpeta llamada
+        <strong>METALPLAFER360 · Copias de seguridad</strong>.</li>
+    <li>Ábrela, pulsa <strong>Compartir</strong>, pega la dirección de la cuenta de
+        servicio, dale permiso de <strong>Editor</strong> y envía.</li>
+    <li>Con la carpeta abierta, mira la dirección del navegador: al final hay un código
+        largo después de <code>/folders/</code>. Cópialo.</li>
+  </ol>
+
+  <h3>10.3 · Guardar los secretos en Supabase</h3>
+  <p>
+    En Supabase: <strong>Edge Functions</strong> → pestaña <strong>Secrets</strong>
+    (en algunas versiones, <strong>Project Settings → Edge Functions → Secrets</strong>).
+    Añade estos cuatro:
+  </p>
+  <table>
+    <tr><th>Nombre</th><th>Valor</th></tr>
+    <tr><td><code>GOOGLE_SERVICE_ACCOUNT_EMAIL</code></td><td>La dirección de la cuenta de servicio</td></tr>
+    <tr><td><code>GOOGLE_PRIVATE_KEY</code></td><td>El valor de <code>private_key</code> del archivo JSON</td></tr>
+    <tr><td><code>GOOGLE_DRIVE_FOLDER_ID</code></td><td>El código de la carpeta</td></tr>
+    <tr><td><code>BACKUP_CRON_SECRET</code></td><td>Una frase larga que te inventes</td></tr>
+  </table>
+  <p class="mini">
+    Para sacar <code>GOOGLE_PRIVATE_KEY</code>: abre el archivo <code>.json</code> con el
+    Bloc de notas, busca la línea que empieza por <code>"private_key":</code> y copia todo
+    lo que hay entre comillas, desde <code>-----BEGIN PRIVATE KEY-----</code> hasta el
+    final. Se copia tal cual, con los <code>\n</code> incluidos.
+  </p>
+
+  <h3>10.4 · Publicar los dos programas del servidor</h3>
+  <p>Esto se hace una sola vez, desde la Terminal, en la carpeta del proyecto:</p>
+  <pre>npm install -g supabase
+supabase login
+supabase link --project-ref TU-REFERENCIA-DE-PROYECTO
+supabase functions deploy admin-users
+supabase functions deploy backup-drive</pre>
+  <p class="mini">
+    La referencia del proyecto es el trozo de la dirección de Supabase entre
+    <code>https://</code> y <code>.supabase.co</code>.
+  </p>
+  <div class="caja">
+    <p>
+      Si prefieres no instalar nada, la aplicación funciona igual. Solo dejan de estar
+      disponibles el botón «Subir a Google Drive», la copia automática y el alta de
+      trabajadores desde la aplicación (se pueden seguir creando a mano, apartado 16).
+    </p>
+  </div>
+</section>
+
+<!-- ================= 11 ================= -->
+<section>
+  <h2><span class="n">11</span>Las copias de seguridad</h2>
+
+  <h3>A mano, cuando quieras</h3>
+  <p>
+    <span class="ruta">Configuración → Copias de seguridad → GENERAR BACKUP AHORA</span>.
+    Se descarga un ZIP a tu ordenador con todo lo que hay dentro de la aplicación.
+  </p>
+  <p>Dentro del ZIP encontrarás:</p>
+  <ul>
+    <li>Un archivo <strong>CSV por cada tabla</strong>, que se abre con Excel.</li>
+    <li>Un <code>metadatos.json</code> con lo necesario para restaurar.</li>
+    <li>Un índice con la <strong>referencia</strong> de cada foto, vídeo y documento.</li>
+  </ul>
+  <div class="caja nota">
+    <p>
+      <strong>Las fotografías y los vídeos no se convierten en CSV.</strong> Siguen
+      guardados en el almacén de Supabase; en el ZIP va su ruta y sus datos. Es a
+      propósito: meterlos dentro haría la copia enorme y lentísima.
+    </p>
+  </div>
+
+  <h3>Automática, todas las noches</h3>
+  <p>Solo si has hecho el apartado 10. En el SQL Editor de Supabase, una vez:</p>
+  <pre>select vault.create_secret('https://TU-REFERENCIA.supabase.co', 'm360_project_url');
+select vault.create_secret('la-misma-frase-de-BACKUP_CRON_SECRET', 'm360_backup_secret');</pre>
+  <p>
+    Y después ejecuta el archivo <code>supabase/sql/21_backup_automatico.sql</code>.
+    Debe aparecer un aviso que dice <em>«Copia automática programada: todos los días a
+    las 02:00 (hora de Madrid)»</em>.
+  </p>
+  <p>
+    Se guardan <strong>30 días</strong> de copias, y se puede cambiar en
+    <span class="ruta">Configuración → Copias de seguridad</span>. Las automáticas más
+    antiguas se borran solas de Drive; las que te descargues tú no se tocan.
+  </p>
+
+  <h3>Comprobar que se sigue haciendo</h3>
+  <p>De vez en cuando, ejecuta en el SQL Editor:</p>
+  <pre>select case when max(started_at) is null
+            then 'NUNCA se ha hecho una copia automática'
+            when max(started_at) &gt; now() - interval '36 hours'
+            then 'CORRECTO: al día'
+            else 'ATENCIÓN: la última fue el '
+                 || to_char(max(started_at) at time zone 'Europe/Madrid', 'DD/MM/YYYY')
+       end as copia_automatica
+  from public.backups
+ where kind = 'automatico' and status = 'completado';</pre>
+</section>
+
+<!-- ================= 12 ================= -->
+<section>
+  <h2><span class="n">12</span>Restaurar una copia</h2>
+  <p>Solo hace falta si se ha perdido o estropeado información.</p>
+  <div class="caja peligro">
+    <span class="titulo">⚠️ Esta operación puede modificar información actual</span>
+    <p>
+      Los datos de la copia se vuelcan sobre los de ahora: lo que coincide se actualiza
+      y lo que falta se añade. <strong>No se borra nada</strong>, pero lo que se
+      sobrescriba no vuelve. Genera una copia antes, por si acaso.
+    </p>
+  </div>
+  <ol class="pasos">
+    <li><span class="ruta">Configuración → Copias de seguridad</span>.</li>
+    <li>Antes de nada, pulsa <strong>GENERAR BACKUP AHORA</strong> para tener el estado actual.</li>
+    <li>Baja hasta <strong>Restaurar una copia</strong> y pulsa
+        <strong>Elegir archivo de copia</strong>.</li>
+    <li>La aplicación te dice de cuándo es la copia y cuántos registros trae.</li>
+    <li>Marca <strong>qué apartados</strong> quieres restaurar: puedes traerte solo los
+        clientes, solo los proyectos, o todo.</li>
+    <li>Pulsa <strong>Restaurar lo marcado</strong> y confirma.</li>
+  </ol>
+  <div class="caja">
+    <p>
+      Restaurar <strong>no crea usuarios nuevos</strong>. Si en la copia aparece una
+      persona que ya no existe, sus datos no se recrean: hay que darla de alta otra vez
+      (apartado 16). Es a propósito, porque el acceso vive en Supabase, no en la copia.
+    </p>
+  </div>
+  <p>
+    Toda restauración queda registrada en el historial, con quién la hizo y qué apartados
+    tocó, y la numeración de códigos se reajusta sola para que el siguiente presupuesto
+    no repita un número.
+  </p>
+</section>
+
+<!-- ================= 13 ================= -->
+<section>
+  <h2><span class="n">13</span>GitHub</h2>
+  <p>
+    GitHub es donde vive el programa (no los datos: los datos están en Supabase). Desde
+    ahí se publica solo, sin que tengas que hacer nada más.
+  </p>
+  <table>
+    <tr><th>Carpeta</th><th>Qué contiene</th></tr>
+    <tr><td><code>src/</code></td><td>Las pantallas de la aplicación</td></tr>
+    <tr><td><code>supabase/sql/</code></td><td>Todo el SQL que se ejecuta en Supabase</td></tr>
+    <tr><td><code>supabase/functions/</code></td><td>Los dos programas del servidor (ahí viven las credenciales)</td></tr>
+    <tr><td><code>public/brand/</code></td><td>Donde van los logos oficiales de Metalplafer</td></tr>
+    <tr><td><code>docs/</code></td><td>Este manual y la guía de puesta en marcha</td></tr>
+    <tr><td><code>tests/</code></td><td>Las pruebas automáticas</td></tr>
+  </table>
+  <h3>Los logos</h3>
+  <p>
+    Copia los archivos oficiales en <code>public/brand/</code> con estos nombres exactos:
+    <code>logo-azul.png</code> (para fondos claros) y <code>logo-blanco.png</code> (para
+    fondos oscuros). Aparecerán solos en la pantalla de acceso, el menú lateral y la
+    cabecera del móvil. El logo no se redibuja ni se modifica nunca.
+  </p>
+</section>
+
+<!-- ================= 14 ================= -->
+<section>
+  <h2><span class="n">14</span>Publicar la aplicación</h2>
+  <ol class="pasos">
+    <li>En GitHub: <strong>Settings</strong> → <strong>Pages</strong>.</li>
+    <li>En <em>Source</em> elige <strong>GitHub Actions</strong>.</li>
+    <li>Ve a la pestaña <strong>Actions</strong> → <strong>Publicar METALPLAFER360</strong>
+        → <strong>Run workflow</strong>.</li>
+    <li>Espera dos o tres minutos a que salga la marca verde.</li>
+  </ol>
+  <p>
+    La dirección de la aplicación será algo como
+    <code>https://TU-USUARIO.github.io/metalplafer360/</code>. Esa es la que se reparte a
+    la gente del taller.
+  </p>
+  <div class="caja ok">
+    <p>
+      A partir de ahora, cada vez que se suba un cambio a GitHub la aplicación se
+      reconstruye y se publica sola. No hay que hacer nada más.
+    </p>
+  </div>
+</section>
+
+<!-- ================= 15 ================= -->
+<section>
+  <h2><span class="n">15</span>Entrar por primera vez</h2>
+  <ol class="pasos">
+    <li>Abre la dirección de la aplicación.</li>
+    <li>Escribe el usuario (<code>salvi</code>, sin el <code>@metalplafer.com</code>) y la contraseña.</li>
+    <li>Pulsa <strong>Entrar</strong>.</li>
+  </ol>
+  <h3>Los primeros diez minutos</h3>
+  <ol class="pasos">
+    <li>Ve a <span class="ruta">Configuración → Empresa</span> y rellena el nombre, el
+        CIF, el teléfono y la dirección. Eso es lo que sale en los informes en PDF.</li>
+    <li>En <span class="ruta">Configuración → Aplicación</span>, pulsa
+        <strong>Poner datos de ejemplo</strong> y date una vuelta por la aplicación con
+        datos dentro (apartado 17).</li>
+    <li>Cuando te hayas hecho a ella, pulsa <strong>Limpiar datos demo</strong>.</li>
+    <li>Da de alta a la gente del taller (apartado 16).</li>
+    <li>Instala la aplicación en el móvil: en Android, menú del navegador →
+        «Añadir a pantalla de inicio»; en iPhone, botón Compartir →
+        «Añadir a pantalla de inicio».</li>
+  </ol>
+  <div class="caja nota">
+    <p>
+      La aplicación <strong>necesita Internet</strong>, y es a propósito: en una obra es
+      peor trabajar con datos viejos que no poder entrar. Instalada en el móvil solo se
+      guardan las pantallas y los iconos, nunca los datos de la empresa.
+    </p>
+  </div>
+</section>
+
+<!-- ================= 16 ================= -->
+<section>
+  <h2><span class="n">16</span>Dar de alta trabajadores</h2>
+  <h3>Desde la aplicación (si hiciste el apartado 10.4)</h3>
+  <ol class="pasos">
+    <li><span class="ruta">Trabajadores → Nuevo trabajador</span>.</li>
+    <li>Escribe el nombre, el usuario (<code>juan</code>) y una contraseña.</li>
+    <li>La persona ya puede entrar. Nace como <strong>trabajador</strong>; para darle
+        permisos de administración, usa el selector de su fila.</li>
+  </ol>
+  <h3>A mano, desde Supabase</h3>
+  <ol class="pasos">
+    <li><strong>Authentication</strong> → <strong>Users</strong> → <strong>Add user</strong>.</li>
+    <li>Email: <code>juan@metalplafer.com</code>. Contraseña: la que sea.</li>
+    <li>Marca <strong>Auto Confirm User</strong> y crea.</li>
+    <li>Entra en la aplicación, ve a <strong>Trabajadores</strong> y corrige su nombre completo.</li>
+  </ol>
+  <div class="caja aviso">
+    <span class="titulo">A nadie se le borra</span>
+    <p>
+      Cuando alguien deja la empresa, se le <strong>desactiva</strong> desde
+      <span class="ruta">Trabajadores</span>. Deja de poder entrar, pero sus horas y su
+      historial siguen ahí. Si intentas borrarlo desde Supabase, la base de datos se
+      negará: es una protección puesta a propósito para que no se pierdan horas ya
+      trabajadas y facturadas.
+    </p>
+  </div>
+</section>
+
+<!-- ================= 17 ================= -->
+<section>
+  <h2><span class="n">17</span>Los datos de ejemplo</h2>
+  <p>
+    Para aprender a usar la aplicación, enseñarla o hacer pruebas sin miedo, hay un
+    taller inventado listo para poner.
+  </p>
+  <ol class="pasos">
+    <li>Ejecuta una vez en el SQL Editor el archivo
+        <code>supabase/sql/23_datos_demo.sql</code>.</li>
+    <li>En la aplicación: <span class="ruta">Configuración → Aplicación →
+        Poner datos de ejemplo</span>.</li>
+  </ol>
+  <p>Se crean 10 clientes, 15 fichas, 8 proyectos, 6 trabajadores, 20 órdenes de trabajo, material, documentos y cobros, con fechas recientes.</p>
+  <div class="caja ok">
+    <span class="titulo">Limpiarlo es completamente seguro</span>
+    <p>
+      El botón <strong>Limpiar datos demo</strong> borra <strong>exactamente</strong> lo
+      que se creó como ejemplo y nada más. Cada fila lleva una marca por dentro, y la
+      limpieza solo mira esa marca. Lo que haya hecho la empresa de verdad no se toca,
+      aunque esté mezclado.
+    </p>
+  </div>
+  <p class="mini">
+    Los trabajadores de ejemplo se llaman <code>demo.jordi</code>, <code>demo.marc</code>…
+    y nacen sin contraseña; si quieres entrar como uno para ver el móvil, pónsela desde
+    Trabajadores. Los documentos de ejemplo son solo la ficha del archivo: aparecen en
+    los listados, pero no hay nada que descargar.
+  </p>
+</section>
+
+<!-- ================= 18 ================= -->
+<section>
+  <h2><span class="n">18</span>Actualizaciones</h2>
+  <p>Cuando llegue una versión nueva del programa:</p>
+  <ol class="pasos">
+    <li>Sube los archivos nuevos a GitHub (o acepta el cambio que te propongan).</li>
+    <li>La aplicación se reconstruye y se publica sola en un par de minutos.</li>
+    <li>Si la versión trae archivos SQL nuevos, ejecútalos en Supabase
+        <strong>en orden</strong>, como en el apartado 3. Los que ya ejecutaste no hay
+        que repetirlos.</li>
+    <li>En el móvil, la aplicación avisa sola de que hay una versión nueva y se
+        actualiza al recargar.</li>
+  </ol>
+  <div class="caja">
+    <p>
+      Los archivos SQL están pensados para poder ejecutarse más de una vez sin romper
+      nada. Si dudas si ya ejecutaste uno, ejecutarlo otra vez es seguro.
+    </p>
+  </div>
+</section>
+
+<!-- ================= 19 ================= -->
+<section>
+  <h2><span class="n">19</span>Si algo no funciona</h2>
+  <table>
+    <tr><th>Qué ves</th><th>Qué hacer</th></tr>
+    <tr><td>«La aplicación todavía no está configurada»</td>
+        <td>Las variables de GitHub están vacías o mal escritas. Revisa el apartado 9:
+            deben estar en <strong>Variables</strong>, no en Secrets. Después,
+            Actions → Run workflow otra vez.</td></tr>
+    <tr><td>«Usuario o contraseña incorrectos»</td>
+        <td>Revisa en Authentication → Users. Puedes cambiar la contraseña con
+            ⋯ → Reset password.</td></tr>
+    <tr><td>«Tu usuario no tiene perfil»</td>
+        <td>Se creó antes de ejecutar el SQL. Bórralo en Authentication → Users y
+            créalo otra vez.</td></tr>
+    <tr><td>«Tu usuario está desactivado»</td>
+        <td>Reactívalo desde Trabajadores, o con
+            <code>update public.profiles set active = true where username = 'juan';</code></td></tr>
+    <tr><td>«No se ha podido conectar con el servidor»</td>
+        <td>Sin Internet, o el proyecto de Supabase está pausado: entra en supabase.com
+            y pulsa <strong>Restore project</strong>.</td></tr>
+    <tr><td>El trabajador no ve ninguna orden</td>
+        <td>No se le ha asignado ninguna, o son de días futuros. Las futuras se ven,
+            pero no se rellenan hasta su fecha.</td></tr>
+    <tr><td>«Falta configurar Google Drive»</td>
+        <td>No están puestos los secretos de Google. Repasa el apartado 10.3. El botón
+            GENERAR BACKUP AHORA funciona igual sin eso.</td></tr>
+    <tr><td>«Google no ha dado acceso»</td>
+        <td>La clave privada está mal copiada, o la carpeta de Drive no está compartida
+            con la cuenta de servicio. Repasa 10.2 y 10.3.</td></tr>
+    <tr><td>La copia automática no se hace</td>
+        <td>No se ejecutó el archivo 21, o faltan los secretos de la bóveda.
+            Repasa el apartado 11.</td></tr>
+    <tr><td>El Excel se ve todo en una columna</td>
+        <td>Excel está en inglés. Ábrelo con Datos → Desde texto/CSV y elige el punto y
+            coma como separador. Los informes en <code>.xlsx</code> no tienen este problema.</td></tr>
+    <tr><td>No se puede borrar algo</td>
+        <td>Es correcto: aquí no se borra nada. Los clientes, proyectos, órdenes y
+            materiales se <strong>archivan</strong>; los documentos van a la
+            <strong>papelera</strong>; los cobros se <strong>anulan</strong>;
+            a las personas se les <strong>desactiva</strong>.</td></tr>
+    <tr><td>Un código de presupuesto o proyecto está mal</td>
+        <td>Los códigos no se pueden cambiar a propósito: identifican el expediente en
+            presupuestos y facturas de papel. Si hay que corregir la numeración de las
+            próximas fichas, se hace en Configuración → Numeración.</td></tr>
+  </table>
+
+  <h3>Consultas de apoyo</h3>
+  <p>
+    El archivo <code>supabase/sql/05_verificacion.sql</code> tiene casi treinta consultas
+    preparadas y explicadas: ver quién puede entrar, cambiar un rol, mirar el historial,
+    las órdenes abiertas, el material retrasado, la facturación pendiente o el estado de
+    las copias de seguridad. Se copian y se pegan en el SQL Editor.
+  </p>
+
+  <div class="caja nota" style="margin-top:8mm">
+    <span class="titulo">Y si te pierdes</span>
+    <p>
+      Toda la aplicación deja rastro: en el historial de cada ficha, proyecto y orden
+      aparece quién hizo qué y cuándo. Nada se pierde sin que quede constancia.
+    </p>
+  </div>
+</section>
+
+</body>
+</html>

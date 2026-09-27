@@ -1,0 +1,78 @@
+# =====================================================================
+# METALPLAFER360 · Publicación automática en GitHub Pages
+#
+# Cada vez que se sube un cambio a la rama principal, GitHub construye
+# la aplicación y la publica. No hay que hacer nada manualmente.
+#
+# ANTES DE QUE FUNCIONE hay que configurar dos cosas en GitHub
+# (se explica paso a paso en docs/PUESTA-EN-MARCHA.md):
+#   1. Settings > Pages > Source: "GitHub Actions"
+#   2. Settings > Secrets and variables > Actions > pestaña "Variables":
+#        VITE_SUPABASE_URL
+#        VITE_SUPABASE_ANON_KEY
+#        VITE_LOGIN_DOMAIN   (opcional)
+# =====================================================================
+name: Publicar METALPLAFER360
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+env:
+  # Las pruebas de navegador no se ejecutan al publicar, así que no hace
+  # falta descargar Chromium en cada publicación.
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+
+jobs:
+  construir:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Comprobar que el código no tiene errores
+        run: npm run typecheck
+
+      - name: Pasar las pruebas
+        run: npm test
+
+      - name: Construir la aplicación
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          VITE_LOGIN_DOMAIN: ${{ vars.VITE_LOGIN_DOMAIN }}
+          # En GitHub Pages la aplicación vive en /<nombre-del-repositorio>/
+          VITE_BASE_PATH: /${{ github.event.repository.name }}/
+        run: npm run build
+
+      - name: Preparar la publicación
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  publicar:
+    needs: construir
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

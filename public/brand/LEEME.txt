@@ -1,0 +1,17 @@
+LOGOS DE METALPLAFER
+====================
+
+Coloca aquí los dos archivos del logo oficial, con estos nombres exactos:
+
+    logo-azul.png     -> versión azul, para fondos claros
+    logo-blanco.png   -> versión blanca, para fondos oscuros
+
+Recomendación: PNG con fondo transparente, unos 600 píxeles de ancho.
+También funcionan archivos .png exportados desde el original.
+
+En cuanto los copies en esta carpeta y vuelvas a publicar la aplicación,
+aparecerán automáticamente en la pantalla de acceso, en el menú lateral
+y en la cabecera del móvil. Mientras no estén, se muestra el nombre
+"Metalplafer" en texto como marcador provisional.
+
+El logo no se redibuja ni se modifica en ningún momento.
