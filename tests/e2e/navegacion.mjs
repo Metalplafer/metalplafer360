@@ -11,8 +11,8 @@
  * Los PERMISOS de verdad se prueban contra PostgreSQL en tests/sql.
  */
 import {
-  ADMIN, WORKER, buildApp, createChecker, createDb, launchBrowser,
-  serveApp, signIn, stubSupabase,
+  ADMIN, WORKER, addDays, buildApp, createChecker, createDb, launchBrowser,
+  serveApp, signIn, startOfMonth, stubSupabase, today,
 } from './fake-supabase.mjs';
 
 const PORT = 4179;
@@ -21,23 +21,34 @@ buildApp();
 const server = await serveApp(PORT);
 const { check, report } = createChecker();
 
+// El panel de inicio mira «Este mes», así que los datos de prueba se
+// anclan al mes en curso. Con fechas fijas, la prueba fallaba los primeros
+// días de cada mes porque los proyectos caían en el mes anterior.
+const HOY = today();
+const MES = startOfMonth(HOY);
+/** Un día de este mes, sin salirse por abajo ni pasar de hoy. */
+const esteMes = (dia) => {
+  const d = addDays(MES, dia - 1);
+  return d > HOY ? HOY : d;
+};
+
 // Datos de partida: 1 cliente, 1 presupuesto sin asignar, 1 aviso y 2 proyectos en curso.
 const db = createDb({
   clients: [
     { id: 'c1', kind: 'empresa', name: 'García Construcciones SL', tax_id: 'B61234567',
       phone: '600111222', email: null, address: 'Carrer de la Indústria, 12', city: 'Sabadell',
       postal_code: '08202', notes: null, active: true, archived_at: null, is_demo: false,
-      created_at: '2026-09-16T10:00:00Z', updated_at: '2026-09-16T10:00:00Z' },
+      created_at: `${esteMes(1)}T10:00:00Z`, updated_at: `${esteMes(1)}T10:00:00Z` },
   ],
   fichas: [
     { id: 'f1', code: 'PRES-2026-001', type: 'presupuesto', status: 'por_asignar', client_id: 'c1',
       contact_id: null, title: 'Barandilla', description: null, address: null, phone: null,
       scheduled_date: null, scheduled_time: null, assigned_to: null, amount: 6400,
-      archived_at: null, is_demo: false, created_at: '2026-09-17T10:00:00Z', updated_at: '2026-09-17T10:00:00Z' },
+      archived_at: null, is_demo: false, created_at: `${esteMes(2)}T10:00:00Z`, updated_at: `${esteMes(2)}T10:00:00Z` },
     { id: 'f2', code: 'AVI-2026-001', type: 'aviso', status: 'asignado', client_id: 'c1',
       contact_id: null, title: 'Puerta de garaje', description: null, address: null, phone: '600111222',
       scheduled_date: null, scheduled_time: null, assigned_to: WORKER.id, amount: null,
-      archived_at: null, is_demo: false, created_at: '2026-09-17T11:00:00Z', updated_at: '2026-09-17T11:00:00Z' },
+      archived_at: null, is_demo: false, created_at: `${esteMes(2)}T11:00:00Z`, updated_at: `${esteMes(2)}T11:00:00Z` },
   ],
   projects: [
     { id: 'p1', code: 'PROY-2026-001', client_id: 'c1', contact_id: null, source_ficha_id: null,
@@ -45,25 +56,25 @@ const db = createDb({
       address: null, observations: null, budget_amount: 6400, advance_amount: null,
       budget_hours_fab: 0, budget_hours_mont: 0, phase: 'preparacion', no_assembly: false,
       billing_status: 'por_facturar', finished_at: null, archived_at: null, is_demo: false,
-      created_at: '2026-09-17T12:00:00Z', updated_at: '2026-09-17T12:00:00Z' },
+      created_at: `${esteMes(2)}T12:00:00Z`, updated_at: `${esteMes(2)}T12:00:00Z` },
     { id: 'p2', code: 'PROY-2026-002', client_id: 'c1', contact_id: null, source_ficha_id: null,
       name: 'Rejas ventanas', description: null, measures: null, finish: null, location: null,
       address: null, observations: null, budget_amount: 2400, advance_amount: null,
       budget_hours_fab: 0, budget_hours_mont: 0, phase: 'fabricacion', no_assembly: false,
       billing_status: 'por_facturar', finished_at: null, archived_at: null, is_demo: false,
-      created_at: '2026-09-17T13:00:00Z', updated_at: '2026-09-17T13:00:00Z' },
+      created_at: `${esteMes(2)}T13:00:00Z`, updated_at: `${esteMes(2)}T13:00:00Z` },
     { id: 'p3', code: 'PROY-2026-003', client_id: 'c1', contact_id: null, source_ficha_id: null,
       name: 'Puerta corredera', description: null, measures: null, finish: null, location: null,
       address: null, observations: null, budget_amount: 9800, advance_amount: null,
       budget_hours_fab: 0, budget_hours_mont: 0, phase: 'finalizado', no_assembly: false,
-      billing_status: 'cobrado', finished_at: '2026-09-10T10:00:00Z', archived_at: null, is_demo: false,
-      created_at: '2026-08-01T10:00:00Z', updated_at: '2026-09-10T10:00:00Z' },
+      billing_status: 'cobrado', finished_at: `${esteMes(3)}T10:00:00Z`, archived_at: null, is_demo: false,
+      created_at: `${esteMes(1)}T10:00:00Z`, updated_at: `${esteMes(3)}T10:00:00Z` },
   ],
   audit_log: [
-    { id: 2, occurred_at: '2026-09-17T07:30:00Z', actor_id: ADMIN.id, actor_name: 'Salvi Plaza',
+    { id: 2, occurred_at: `${esteMes(2)}T07:30:00Z`, actor_id: ADMIN.id, actor_name: 'Salvi Plaza',
       action: 'insert', entity_type: 'fichas', entity_id: null, entity_code: 'PRES-2026-001',
       summary: 'Salvi Plaza creó la ficha de presupuesto PRES-2026-001', details: {} },
-    { id: 1, occurred_at: '2026-09-16T10:00:00Z', actor_id: ADMIN.id, actor_name: 'Salvi Plaza',
+    { id: 1, occurred_at: `${esteMes(1)}T10:00:00Z`, actor_id: ADMIN.id, actor_name: 'Salvi Plaza',
       action: 'insert', entity_type: 'clients', entity_id: null, entity_code: 'García Construcciones SL',
       summary: 'Salvi Plaza creó el cliente García Construcciones SL', details: {} },
   ],

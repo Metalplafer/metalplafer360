@@ -44,6 +44,25 @@ jobs:
           node-version: 20
           cache: npm
 
+      # Las pruebas no se fían de que los archivos generados sean correctos:
+      # los ABREN con las mismas herramientas que usaría cualquiera. Por eso
+      # el runner necesita openpyxl (para leer el Excel) y pdftotext (para
+      # sacar el texto del PDF). Sin ellas, esas comprobaciones no se harían.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar las herramientas que abren el Excel y el PDF
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install openpyxl
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends poppler-utils
+          # Si algo de esto faltara, es mejor saberlo aquí que más adelante.
+          python3 -c "import openpyxl; print('openpyxl', openpyxl.__version__)"
+          pdftotext -v
+          unzip -v | head -1
+
       - name: Instalar dependencias
         run: npm ci
 
@@ -51,6 +70,10 @@ jobs:
         run: npm run typecheck
 
       - name: Pasar las pruebas
+        # CI=true hace que una herramienta que falte sea un FALLO y no un
+        # salto silencioso: aquí las comprobaciones se hacen de verdad.
+        env:
+          CI: 'true'
         run: npm test
 
       - name: Construir la aplicación

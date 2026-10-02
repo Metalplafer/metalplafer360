@@ -29,6 +29,13 @@ const PORT = 4184;
 const HOY = today();
 const MES = startOfMonth(HOY);
 const ATRASADO = addDays(HOY, -6);
+/**
+ * El panel y los informes miran «Este mes». Una fecha de hace seis días
+ * puede caer en el mes anterior si hoy es día 1 ó 2, y entonces las horas
+ * de esa orden dejaban de contar y la prueba fallaba sin que nada
+ * estuviera roto. Esta fecha nunca se sale del mes en curso.
+ */
+const EN_EL_MES = ATRASADO < MES ? MES : ATRASADO;
 const TMP = mkdtempSync(join(tmpdir(), 'm360-fase6-'));
 
 buildApp();
@@ -74,7 +81,8 @@ const db = createDb({
       address: 'Passeig Plaça Major, 8', observations: null,
       budget_amount: 1200, advance_amount: null, budget_hours_fab: 8, budget_hours_mont: 2,
       phase: 'finalizado', no_assembly: false, billing_status: 'cobrado',
-      finished_at: `${addDays(HOY, -2)}T12:00:00Z`, archived_at: null, is_demo: false,
+      finished_at: `${addDays(HOY, -2) < MES ? MES : addDays(HOY, -2)}T12:00:00Z`,
+      archived_at: null, is_demo: false,
       created_at: `${MES}T09:30:00Z`, updated_at: `${MES}T09:30:00Z` },
   ],
   work_orders: [
@@ -83,10 +91,10 @@ const db = createDb({
       status: 'realizada', submitted_at: `${HOY}T17:00:00Z`, validated_at: null, validated_by: null,
       returned_at: null, return_reason: null, archived_at: null, is_demo: false,
       created_at: `${MES}T09:00:00Z`, updated_at: `${HOY}T17:00:00Z` },
-    { id: 'o2', code: `OT-${YEAR}-002`, project_id: 'p2', type: 'montaje', scheduled_date: ATRASADO,
+    { id: 'o2', code: `OT-${YEAR}-002`, project_id: 'p2', type: 'montaje', scheduled_date: EN_EL_MES,
       description: 'Colocar la reja.', planned_hours: 4, admin_notes: null,
-      status: 'validada', submitted_at: `${ATRASADO}T18:00:00Z`,
-      validated_at: `${ATRASADO}T19:00:00Z`, validated_by: ADMIN.id,
+      status: 'validada', submitted_at: `${EN_EL_MES}T18:00:00Z`,
+      validated_at: `${EN_EL_MES}T19:00:00Z`, validated_by: ADMIN.id,
       returned_at: null, return_reason: null, archived_at: null, is_demo: false,
       created_at: `${MES}T09:00:00Z`, updated_at: `${ATRASADO}T19:00:00Z` },
   ],
@@ -95,8 +103,8 @@ const db = createDb({
       submitted_at: `${HOY}T17:00:00Z`, assigned_at: `${MES}T09:00:00Z`,
       updated_at: `${HOY}T17:00:00Z`, is_demo: false },
     { order_id: 'o2', worker_id: WORKER.id, work_done: 'Reja colocada y ajustada.', hours: 3.5,
-      submitted_at: `${ATRASADO}T18:00:00Z`, assigned_at: `${MES}T09:00:00Z`,
-      updated_at: `${ATRASADO}T18:00:00Z`, is_demo: false },
+      submitted_at: `${EN_EL_MES}T18:00:00Z`, assigned_at: `${MES}T09:00:00Z`,
+      updated_at: `${EN_EL_MES}T18:00:00Z`, is_demo: false },
   ],
   materials: [
     { id: 'm1', project_id: 'p1', order_id: null, name: 'Pletina 40×8 mm', units: 12,

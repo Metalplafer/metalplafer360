@@ -21,12 +21,50 @@ const write = (name: string, bytes: Uint8Array) => {
   return path;
 };
 
-/** Ejecuta una herramienta y devuelve su salida; null si no está instalada. */
+/**
+ * Ejecuta una herramienta externa y devuelve su salida.
+ *
+ * En el ordenador de alguien que no tenga instalado `unzip`, `pdftotext` o
+ * `openpyxl`, devuelve null y la comprobación se salta: así se puede
+ * trabajar sin tener que instalar nada.
+ *
+ * En integración continua (CI) NO se salta nada: si falta una herramienta,
+ * la prueba falla y lo dice. Si no, la publicación saldría verde sin haber
+ * abierto ni una sola vez los archivos que genera la aplicación.
+ */
+const EN_CI = Boolean(process.env.CI);
+
 function run(cmd: string, args: string[]): string | null {
   try { return execFileSync(cmd, args, { encoding: 'utf8' }); }
   catch (e) {
-    const err = e as { code?: string; stdout?: string };
-    if (err.code === 'ENOENT') return null;
+    const err = e as { code?: string; status?: number; stderr?: Buffer | string };
+    const detalle = String(err.stderr ?? '').trim();
+
+    // El programa no está instalado.
+    if (err.code === 'ENOENT') {
+      if (EN_CI) {
+        throw new Error(
+          `Falta «${cmd}» en este equipo y sin él no se puede comprobar el archivo generado. `
+          + 'Instálalo antes de ejecutar las pruebas (en GitHub Actions lo hace el paso '
+          + '«Instalar las herramientas que abren el Excel y el PDF»).',
+        );
+      }
+      return null;
+    }
+
+    // El programa está, pero le falta algo por dentro: el caso típico es
+    // python3 sin openpyxl, que es justo lo que pasaba al publicar.
+    if (/ModuleNotFoundError|ImportError/.test(detalle)) {
+      if (EN_CI) {
+        throw new Error(
+          `«${cmd}» está instalado pero le falta una dependencia, así que no se puede abrir `
+          + `el archivo generado: ${detalle.split('\n').pop()}. `
+          + 'En GitHub Actions lo instala el paso «Instalar las herramientas que abren el Excel y el PDF».',
+        );
+      }
+      return null;
+    }
+
     throw e;
   }
 }
