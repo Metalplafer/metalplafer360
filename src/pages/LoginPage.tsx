@@ -5,7 +5,7 @@ import { useAuth } from '@/auth/AuthProvider';
 import { isConfigured } from '@/config/env';
 import { toUserMessage } from '@/lib/errors';
 import { Alert } from '@/components/ui/Feedback';
-import { Isotype, Logo } from '@/components/ui/Brand';
+import { AppIcon, Logo } from '@/components/ui/Brand';
 
 /** Acceso real contra Supabase Auth. La sesión queda iniciada. */
 export function LoginPage() {
@@ -46,7 +46,7 @@ export function LoginPage() {
       <section className="login-art">
         <Logo variant="blanco" height={26} />
         <div style={{ position: 'relative', zIndex: 1 }}>
-          <Isotype size={64} />
+          <AppIcon size={64} />
           <h1 style={{ marginTop: 18 }}>METALPLAFER<br />360</h1>
           <p>Fichas, proyectos, órdenes de trabajo y material del taller, en un único lugar.</p>
         </div>

@@ -149,33 +149,54 @@ try {
     (await page.locator('.sidebar nav a').count()) === 12);
 
   // ---------------------------------------------------------------------
-  // La cabecera del menú lateral usa el LOGO OFICIAL, en archivo.
+  // La cabecera del menú lateral: [icono 360] [logo Metalplafer].
   //
-  // Antes se componía a mano: un «360» dibujado con SVG, el nombre en
-  // texto pequeño y otro «360» amarillo debajo. No era el logo de la
-  // empresa. Estas comprobaciones impiden que vuelva.
+  // Dos ARCHIVOS, uno al lado del otro. Antes se componía a mano: un
+  // «360» dibujado con SVG, el nombre en texto pequeño y otro «360»
+  // amarillo debajo. Estas comprobaciones impiden que vuelva.
   // ---------------------------------------------------------------------
-  const marca = page.locator('.sidebar-brand img');
-  check(`La cabecera del lateral usa el archivo oficial del logo (midiendo ${QUE_LOGO})`,
-    (await marca.count()) === 1
-    && (await marca.getAttribute('src')).endsWith('brand/logo-blanco.png'),
-    await page.locator('.sidebar-brand').innerHTML());
+  const cabecera = page.locator('.sidebar-brand');
+  const icono = cabecera.locator('img').first();
+  const marca = cabecera.locator('img').nth(1);
 
-  // Presencia: o llena casi todo el ancho de la cabecera, o es alto. Se
-  // comprueba así, y no con una medida fija, porque depende de la forma
-  // del archivo oficial, que puede ser alargado o cuadrado.
-  check('El logo de la cabecera tiene presencia visual',
-    await marca.evaluate((el) => {
-      const r = el.getBoundingClientRect();
-      const padre = el.parentElement;
-      const cs = getComputedStyle(padre);
-      const util = padre.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
-      return r.width >= util * 0.8 || r.height >= 36;
+  check(`La cabecera son dos imágenes: el icono y el logo (midiendo ${QUE_LOGO})`,
+    (await cabecera.locator('img').count()) === 2
+    && (await icono.getAttribute('src')).endsWith('icons/icon-192.png')
+    && (await marca.getAttribute('src')).endsWith('brand/logo-blanco.png'),
+    await cabecera.innerHTML());
+
+  check('El icono del 360 va delante del logo y mide entre 36 y 40 px',
+    await cabecera.evaluate((el) => {
+      const [i, l] = [...el.querySelectorAll('img')];
+      const ri = i.getBoundingClientRect(); const rl = l.getBoundingClientRect();
+      return ri.height >= 36 && ri.height <= 40 && ri.width === ri.height && ri.left < rl.left;
+    }));
+
+  check('El icono y el logo van en la misma línea, centrados entre sí',
+    await cabecera.evaluate((el) => {
+      const [i, l] = [...el.querySelectorAll('img')];
+      const ri = i.getBoundingClientRect(); const rl = l.getBoundingClientRect();
+      return Math.abs((ri.top + ri.height / 2) - (rl.top + rl.height / 2)) < 2;
+    }));
+
+  // Presencia del logo: es el elemento principal, así que ocupa todo el
+  // ancho que le queda o llega a su altura máxima. Se comprueba así, y no
+  // con una medida fija, porque depende de la forma del archivo oficial,
+  // que puede ser alargado o cuadrado.
+  check('El logo sigue siendo el elemento principal',
+    await cabecera.evaluate((el) => {
+      const [i, l] = [...el.querySelectorAll('img')];
+      const cs = getComputedStyle(el);
+      const util = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      const libre = util - i.getBoundingClientRect().width - 10;
+      const r = l.getBoundingClientRect();
+      return r.width > i.getBoundingClientRect().width
+        && (r.width >= libre * 0.9 || r.height >= 44);
     }));
 
   check('La cabecera no lleva ningún texto suelto, ni un «360»',
-    (await page.locator('.sidebar-brand').innerText()).trim() === '',
-    await page.locator('.sidebar-brand').innerText());
+    (await cabecera.innerText()).trim() === '',
+    await cabecera.innerText());
 
   // Los únicos SVG que puede haber aquí son los del icono del botón de
   // cerrar el menú. Ninguno puede formar parte de la marca.
@@ -183,12 +204,37 @@ try {
     await page.locator('.sidebar-brand').evaluate((el) => [...el.querySelectorAll('svg')]
       .every((svg) => svg.closest('button') !== null)));
 
-  check('El logo no se sale de su hueco ni se deforma',
-    await marca.evaluate((el) => {
-      const hueco = el.parentElement.getBoundingClientRect().width;
-      const caja = el.getBoundingClientRect();
-      return caja.width <= hueco + 1 && getComputedStyle(el).objectFit === 'contain';
+  check('Nada se sale de la cabecera, y el logo no se deforma',
+    await cabecera.evaluate((el) => {
+      const cs = getComputedStyle(el);
+      const borde = el.getBoundingClientRect().right - parseFloat(cs.paddingRight);
+      const logo = el.querySelectorAll('img')[1];
+      return [...el.querySelectorAll('img')]
+        .every((img) => img.getBoundingClientRect().right <= borde + 1)
+        && getComputedStyle(logo).objectFit === 'contain';
     }));
+
+  // En tablet y móvil aparece el botón de cerrar el menú DENTRO de esta
+  // misma cabecera. Ni se solapa con la marca ni baja a otra línea.
+  await page.setViewportSize({ width: 820, height: 900 });
+  await page.locator('.topbar button[aria-label="Abrir menú"]').click();
+  await page.waitForTimeout(350);
+  check('En tablet, el botón de cerrar no se solapa con la marca ni baja de línea',
+    await cabecera.evaluate((el) => {
+      const [i, l] = [...el.querySelectorAll('img')];
+      const b = el.querySelector('button').getBoundingClientRect();
+      const rl = l.getBoundingClientRect(); const ri = i.getBoundingClientRect();
+      return rl.right <= b.left + 1
+        && Math.abs((ri.top + ri.height / 2) - (b.top + b.height / 2)) < 4
+        && b.right <= el.getBoundingClientRect().right + 1
+        && b.width >= 30;
+    }), await cabecera.evaluate((el) => {
+      const b = el.querySelector('button').getBoundingClientRect();
+      return `botón ${Math.round(b.width)}×${Math.round(b.height)} en x=${Math.round(b.left)}`;
+    }));
+  await page.locator('.sidebar-brand button').click();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.waitForTimeout(250);
 
   const menu = await page.locator('.sidebar nav a').allInnerTexts();
   const expected = ['Dashboard', 'Fichas', 'Proyectos', 'Órdenes de trabajo', 'Material pendiente',
