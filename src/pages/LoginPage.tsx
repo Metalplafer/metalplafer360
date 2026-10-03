@@ -46,7 +46,7 @@ export function LoginPage() {
       <section className="login-art">
         <Logo variant="blanco" height={26} />
         <div style={{ position: 'relative', zIndex: 1 }}>
-          <Isotype size={64} light />
+          <Isotype size={64} />
           <h1 style={{ marginTop: 18 }}>METALPLAFER<br />360</h1>
           <p>Fichas, proyectos, órdenes de trabajo y material del taller, en un único lugar.</p>
         </div>

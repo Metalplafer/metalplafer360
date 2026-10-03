@@ -22,7 +22,7 @@ export function WorkerLayout() {
       <a className="skip-link" href="#contenido">Saltar al contenido</a>
 
       <header className="w-header">
-        <AppMark />
+        <AppMark height={32} />
         <span className="muted" style={{ fontSize: '.85rem' }}>{profile?.full_name}</span>
       </header>
 

@@ -1,17 +1,38 @@
 LOGOS DE METALPLAFER
 ====================
 
-Coloca aquí los dos archivos del logo oficial, con estos nombres exactos:
+En esta carpeta van los dos archivos del logo oficial, con estos nombres
+exactos:
 
     logo-azul.png     -> versión azul, para fondos claros
     logo-blanco.png   -> versión blanca, para fondos oscuros
 
 Recomendación: PNG con fondo transparente, unos 600 píxeles de ancho.
-También funcionan archivos .png exportados desde el original.
 
-En cuanto los copies en esta carpeta y vuelvas a publicar la aplicación,
-aparecerán automáticamente en la pantalla de acceso, en el menú lateral
-y en la cabecera del móvil. Mientras no estén, se muestra el nombre
-"Metalplafer" en texto como marcador provisional.
+Dónde se usa cada uno:
 
-El logo no se redibuja ni se modifica en ningún momento.
+    logo-blanco.png   -> la cabecera del menú lateral (fondo azul oscuro)
+                         y la pantalla de acceso (fondo azul oscuro)
+    logo-azul.png     -> la cabecera del móvil del trabajador (fondo blanco)
+
+La aplicación usa estos archivos TAL CUAL. No los redibuja, no los
+deforma y no los recompone con texto ni con CSS: solo ajusta la altura, y
+el ancho se calcula solo para mantener la proporción. Para cambiar el
+logo basta con sustituir el archivo y volver a publicar.
+
+El icono de la aplicación (la placa con el «360») es otra cosa y vive en
+public/icons/. Se usa en la pestaña del navegador, en la aplicación
+instalada y en la pantalla de acceso.
+
+IMPORTANTE al sustituir cualquiera de estos archivos
+----------------------------------------------------
+Los navegadores guardan las imágenes en caché durante días. Después de
+subir archivos nuevos hay que subir también, en una sola línea cada uno:
+
+    public/sw.js   ->  const VERSION = 'v3';   (pasar a 'v4', 'v5'...)
+    index.html     ->  ?v=3 en el favicon      (pasar a ?v=4, ?v=5...)
+
+Sin eso, la aplicación seguirá enseñando los logos antiguos aunque los
+archivos nuevos ya estén publicados. Y si la aplicación está instalada en
+un móvil, el icono de la pantalla de inicio solo cambia al desinstalarla
+y volverla a instalar: eso lo decide el sistema operativo, no nosotros.

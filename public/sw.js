@@ -8,7 +8,10 @@
  * tipografías e iconos). Es a propósito: en una obra es peor trabajar con
  * datos viejos que no poder entrar.
  */
-const VERSION = 'v2';
+// Al subir este número se borra la caché anterior al activarse (más abajo).
+// Hay que subirlo cada vez que se cambien los iconos o el logo, o los
+// navegadores seguirían enseñando los antiguos durante días.
+const VERSION = 'v3';
 const CACHE = `m360-app-${VERSION}`;
 
 // Archivos mínimos para que la aplicación abra y enseñe su pantalla.

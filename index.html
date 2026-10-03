@@ -12,8 +12,11 @@
     <meta name="format-detection" content="telephone=yes" />
     <meta name="color-scheme" content="light" />
     <meta name="apple-mobile-web-app-title" content="Metalplafer360" />
-    <link rel="icon" type="image/svg+xml" href="./icons/favicon.svg" />
-    <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png" />
+    <!-- El ?v= obliga al navegador a volver a pedir el icono. Los favicon
+         se guardan en caché durante días, así que al cambiar los archivos
+         de public/icons/ hay que subir este número. -->
+    <link rel="icon" type="image/svg+xml" href="./icons/favicon.svg?v=3" />
+    <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png?v=3" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <title>METALPLAFER360</title>
   </head>

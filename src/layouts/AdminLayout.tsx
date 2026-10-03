@@ -24,7 +24,7 @@ export function AdminLayout() {
 
       <aside className={`sidebar${menuOpen ? ' open' : ''}`} aria-label="Menú principal">
         <div className="sidebar-brand row-between">
-          <AppMark onDark />
+          <AppMark onDark height={46} />
           <button className="btn btn-ghost icon-btn menu-toggle" style={{ color: '#C9D3DF' }}
                   onClick={() => setMenuOpen(false)} aria-label="Cerrar menú">
             <X />

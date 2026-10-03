@@ -10,6 +10,10 @@
  *
  * Los PERMISOS de verdad se prueban contra PostgreSQL en tests/sql.
  */
+import { deflateSync } from 'node:zlib';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   ADMIN, WORKER, addDays, buildApp, createChecker, createDb, launchBrowser,
   serveApp, signIn, startOfMonth, stubSupabase, today,
@@ -18,6 +22,52 @@ import {
 const PORT = 4179;
 
 buildApp();
+
+/**
+ * Para medir la cabecera del menú lateral hace falta que haya un archivo
+ * de logo. Los logos oficiales de Metalplafer NO están en el repositorio
+ * (los copia la empresa en public/brand/), así que si no están se deja
+ * un rectángulo liso de 600×120 en la copia construida, solo para poder
+ * medir. No es un logo, no se parece a ninguno y nunca sale de aquí: si
+ * el archivo oficial está puesto, se mide ese y no se toca nada.
+ */
+function rectanguloDePrueba(ruta, ancho, alto) {
+  if (existsSync(ruta)) return 'el archivo oficial';
+  const crc = (buf) => {
+    let c = ~0;
+    for (const byte of buf) {
+      c ^= byte;
+      for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xEDB88320 & -(c & 1));
+    }
+    return ~c >>> 0;
+  };
+  const chunk = (tipo, datos) => {
+    const cuerpo = Buffer.concat([Buffer.from(tipo, 'ascii'), datos]);
+    const largo = Buffer.alloc(4); largo.writeUInt32BE(datos.length);
+    const suma = Buffer.alloc(4); suma.writeUInt32BE(crc(cuerpo));
+    return Buffer.concat([largo, cuerpo, suma]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(ancho, 0); ihdr.writeUInt32BE(alto, 4);
+  ihdr[8] = 8; ihdr[9] = 6; // 8 bits por canal, RGBA
+  const filas = Buffer.alloc(alto * (ancho * 4 + 1));
+  for (let y = 0; y < alto; y++) {
+    const base = y * (ancho * 4 + 1);
+    for (let x = 0; x < ancho; x++) {
+      const p = base + 1 + x * 4;
+      filas[p] = 255; filas[p + 1] = 255; filas[p + 2] = 255; filas[p + 3] = 255;
+    }
+  }
+  mkdirSync(dirname(ruta), { recursive: true });
+  writeFileSync(ruta, Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]),
+    chunk('IHDR', ihdr), chunk('IDAT', deflateSync(filas)), chunk('IEND', Buffer.alloc(0)),
+  ]));
+  return 'un rectángulo de prueba';
+}
+
+const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const QUE_LOGO = rectanguloDePrueba(join(RAIZ, 'dist', 'brand', 'logo-blanco.png'), 600, 120);
 const server = await serveApp(PORT);
 const { check, report } = createChecker();
 
@@ -97,6 +147,48 @@ try {
     (await page.locator('h1').first().innerText()).includes('Salvi'));
   check('El menú de administración tiene las 12 secciones',
     (await page.locator('.sidebar nav a').count()) === 12);
+
+  // ---------------------------------------------------------------------
+  // La cabecera del menú lateral usa el LOGO OFICIAL, en archivo.
+  //
+  // Antes se componía a mano: un «360» dibujado con SVG, el nombre en
+  // texto pequeño y otro «360» amarillo debajo. No era el logo de la
+  // empresa. Estas comprobaciones impiden que vuelva.
+  // ---------------------------------------------------------------------
+  const marca = page.locator('.sidebar-brand img');
+  check(`La cabecera del lateral usa el archivo oficial del logo (midiendo ${QUE_LOGO})`,
+    (await marca.count()) === 1
+    && (await marca.getAttribute('src')).endsWith('brand/logo-blanco.png'),
+    await page.locator('.sidebar-brand').innerHTML());
+
+  // Presencia: o llena casi todo el ancho de la cabecera, o es alto. Se
+  // comprueba así, y no con una medida fija, porque depende de la forma
+  // del archivo oficial, que puede ser alargado o cuadrado.
+  check('El logo de la cabecera tiene presencia visual',
+    await marca.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const padre = el.parentElement;
+      const cs = getComputedStyle(padre);
+      const util = padre.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      return r.width >= util * 0.8 || r.height >= 36;
+    }));
+
+  check('La cabecera no lleva ningún texto suelto, ni un «360»',
+    (await page.locator('.sidebar-brand').innerText()).trim() === '',
+    await page.locator('.sidebar-brand').innerText());
+
+  // Los únicos SVG que puede haber aquí son los del icono del botón de
+  // cerrar el menú. Ninguno puede formar parte de la marca.
+  check('La cabecera no dibuja ningún logo con SVG',
+    await page.locator('.sidebar-brand').evaluate((el) => [...el.querySelectorAll('svg')]
+      .every((svg) => svg.closest('button') !== null)));
+
+  check('El logo no se sale de su hueco ni se deforma',
+    await marca.evaluate((el) => {
+      const hueco = el.parentElement.getBoundingClientRect().width;
+      const caja = el.getBoundingClientRect();
+      return caja.width <= hueco + 1 && getComputedStyle(el).objectFit === 'contain';
+    }));
 
   const menu = await page.locator('.sidebar nav a').allInnerTexts();
   const expected = ['Dashboard', 'Fichas', 'Proyectos', 'Órdenes de trabajo', 'Material pendiente',

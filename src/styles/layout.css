@@ -8,7 +8,12 @@
   position: sticky; top: 0; height: 100vh; background: var(--steel-900); color: #C9D3DF;
   display: flex; flex-direction: column; overflow-y: auto;
 }
-.sidebar-brand { padding: 18px 18px 14px; border-bottom: 1px solid rgba(255,255,255,.08); }
+/* El logo oficial va lo más grande que quepa, y el botón de cerrar el
+   menú (solo en móvil y tablet) se queda a su lado, nunca debajo. */
+.sidebar-brand {
+  padding: 18px 18px 14px; border-bottom: 1px solid rgba(255,255,255,.08);
+  flex-wrap: nowrap;
+}
 .sidebar nav { padding: 10px 10px 20px; display: flex; flex-direction: column; gap: 1px; }
 .sidebar nav a {
   display: flex; align-items: center; gap: 11px; padding: 9px 10px; border-radius: var(--r-md);
