@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { KeyRound, Pencil, Plus, ShieldCheck, UserCheck, UserX } from 'lucide-react';
+import { KeyRound, Pencil, Plus, ShieldCheck, Trash2, UserCheck, UserX } from 'lucide-react';
 import { useAsync } from '@/hooks/useAsync';
 import { useAuth } from '@/auth/AuthProvider';
 import { useDialogs } from '@/components/ui/Dialogs';
@@ -9,6 +9,7 @@ import { Alert, Empty, ErrorBox, Loading } from '@/components/ui/Feedback';
 import {
   createWorker, listAllPeople, renamePerson, resetPassword, setActive, setRole,
 } from '@/services/settings';
+import { deleteWorker } from '@/services/people';
 import { fmtDate, fmtPhone } from '@/lib/format';
 import { toUserMessage } from '@/lib/errors';
 import type { Profile } from '@/types/db';
@@ -31,6 +32,39 @@ export default function WorkersPage() {
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<Profile | null>(null);
   const [password, setPassword] = useState<Profile | null>(null);
+
+  /**
+   * ELIMINAR a un trabajador.
+   *
+   * Desactivar y eliminar son dos cosas distintas y las dos hacen falta:
+   * desactivar quita el acceso y conserva el trabajo; eliminar lo borra
+   * de la base de datos. La base de datos se niega a eliminar a quien
+   * tiene trabajo registrado y dice por qué; aquí se enseña ese motivo
+   * tal cual, sin traducirlo a un «no se puede» que no explicaría nada.
+   */
+  async function eliminar(person: Profile) {
+    const ok = await confirm({
+      title: '¿Estás seguro de que quieres eliminar este trabajador?',
+      message: (
+        <>
+          <strong>{person.full_name}</strong> desaparecerá de la aplicación y perderá el acceso.
+          Esto no se puede deshacer.
+          <div style={{ marginTop: 8 }}>
+            Si lo que quieres es que deje de entrar pero conservar su trabajo,
+            <strong> desactívalo</strong> en lugar de eliminarlo.
+          </div>
+        </>
+      ),
+      confirmLabel: 'Eliminar',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      const r = await deleteWorker(person.id);
+      toast.success(`${r.nombre} se ha eliminado`);
+      reload();
+    } catch (e) { toast.error(e); }
+  }
 
   async function toggleActive(person: Profile) {
     const ok = await confirm({
@@ -135,6 +169,10 @@ export default function WorkersPage() {
                                   aria-label={`${person.active ? 'Desactivar' : 'Reactivar'} a ${person.full_name}`}>
                             {person.active ? <UserX /> : <UserCheck />}
                           </button>
+                          {person.id !== profile?.id && (
+                            <button className="btn btn-ghost icon-btn" onClick={() => eliminar(person)}
+                                    aria-label={`Eliminar a ${person.full_name}`}><Trash2 /></button>
+                          )}
                         </td>
                       </tr>
                     ))}

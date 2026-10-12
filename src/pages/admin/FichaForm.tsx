@@ -10,7 +10,7 @@ import { createClient, getClient } from '@/services/clients';
 import { createFicha, getFicha, updateFicha } from '@/services/fichas';
 import { listPeople } from '@/services/people';
 import { FICHA_CODE_PREFIX, FICHA_NEW_TITLE, FICHA_TYPE_LABEL } from '@/config/constants';
-import { parseDecimal } from '@/lib/format';
+import { parseDecimal, parseHours } from '@/lib/format';
 import { toUserMessage } from '@/lib/errors';
 import type { FichaType } from '@/types/db';
 
@@ -31,8 +31,8 @@ export default function FichaForm() {
   const [type, setType] = useState<FichaType>(isType(params.get('tipo')) ? params.get('tipo') as FichaType : 'presupuesto');
   const [client, setClient] = useState<ClientDraft>(emptyClient);
   const [form, setForm] = useState({
-    title: '', description: '', address: '', phone: '',
-    scheduled_date: '', scheduled_time: '', assigned_to: '', amount: '',
+    title: '', description: '', address: '', phone: '', email: '',
+    scheduled_date: '', scheduled_time: '', assigned_to: '', amount: '', hours: '',
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,8 +54,11 @@ export default function FichaForm() {
     setType(f.type);
     setForm({
       title: f.title ?? '', description: f.description ?? '', address: f.address ?? '',
-      phone: f.phone ?? '', scheduled_date: f.scheduled_date ?? '', scheduled_time: f.scheduled_time?.slice(0, 5) ?? '',
-      assigned_to: f.assigned_to ?? '', amount: f.amount != null ? String(f.amount).replace('.', ',') : '',
+      phone: f.phone ?? '', email: f.email ?? '',
+      scheduled_date: f.scheduled_date ?? '', scheduled_time: f.scheduled_time?.slice(0, 5) ?? '',
+      assigned_to: f.assigned_to ?? '',
+      amount: f.amount != null ? String(f.amount).replace('.', ',') : '',
+      hours: f.hours != null ? String(f.hours).replace('.', ',') : '',
     });
     if (f.client) {
       setClient({
@@ -85,6 +88,11 @@ export default function FichaForm() {
       setError('El importe no es válido. Escríbelo así: 6400 o 6.400,50');
       return;
     }
+    const hours = form.hours.trim() ? parseHours(form.hours) : null;
+    if (form.hours.trim() && !hours) {
+      setError('Las horas no son válidas. Escríbelas así: 2 o 1,5');
+      return;
+    }
 
     setBusy(true);
     try {
@@ -106,10 +114,12 @@ export default function FichaForm() {
         description: form.description,
         address: form.address,
         phone: form.phone,
+        email: form.email,
         scheduled_date: form.scheduled_date || null,
         scheduled_time: form.scheduled_time || null,
         assigned_to: form.assigned_to || null,
         amount,
+        hours,
       };
 
       const saved = editing && id ? await updateFicha(id, payload) : await createFicha(payload);
@@ -188,17 +198,38 @@ export default function FichaForm() {
             </Field>
 
             {type === 'aviso' && (
-              <Field label="Teléfono de contacto" htmlFor="f-phone"
-                     hint="A quién llamar para este aviso.">
-                <input id="f-phone" className="input" inputMode="tel" value={form.phone}
-                       onChange={(e) => set({ phone: e.target.value })} />
+              <>
+                <Field label="Teléfono de contacto" htmlFor="f-phone"
+                       hint="A quién llamar para este aviso.">
+                  <input id="f-phone" className="input" inputMode="tel" value={form.phone}
+                         onChange={(e) => set({ phone: e.target.value })} />
+                </Field>
+
+                <Field label="Correo electrónico" htmlFor="f-email"
+                       hint="Opcional. Para tener el dato al facturar; la aplicación no envía correos.">
+                  <input id="f-email" className="input" type="email" value={form.email}
+                         onChange={(e) => set({ email: e.target.value })} />
+                </Field>
+              </>
+            )}
+
+            {/* El importe es para presupuestos y para avisos: un trabajo de
+                mostrador también se cobra. */}
+            {type !== 'visita' && (
+              <Field label="Importe" htmlFor="f-amount"
+                     hint={type === 'aviso'
+                       ? 'Lo que se cobra por el trabajo. Opcional.'
+                       : 'Opcional. Por ejemplo: 6400 o 6.400,50'}>
+                <input id="f-amount" className="input" inputMode="decimal" value={form.amount}
+                       onChange={(e) => set({ amount: e.target.value })} />
               </Field>
             )}
 
-            {type === 'presupuesto' && (
-              <Field label="Importe" htmlFor="f-amount" hint="Opcional. Por ejemplo: 6400 o 6.400,50">
-                <input id="f-amount" className="input" inputMode="decimal" value={form.amount}
-                       onChange={(e) => set({ amount: e.target.value })} />
+            {type === 'aviso' && (
+              <Field label="Horas dedicadas" htmlFor="f-hours"
+                     hint="Las que ha llevado el trabajo. Por ejemplo: 0,75 o 2">
+                <input id="f-hours" className="input" inputMode="decimal" value={form.hours}
+                       onChange={(e) => set({ hours: e.target.value })} />
               </Field>
             )}
 

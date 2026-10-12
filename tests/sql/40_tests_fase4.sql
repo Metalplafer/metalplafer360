@@ -144,8 +144,15 @@ select test.ok('trabajador', 'Ve las dos órdenes que tiene asignadas',
 select test.ok('trabajador', 'No ve la orden de otro proyecto',
   not exists (select 1 from public.work_orders where id = test.id('ot_ajena')));
 
-select test.ok('trabajador', 'Ve el proyecto de su orden',
-  (select count(*) = 1 and bool_and(id = test.id('proy1')) from public.projects));
+-- CAMBIADO EN EL BLOQUE 1. Antes el trabajador leía la fila del proyecto
+-- en «projects», y con ella el importe y la paga y señal, porque RLS
+-- filtra filas y no columnas. Ahora «projects» es de administración y el
+-- trabajador entra por una vista que no tiene esas columnas.
+select test.ok('trabajador', 'Ya NO lee la tabla de proyectos, que es donde está el dinero',
+  (select count(*) = 0 from public.projects));
+
+select test.ok('trabajador', 'Pero sigue viendo el trabajo de su orden',
+  (select count(*) = 1 and bool_and(id = test.id('proy1')) from public.worker_projects));
 
 select test.ok('trabajador', 'Ve al cliente de ese proyecto y a ningún otro',
   (select count(*) = 1 from public.clients));
@@ -511,8 +518,11 @@ update public.work_orders set archived_at = now() where id = test.id('ot_futura'
 select test.as_user(test.id('juan'));
 select test.ok('archivar_ot', 'Una orden archivada desaparece para el trabajador',
   not exists (select 1 from public.work_orders where id = test.id('ot_futura')));
+-- CAMBIADO EN EL BLOQUE 1: se mira en la vista del trabajador, porque la
+-- tabla «projects» ya no la lee (ver arriba). Le queda otra orden viva
+-- del mismo proyecto, así que lo sigue viendo.
 select test.ok('archivar_ot', 'Y deja de contar como proyecto visible si era la única',
-  exists (select 1 from public.projects where id = test.id('proy1')));
+  exists (select 1 from public.worker_projects where id = test.id('proy1')));
 
 reset role; set role authenticated; select test.as_user(test.id('salvi'));
 select test.ok('archivar_ot', 'Administración la sigue viendo archivada',

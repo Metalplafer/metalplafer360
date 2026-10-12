@@ -2,13 +2,24 @@ import { supabase, unwrap } from '@/lib/supabase';
 import { Aviso } from '@/lib/errors';
 import type { CommentRow } from '@/types/db';
 
-/** Los comentarios cuelgan de una ficha, de un proyecto o de una orden. */
-export type CommentOwner = { fichaId: string } | { projectId: string } | { orderId: string };
+/**
+ * Los comentarios cuelgan de una ficha, de un proyecto, de una orden, de
+ * un parte de trabajo o de una obra.
+ */
+export type CommentOwner =
+  { fichaId: string } | { projectId: string } | { orderId: string }
+  | { reportId: string } | { workId: string };
 
 const column = (owner: CommentOwner) =>
-  ('fichaId' in owner ? 'ficha_id' : 'projectId' in owner ? 'project_id' : 'order_id');
+  ('fichaId' in owner ? 'ficha_id'
+    : 'projectId' in owner ? 'project_id'
+      : 'reportId' in owner ? 'report_id'
+        : 'workId' in owner ? 'work_id' : 'order_id');
 const ownerId = (owner: CommentOwner) =>
-  ('fichaId' in owner ? owner.fichaId : 'projectId' in owner ? owner.projectId : owner.orderId);
+  ('fichaId' in owner ? owner.fichaId
+    : 'projectId' in owner ? owner.projectId
+      : 'reportId' in owner ? owner.reportId
+        : 'workId' in owner ? owner.workId : owner.orderId);
 
 export function commentOwnerKey(owner: CommentOwner) {
   return `${column(owner)}:${ownerId(owner)}`;

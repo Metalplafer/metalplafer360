@@ -13,6 +13,7 @@ import {
   setReceived, updateMaterial,
 } from '@/services/materials';
 import { listProjects } from '@/services/projects';
+import { MaterialNeedButton } from '@/components/shared/MaterialNeedButton';
 import { REQUEST_STATUS_LABEL, REQUEST_STATUS_TONE } from '@/config/constants';
 import { fmtDate, fmtDateTime, fmtNumber, todayMadrid } from '@/lib/format';
 import type { Material, MaterialRequest } from '@/types/db';
@@ -115,6 +116,8 @@ export default function MaterialsList() {
 
   async function accept(draft: MaterialValues) {
     if (!accepting) return;
+    // BLOQUE 5: una petición puede llegar SIN proyecto. El material
+    // pendiente siempre es de un proyecto, así que aquí se dice a cuál.
     await acceptRequest(accepting.id, {
       name: draft.name.trim(),
       units: draft.units,
@@ -122,9 +125,11 @@ export default function MaterialsList() {
       orderedOn: draft.ordered_on || null,
       expectedOn: draft.expected_on || null,
       notes: draft.notes || null,
+      projectId: accepting.project_id ? null : projectId,
     });
     toast.success('Material anotado a partir del aviso');
     setAccepting(null);
+    setProjectId('');
     reload();
   }
 
@@ -147,9 +152,14 @@ export default function MaterialsList() {
         title="Material pendiente"
         sub="Qué falta, a quién se pidió y cuándo debería llegar."
         actions={
-          <button className="btn btn-primary" onClick={() => setCreating(true)}>
-            <Plus />Nuevo material
-          </button>
+          <span className="row" style={{ gap: 8 }}>
+            {/* BLOQUE 5: administración también puede abrir una petición,
+                y entra en la misma lista de revisión que las del taller. */}
+            <MaterialNeedButton className="btn" />
+            <button className="btn btn-primary" onClick={() => setCreating(true)}>
+              <Plus />Nuevo material
+            </button>
+          </span>
         }
       />
 
@@ -190,7 +200,9 @@ export default function MaterialsList() {
                       <div className="faint">
                         {fmtDateTime(r.created_at)}
                         {r.order && <> · <Link to={`/admin/ordenes/${r.order.id}`}>{r.order.code}</Link></>}
-                        {r.project && <> · <Link to={`/admin/proyectos/${r.project.id}`}>{r.project.code}</Link></>}
+                        {r.project
+                          ? <> · <Link to={`/admin/proyectos/${r.project.id}`}>{r.project.code}</Link></>
+                          : <> · <span className="faint">sin proyecto</span></>}
                       </div>
                       {r.review_note && <div className="faint">Motivo: {r.review_note}</div>}
 
@@ -324,13 +336,23 @@ export default function MaterialsList() {
         <MaterialModal
           title="Anotar como material pendiente"
           initial={{ ...emptyMaterial, name: accepting.body }}
-          onClose={() => setAccepting(null)}
+          projects={accepting.project_id
+            ? undefined
+            : projects.data?.rows.map((p) => ({ id: p.id, code: p.code, name: p.name })) ?? []}
+          projectId={accepting.project_id ? undefined : projectId}
+          onProject={accepting.project_id ? undefined : setProjectId}
+          onClose={() => { setAccepting(null); setProjectId(''); }}
           onSave={accept}
           intro={
             <Panel title="Lo que comunicó el taller" tight>
               <div style={{ padding: '10px 16px' }}>
                 <strong>{accepting.worker?.full_name}</strong>
                 <p className="pre" style={{ margin: '4px 0 0' }}>{accepting.body}</p>
+                {!accepting.project_id && (
+                  <p className="hint" style={{ marginBottom: 0 }}>
+                    Llegó sin proyecto. Elige abajo a cuál va el material.
+                  </p>
+                )}
               </div>
             </Panel>
           }

@@ -1,11 +1,17 @@
 import { memo, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
+import {
+  CalendarDays, CalendarOff, ChevronLeft, ChevronRight, Plus, Trash2,
+} from 'lucide-react';
 import { useAsync } from '@/hooks/useAsync';
 import { useDialogs } from '@/components/ui/Dialogs';
 import { PageHeader } from '@/components/ui/Layout';
+import { Modal } from '@/components/ui/Modal';
 import { Empty, ErrorBox, Loading } from '@/components/ui/Feedback';
-import { listCalendar, moveOrder } from '@/services/calendar';
+import {
+  clearNonWorkingDay, deleteCalendarNote, listCalendar, listNonWorkingDays,
+  moveCalendarItem, saveCalendarNote, setNonWorkingDay,
+} from '@/services/calendar';
 import { listPeople } from '@/services/people';
 import {
   CALENDAR_COLOR, CALENDAR_KINDS, CALENDAR_LABEL, CALENDAR_VIEWS, type CalendarView,
@@ -76,12 +82,16 @@ const Chip = memo(function Chip({ e, dragging, canDrag, setDragging, setOver, op
 
 const Day = memo(function Day({
   date, outside, list, today, over, view, canDrag, setOver, drop, chipProps,
+  festivo, onFestivo,
 }: {
   date: string; outside?: boolean; list: CalendarEvent[];
   today: string; over: string | null; view: string; canDrag: boolean;
   setOver: (fn: string | null | ((d: string | null) => string | null)) => void;
   drop: (date: string) => void;
   chipProps: Omit<Parameters<typeof Chip>[0], 'e'>;
+  /** Día marcado como no laborable: la planificación automática lo salta. */
+  festivo?: boolean;
+  onFestivo?: (date: string) => void;
 }) {
   return (
     <div
@@ -90,6 +100,7 @@ const Day = memo(function Day({
         outside ? 'outside' : '',
         date === today ? 'today' : '',
         over === date ? 'over' : '',
+        festivo ? 'no-laborable' : '',
       ].filter(Boolean).join(' ')}
       onDragOver={canDrag ? (ev) => { ev.preventDefault(); setOver(date); } : undefined}
       onDragLeave={canDrag ? () => setOver((d) => (d === date ? null : d)) : undefined}
@@ -98,6 +109,19 @@ const Day = memo(function Day({
       <div className="cal-day-head">
         <span className="num">{dayNumber(date)}</span>
         {view === 'semana' && <span className="faint">{weekdayShort(date)}</span>}
+        {onFestivo && (
+          <button type="button" className="cal-festivo"
+                  aria-pressed={Boolean(festivo)}
+                  title={festivo
+                    ? 'Día no laborable. Pulsa para volver a trabajarlo.'
+                    : 'Marcar como no laborable'}
+                  aria-label={festivo
+                    ? `El ${date} no es laborable. Pulsa para volver a trabajarlo.`
+                    : `Marcar el ${date} como no laborable`}
+                  onClick={() => onFestivo(date)}>
+            <CalendarOff size={13} aria-hidden />
+          </button>
+        )}
       </div>
       <div className="cal-day-body">
         {list.map((e) => <Chip key={`${e.kind}-${e.id}`} e={e} {...chipProps} />)}
@@ -108,7 +132,7 @@ const Day = memo(function Day({
 
 export default function CalendarPage({ worker }: { worker?: boolean }) {
   const navigate = useNavigate();
-  const { toast } = useDialogs();
+  const { toast, confirm } = useDialogs();
   const today = todayMadrid();
 
   const [view, setView] = useState<CalendarView>(worker ? 'agenda' : 'mes');
@@ -118,12 +142,22 @@ export default function CalendarPage({ worker }: { worker?: boolean }) {
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  // BLOQUE 3: eventos sueltos («Otros») y días no laborables.
+  const [editandoNota, setEditandoNota] = useState<CalendarEvent | 'nuevo' | null>(null);
+  const [nota, setNota] = useState({ day: today, title: '', detail: '' });
 
   const { from, to } = rangeFor(view, anchor);
   const people = useAsync(() => (worker ? Promise.resolve([]) : listPeople('worker')), [worker]);
   const events = useAsync(
     () => listCalendar(from, to, { workerId: workerId || undefined }),
     [from, to, workerId, reloadKey],
+  );
+  // Los días que no se trabaja se pintan apagados: así se ve de un
+  // vistazo por qué la planificación automática los ha saltado.
+  const festivos = useAsync(() => listNonWorkingDays(from, to), [from, to, reloadKey]);
+  const noLaborables = useMemo(
+    () => new Set((festivos.data ?? []).map((d) => d.day)),
+    [festivos.data],
   );
 
   const shown = useMemo(
@@ -153,11 +187,18 @@ export default function CalendarPage({ worker }: { worker?: boolean }) {
 
   function openEvent(e: CalendarEvent) {
     if (worker) {
-      if (e.kind === 'fabricacion' || e.kind === 'montaje') navigate(`/t/ordenes/${e.id}`);
+      // BLOQUE 3: fabricación y montaje son ya el PROYECTO, no la orden.
+      if (e.kind === 'fabricacion' || e.kind === 'montaje') navigate(`/t/proyectos/${e.id}`);
       return;
     }
-    if (e.kind === 'fabricacion' || e.kind === 'montaje') navigate(`/admin/ordenes/${e.id}`);
+    if (e.kind === 'fabricacion' || e.kind === 'montaje') navigate(`/admin/proyectos/${e.id}`);
+    // BLOQUE 4: la obra es un elemento más del calendario; abre su pantalla.
+    else if (e.kind === 'obra') navigate(`/admin/obras/${e.id}`);
     else if (e.kind === 'material') navigate('/admin/material');
+    else if (e.kind === 'otro') {
+      setNota({ day: e.date, title: e.title, detail: e.detail ?? '' });
+      setEditandoNota(e);
+    }
     else navigate(`/admin/fichas/${e.id}`);
   }
 
@@ -169,10 +210,68 @@ export default function CalendarPage({ worker }: { worker?: boolean }) {
     const event = shown.find((e) => e.id === id);
     if (!event || event.date === date) return;
     try {
-      await moveOrder(id, date);
-      toast.success(`${event.code} pasa al ${fmtDate(date)}`);
+      await moveCalendarItem(event, date);
+      // Mover a mano una fase la saca del cálculo automático: desde
+      // ahora manda la persona, y ningún recálculo se la vuelve a tocar.
+      const aMano = event.kind === 'fabricacion' || event.kind === 'montaje';
+      toast.success(`${event.code ?? event.title} pasa al ${fmtDate(date)}`
+        + (aMano ? '. Queda fijado a mano.' : ''));
       setReloadKey((n) => n + 1);
     } catch (err) { toast.error(err); }
+  }
+
+  async function guardarNota() {
+    try {
+      await saveCalendarNote({
+        id: editandoNota === 'nuevo' ? null : editandoNota?.id,
+        day: nota.day,
+        title: nota.title,
+        detail: nota.detail || null,
+      });
+      toast.success(editandoNota === 'nuevo' ? 'Evento creado' : 'Evento guardado');
+      setEditandoNota(null);
+      setReloadKey((n) => n + 1);
+    } catch (e) { toast.error(e); }
+  }
+
+  async function borrarNota() {
+    if (editandoNota === 'nuevo' || !editandoNota) return;
+    const ok = await confirm({
+      title: 'Quitar el evento',
+      message: <>«{editandoNota.title}» desaparecerá del calendario.</>,
+      confirmLabel: 'Quitar',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await deleteCalendarNote(editandoNota.id);
+      toast.success('Evento quitado');
+      setEditandoNota(null);
+      setReloadKey((n) => n + 1);
+    } catch (e) { toast.error(e); }
+  }
+
+  /** Marcar o desmarcar un día como no laborable. */
+  async function alternarFestivo(day: string) {
+    const esFestivo = noLaborables.has(day);
+    const ok = await confirm({
+      title: esFestivo ? 'Volver a trabajar este día' : 'Marcar como no laborable',
+      message: esFestivo
+        ? <>El {fmtDate(day)} volverá a contar como día de trabajo en la planificación.</>
+        : (
+          <>
+            El {fmtDate(day)} dejará de contar como día de trabajo: la planificación
+            automática se lo saltará. Lo que ya esté colocado no se mueve.
+          </>
+        ),
+      confirmLabel: esFestivo ? 'Volver a trabajar' : 'Marcar',
+    });
+    if (!ok) return;
+    try {
+      if (esFestivo) await clearNonWorkingDay(day);
+      else await setNonWorkingDay(day, '');
+      setReloadKey((n) => n + 1);
+    } catch (e) { toast.error(e); }
   }
 
   const canDrag = !worker;
@@ -254,7 +353,9 @@ export default function CalendarPage({ worker }: { worker?: boolean }) {
                 {WEEKDAY_HEADS.map((d) => <div key={d} className="cal-head">{d}</div>)}
                 {monthDays.map((d) => (
                   <Day key={d} date={d} outside={d.slice(0, 7) !== anchor.slice(0, 7)} list={byDay.get(d) ?? []} today={today} over={over} view={view}
-                       canDrag={canDrag} setOver={setOver} drop={drop} chipProps={chipProps} />
+                       canDrag={canDrag} setOver={setOver} drop={drop} chipProps={chipProps}
+                       festivo={noLaborables.has(d)}
+                       onFestivo={worker ? undefined : alternarFestivo} />
                 ))}
               </div>
             )}
@@ -263,7 +364,9 @@ export default function CalendarPage({ worker }: { worker?: boolean }) {
               <div className="cal-week">
                 {weekDays.map((d) => (
                   <Day key={d} date={d} list={byDay.get(d) ?? []} today={today} over={over} view={view}
-                       canDrag={canDrag} setOver={setOver} drop={drop} chipProps={chipProps} />
+                       canDrag={canDrag} setOver={setOver} drop={drop} chipProps={chipProps}
+                       festivo={noLaborables.has(d)}
+                       onFestivo={worker ? undefined : alternarFestivo} />
                 ))}
               </div>
             )}
@@ -271,7 +374,9 @@ export default function CalendarPage({ worker }: { worker?: boolean }) {
             {view === 'dia' && (
               <div className="cal-day-single">
                 <Day date={anchor} list={byDay.get(anchor) ?? []} today={today} over={over} view={view}
-                     canDrag={canDrag} setOver={setOver} drop={drop} chipProps={chipProps} />
+                     canDrag={canDrag} setOver={setOver} drop={drop} chipProps={chipProps}
+                     festivo={noLaborables.has(anchor)}
+                     onFestivo={worker ? undefined : alternarFestivo} />
               </div>
             )}
 
@@ -336,11 +441,57 @@ export default function CalendarPage({ worker }: { worker?: boolean }) {
     <>
       <PageHeader
         title="Calendario"
-        sub="Todo lo que tiene fecha: órdenes de trabajo, material, visitas y avisos."
+        sub="La planificación de fabricación y montaje, el material, las visitas y los avisos."
+        actions={!worker && (
+          <button className="btn btn-sm" onClick={() => {
+            setNota({ day: anchor, title: '', detail: '' });
+            setEditandoNota('nuevo');
+          }}>
+            <Plus />Nuevo evento
+          </button>
+        )}
       />
       <section className="panel">
         <div className="panel-body">{body}</div>
       </section>
+
+      {/* «Otros»: eventos sueltos que crea administración desde aquí.
+          Nada complicado: un día, un texto y, si hace falta, un detalle. */}
+      {editandoNota && (
+        <Modal
+          title={editandoNota === 'nuevo' ? 'Nuevo evento' : 'Evento del calendario'}
+          onClose={() => setEditandoNota(null)}
+        >
+          <div className="field">
+            <label className="label" htmlFor="cal-dia">Día</label>
+            <input id="cal-dia" className="input" type="date" value={nota.day}
+                   onChange={(e) => setNota((n) => ({ ...n, day: e.target.value }))} />
+          </div>
+          <div className="field">
+            <label className="label" htmlFor="cal-titulo">¿De qué se trata?</label>
+            <input id="cal-titulo" className="input" value={nota.title} maxLength={120}
+                   placeholder="Por ejemplo: revisión de la plegadora"
+                   onChange={(e) => setNota((n) => ({ ...n, title: e.target.value }))} />
+          </div>
+          <div className="field">
+            <label className="label" htmlFor="cal-detalle">Detalle (opcional)</label>
+            <textarea id="cal-detalle" className="input" rows={3} value={nota.detail} maxLength={500}
+                      onChange={(e) => setNota((n) => ({ ...n, detail: e.target.value }))} />
+          </div>
+          <div className="row-between">
+            <span>
+              {editandoNota !== 'nuevo' && (
+                <button className="btn btn-danger" onClick={borrarNota}><Trash2 />Quitar</button>
+              )}
+            </span>
+            <span className="row" style={{ gap: 10 }}>
+              <button className="btn" onClick={() => setEditandoNota(null)}>Cancelar</button>
+              <button className="btn btn-primary" disabled={!nota.title.trim()}
+                      onClick={guardarNota}>Guardar</button>
+            </span>
+          </div>
+        </Modal>
+      )}
     </>
   );
 }

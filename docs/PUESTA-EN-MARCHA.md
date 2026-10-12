@@ -68,7 +68,7 @@ Supabase es el servicio donde vivirán los datos de la empresa.
 
 ## 3. Crear la base de datos
 
-Vas a ejecutar diecinueve archivos, **en orden**. Cada uno crea una parte.
+Vas a ejecutar veintiún archivos, **en orden**. Cada uno crea una parte.
 
 1. En el menú de la izquierda, pulsa **SQL Editor** (icono de hoja con `>_`).
 2. Pulsa **New query**.
@@ -101,6 +101,17 @@ Vas a ejecutar diecinueve archivos, **en orden**. Cada uno crea una parte.
    | 17.º | `supabase/sql/18_schema_informes.sql` | El registro de copias y el uso del almacenamiento |
    | 18.º | `supabase/sql/19_funciones_informes.sql` | El panel de inicio, los informes, las copias y la restauración |
    | 19.º | `supabase/sql/20_seguridad_informes.sql` | Permisos de informes y copias de seguridad |
+   | 20.º | `supabase/sql/22_correcciones_auditoria.sql` | Correcciones de seguridad e índices |
+   | 21.º | `supabase/sql/24_google_oauth.sql` | La conexión con Google Drive |
+   | 22.º | `supabase/sql/25_correccion_limpiar_demo.sql` | Corrección de «Limpiar datos demo» |
+   | 23.º | `supabase/sql/26_schema_partes.sql` | Partes de trabajo y asignación a proyectos |
+   | 24.º | `supabase/sql/27_funciones_partes.sql` | El funcionamiento de los partes |
+   | 25.º | `supabase/sql/28_seguridad_partes.sql` | Permisos de los partes |
+   | 26.º | `supabase/sql/29_documentacion_borrado.sql` | Categorías de documentación y borrado |
+   | 27.º | `supabase/sql/30_calendario_planificacion.sql` | Calendario y planificación |
+   | 28.º | `supabase/sql/31_obras.sql` | Las obras: agrupan proyectos, sus cuentas y su facturación |
+   | 29.º | `supabase/sql/32_trabajador_avisos_material.sql` | Avisos de taller facturables, pedir material y el calendario del trabajador |
+   | 30.º | `supabase/sql/33_revision_permisos.sql` | Revisión de permisos: datos personales, almacén y usuarios desactivados |
 
    > El archivo `05_verificacion.sql` **no hace falta ejecutarlo**: son
    > consultas de apoyo para comprobar cosas o cambiar un rol más adelante.
@@ -446,9 +457,13 @@ pantalla de acceso, en el menú y en el móvil.
 | Entra pero se queda en blanco | La publicación está a medias | **Actions** → mira si hay una marca roja ✗ y vuelve a lanzar **Run workflow**. |
 | Error 404 al abrir la dirección | GitHub Pages todavía no está activo | **Settings → Pages** → Source debe ser **GitHub Actions**. |
 | «No se ha podido conectar con el servidor» | Sin Internet, o el proyecto de Supabase está en pausa | Comprueba la conexión. Supabase pausa los proyectos gratuitos sin uso: entra en supabase.com y pulsa **Restore project**. |
-| «Falta configurar Google Drive» al subir una copia | No están puestos los secretos de Google | Repasa el [paso 15.3](#153-guardar-los-secretos-en-supabase). El botón **GENERAR BACKUP AHORA** funciona igual sin esto. |
-| «No se ha podido hablar con el servidor de copias» | Los dos programas del servidor no están publicados | Repasa el [paso 15.4](#154-publicar-los-dos-programas-del-servidor). |
-| «Google no ha dado acceso» | La clave privada está mal copiada, o la carpeta no está compartida con la cuenta de servicio | Revisa los pasos [15.2](#152-crear-la-carpeta-en-google-drive-y-compartirla) y [15.3](#153-guardar-los-secretos-en-supabase). La clave se copia entera, con los `\n`. |
+| El botón «Subir a Google Drive» está gris | Google Drive todavía no está conectado | Pulsa **Conectar Google Drive** en ese mismo recuadro ([paso 15.4](#154-conectar-google-drive)). |
+| «Falta configurar la conexión con Google» | No están puestos los dos secretos OAuth | Repasa el [paso 15.2](#152-guardar-los-secretos-en-supabase). El botón **GENERAR BACKUP AHORA** funciona igual sin esto. |
+| «No se ha podido preparar la conexión con Google» | La función `google-oauth` no está publicada | Repasa el [paso 15.3](#153-publicar-los-dos-programas-del-servidor). |
+| Google dice «redirect_uri_mismatch» | La dirección de retorno del cliente OAuth no coincide | Tiene que ser exactamente `https://TU-REFERENCIA.supabase.co/functions/v1/google-oauth/callback`, sin barra final ([paso 15.1](#151-crear-el-cliente-oauth-en-google)). |
+| «Google ya no acepta el permiso guardado» | Alguien retiró el acceso, o la aplicación sigue en «Testing» y caducó a los 7 días | Pulsa **Reconectar**. Y comprueba que en Google la aplicación está **In production** ([paso 15.1.6](#151-crear-el-cliente-oauth-en-google)). |
+| «Google no ha devuelto un permiso duradero» | Google ya había dado el permiso antes y no lo repite | Entra en `myaccount.google.com/permissions`, quita el acceso de METALPLAFER360 y vuelve a conectar. |
+| «No se encuentra la carpeta de las copias» | La carpeta se borró o está en la papelera de Drive | Pulsa **Reconectar**: la aplicación vuelve a crearla. |
 | La copia automática no se hace de madrugada | No se ejecutó el archivo 21, o faltan los secretos de la bóveda | Repasa el [paso 15.5](#155-programar-la-copia-diaria) y ejecuta la consulta 25 de `05_verificacion.sql`. |
 | «Este archivo no es una copia de seguridad de METALPLAFER360» | Se eligió otro ZIP | Elige el archivo que empieza por `metalplafer360-`. |
 | Al restaurar, un trabajador no reaparece | Restaurar nunca crea accesos nuevos | Dale de alta otra vez en **Trabajadores** (apartado 16); sus datos antiguos siguen ahí. |
@@ -465,136 +480,169 @@ rol, desactivar a alguien o consultar el historial.
 
 **Esto se puede dejar para otro día.** Sin hacer nada de este apartado, la
 aplicación ya hace copias: en **Configuración → Copias de seguridad** tienes el
-botón **GENERAR BACKUP AHORA**, que descarga un ZIP a tu ordenador con todos los
-datos. Lo que se configura aquí es que esa copia se haga **sola, todos los días
-a las 02:00, y se guarde en Google Drive**.
+botón **GENERAR BACKUP AHORA**, que descarga un ZIP a tu ordenador. Lo que se
+configura aquí es que esa copia se haga **sola, todos los días a las 02:00, y se
+guarde en Google Drive**.
+
+> ### Por qué se autoriza la cuenta y no se usa una «cuenta de servicio»
+>
+> Google no da espacio de almacenamiento propio a las cuentas de servicio, así
+> que una de ellas no puede guardar archivos en «Mi unidad» de una cuenta
+> Gmail normal: responde *«Service Accounts do not have storage quota»*. Por eso
+> METALPLAFER360 pide autorización a la cuenta de la empresa una sola vez, y a
+> partir de ahí sube las copias con ese permiso, también las de la madrugada.
 
 > ### Lo primero, por seguridad
 >
-> En este apartado vas a manejar un archivo con una **clave privada de Google**.
-> Esa clave **no se pega nunca** en el repositorio de GitHub, ni en el código, ni
-> en ningún archivo del proyecto. Solo se pega en la pantalla de secretos de
-> Supabase, que es un sitio privado. Si alguna vez tienes dudas sobre si algo es
-> un secreto: si parece una contraseña o una clave larguísima, lo es.
+> Vas a manejar un **secreto de cliente** de Google. Ese secreto **no se pega
+> nunca** en el repositorio, ni en el código, ni en ningún archivo del proyecto:
+> solo en la pantalla de secretos de Supabase, que es un sitio privado. Y el
+> permiso que Google devuelve al autorizar no lo verás nunca: se guarda cifrado
+> en la bóveda de Supabase sin pasar por el navegador.
 
-### 15.1 Crear la cuenta de servicio en Google
+### 15.1 Crear el cliente OAuth en Google
 
-Una «cuenta de servicio» es un usuario de Google que no es una persona: es el
-programa que sube las copias.
-
-1. Entra en [console.cloud.google.com](https://console.cloud.google.com) con la
-   cuenta de Google de la empresa.
+1. Entra en [console.cloud.google.com](https://console.cloud.google.com) con
+   **metalplafer@gmail.com** (la cuenta donde quieres que se guarden las copias).
 2. Arriba a la izquierda, despliega el selector de proyectos y pulsa
-   **New project** (Proyecto nuevo). Llámalo `metalplafer360` y pulsa **Create**.
-3. Espera a que el proyecto quede seleccionado (aparece arriba su nombre).
-4. En el buscador de arriba escribe **Google Drive API** y ábrela. Pulsa
-   **Enable** (Habilitar).
-5. En el buscador escribe **Service accounts** (Cuentas de servicio) y ábrelo.
-6. Pulsa **Create service account**:
-   - *Service account name*: `copias-metalplafer360`
-   - Pulsa **Create and continue**, luego **Done** (los pasos de permisos se
-     dejan vacíos).
-7. Ya aparece en la lista. **Copia su dirección de correo**, que es algo como
-   `copias-metalplafer360@metalplafer360.iam.gserviceaccount.com`. La necesitas
-   dos veces: guárdala en un bloc de notas.
-8. Pulsa sobre ella → pestaña **Keys** (Claves) → **Add key** → **Create new
-   key** → formato **JSON** → **Create**.
-9. Se descarga un archivo `.json` a tu ordenador. **Ese archivo es la llave de
-   la caja fuerte**: no lo subas a ningún sitio y bórralo cuando termines este
-   apartado.
+   **New project**. Llámalo `metalplafer360` y pulsa **Create**.
+   *Si ya creaste este proyecto para la cuenta de servicio, úsalo y no crees otro.*
+3. En el buscador de arriba escribe **Google Drive API**, ábrela y pulsa
+   **Enable** (si ya estaba habilitada, no hagas nada).
+4. En el menú, ve a **APIs y servicios → Pantalla de consentimiento de OAuth**:
+   - *User type*: **External**. Pulsa **Create**.
+   - *App name*: `METALPLAFER360`.
+   - *User support email* y *Developer contact*: `metalplafer@gmail.com`.
+   - Guarda y continúa.
+5. En el paso **Scopes**, pulsa **Add or remove scopes** y marca únicamente:
 
-### 15.2 Crear la carpeta en Google Drive y compartirla
+   ```
+   https://www.googleapis.com/auth/drive.file
+   ```
 
-1. Entra en [drive.google.com](https://drive.google.com) con la cuenta de la
-   empresa.
-2. Crea una carpeta llamada **METALPLAFER360 · Copias de seguridad**.
-3. Ábrela, pulsa el botón **Compartir**.
-4. Pega la **dirección de la cuenta de servicio** del paso 15.1.7, dale permiso
-   de **Editor** y pulsa **Enviar**. (Si avisa de que no es una dirección de
-   correo normal, acéptalo igualmente.)
-5. Con la carpeta abierta, mira la dirección del navegador. Al final hay un
-   código largo:
-   `https://drive.google.com/drive/folders/`**`1a2B3c4D5e6F7g8H9i`**
-   Copia ese código: es el **identificador de la carpeta**.
+   Es el permiso más pequeño que sirve: deja a la aplicación crear y manejar
+   **sus propios** archivos en Drive, y no le da acceso a nada más de tu Drive.
+   Guarda y continúa hasta el final.
 
-### 15.3 Guardar los secretos en Supabase
+6. **MUY IMPORTANTE.** Vuelve a la pantalla de consentimiento y pulsa
+   **PUBLISH APP** (*Publicar aplicación*), hasta que el estado diga
+   **In production**.
+
+   > Mientras la aplicación esté en **Testing**, Google caduca el permiso
+   > **cada 7 días** y la copia automática dejaría de funcionar al cabo de una
+   > semana. Como solo se usa `drive.file`, que no es un permiso sensible,
+   > publicarla es inmediato y **no hace falta ninguna verificación de Google**.
+   > Si te avisa de que la aplicación no está verificada, es normal y no afecta.
+
+7. Ve a **APIs y servicios → Credenciales** → **Create credentials** →
+   **OAuth client ID**:
+   - *Application type*: **Web application**.
+   - *Name*: `METALPLAFER360`.
+   - En **Authorized redirect URIs**, pulsa **ADD URI** y pega exactamente:
+
+     ```
+     https://TU-REFERENCIA.supabase.co/functions/v1/google-oauth/callback
+     ```
+
+     Cambiando `TU-REFERENCIA` por la de tu proyecto (la ves en Supabase, en
+     **Project Settings → General → Reference ID**). Tiene que coincidir letra
+     por letra, sin barra al final.
+   - Pulsa **Create**.
+
+8. Google te enseña el **Client ID** y el **Client secret**. Déjalos a mano:
+   van al paso siguiente y a ningún otro sitio.
+
+### 15.2 Guardar los secretos en Supabase
 
 1. Abre tu proyecto en [supabase.com](https://supabase.com).
 2. Menú de la izquierda → **Edge Functions** → pestaña **Secrets**
    (en algunas versiones: **Project Settings → Edge Functions → Secrets**).
-3. Añade estos secretos, uno a uno, con **Add new secret**:
+3. Añade estos tres con **Add new secret**:
 
    | Nombre | Valor |
    |---|---|
-   | `GOOGLE_SERVICE_ACCOUNT_EMAIL` | La dirección de la cuenta de servicio (paso 15.1.7) |
-   | `GOOGLE_PRIVATE_KEY` | El valor de `private_key` del archivo `.json` (ver abajo) |
-   | `GOOGLE_DRIVE_FOLDER_ID` | El identificador de la carpeta (paso 15.2.5) |
+   | `GOOGLE_OAUTH_CLIENT_ID` | El Client ID del paso 15.1.8 |
+   | `GOOGLE_OAUTH_CLIENT_SECRET` | El Client secret del paso 15.1.8 |
    | `BACKUP_CRON_SECRET` | Una frase larga que te inventes, por ejemplo `copias-metalplafer-2026-xyz` |
 
-   **Cómo sacar `GOOGLE_PRIVATE_KEY`:** abre el archivo `.json` descargado con
-   el Bloc de notas. Busca la línea que empieza por `"private_key":` y copia
-   **todo lo que hay entre las comillas**, empezando por `-----BEGIN PRIVATE
-   KEY-----` y terminando en `-----END PRIVATE KEY-----\n`. Se copia tal cual,
-   con los `\n` incluidos: la aplicación ya sabe interpretarlos.
+   > Si ya tenías `BACKUP_CRON_SECRET` de antes, **déjalo como está**.
+   > Los secretos `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_PRIVATE_KEY` y
+   > `GOOGLE_DRIVE_FOLDER_ID` ya no se usan; puedes dejarlos ahí sin problema
+   > o borrarlos cuando compruebes que todo funciona.
 
-4. Cuando termines, **borra el archivo `.json` de tu ordenador** (y de la
-   papelera).
+### 15.3 Publicar los dos programas del servidor
 
-### 15.4 Publicar los dos programas del servidor
-
-Estos programas son los únicos que conocen las claves. Para publicarlos hace
-falta instalar la herramienta de Supabase **una sola vez**:
+Hace falta la herramienta de Supabase, **una sola vez**:
 
 1. Instala [Node.js](https://nodejs.org) si no lo tienes (botón grande «LTS»).
-2. Abre la **Terminal** (en Windows: *Símbolo del sistema*) en la carpeta del
-   proyecto descargado de GitHub y escribe, una línea cada vez:
+2. Abre la **Terminal** en la carpeta del proyecto y escribe, una línea cada vez:
 
 ```bash
 npm install -g supabase
 supabase login
 supabase link --project-ref TU-REFERENCIA-DE-PROYECTO
-supabase functions deploy admin-users
+supabase functions deploy google-oauth
 supabase functions deploy backup-drive
+supabase functions deploy admin-users
 ```
 
-   La **referencia del proyecto** es el trozo de la dirección de Supabase entre
-   `https://` y `.supabase.co` (lo ves en **Project Settings → General →
-   Reference ID**).
+> El proyecto incluye un archivo `supabase/config.toml` que le dice a Supabase
+> que `google-oauth` y `backup-drive` pueden recibir llamadas sin sesión
+> iniciada. **Hace falta**: la vuelta de Google y la tarea de las 02:00 no
+> tienen ninguna sesión. No las deja abiertas: cada una comprueba por su cuenta
+> quién llama (sesión de administración, el secreto del cron, o el código de un
+> solo uso de Google).
 
-> Si prefieres no instalar nada: sin estos dos programas, la aplicación sigue
-> funcionando entera. Solo dejan de estar disponibles el botón «Subir a Google
-> Drive», la copia automática y el alta de trabajadores desde la aplicación
-> (los trabajadores se pueden seguir creando a mano en Supabase, como en el
-> [apartado 7](#7-crear-un-trabajador-de-prueba)).
+### 15.4 Conectar Google Drive
+
+1. Entra en la aplicación como administración.
+2. **Configuración → Copias de seguridad**. Verás un recuadro que pone
+   **Google Drive · No conectado**.
+3. Pulsa **Conectar Google Drive**. Se abre una ventana de Google.
+4. Entra con **metalplafer@gmail.com** y acepta.
+   - Si Google avisa de que la aplicación no está verificada, pulsa
+     **Configuración avanzada → Ir a METALPLAFER360**. Es tu propia aplicación.
+5. Cuando diga **«Google Drive conectado»**, cierra esa ventana y vuelve a la
+   aplicación. El recuadro debe poner **Conectado**, con la cuenta y la carpeta.
+
+> La aplicación **crea ella misma** la carpeta
+> `METALPLAFER360 · Copias de seguridad` en tu «Mi unidad». Es necesario:
+> con el permiso `drive.file`, que es el más seguro, solo puede escribir en
+> carpetas creadas por ella. Si tenías copias en una carpeta anterior con ese
+> mismo nombre, siguen donde están; puedes arrastrarlas a la nueva o borrar la
+> vieja. La carpeta nueva la puedes mover o renombrar cuando quieras: la
+> aplicación la sigue encontrando.
 
 ### 15.5 Programar la copia diaria
 
-1. En Supabase, menú de la izquierda → **SQL Editor** → **New query**.
-2. Pega esto, **cambiando las dos frases** por la dirección de tu proyecto y por
-   el mismo `BACKUP_CRON_SECRET` que pusiste en el paso 15.3, y pulsa **Run**:
+1. En Supabase, **SQL Editor** → **New query**.
+2. Pega esto, cambiando las dos frases, y pulsa **Run**:
 
 ```sql
 select vault.create_secret('https://TU-REFERENCIA.supabase.co', 'm360_project_url');
-select vault.create_secret('copias-metalplafer-2026-xyz',       'm360_backup_secret');
+select vault.create_secret('la-misma-frase-de-BACKUP_CRON_SECRET', 'm360_backup_secret');
 ```
 
 3. Borra la ventana, pega el contenido de
-   `supabase/sql/21_backup_automatico.sql` y pulsa **Run**. Abajo debe aparecer
-   un aviso que dice *«Copia automática programada: todos los días a las 02:00
-   (hora de Madrid)»*.
+   `supabase/sql/21_backup_automatico.sql` y pulsa **Run**. Debe aparecer
+   *«Copia automática programada: todos los días a las 02:00 (hora de Madrid)»*.
 
 ### 15.6 Comprobar que funciona
 
-1. Entra en la aplicación como administración.
-2. **Configuración → Copias de seguridad → Subir a Google Drive**.
-3. En unos segundos debe aparecer una fila nueva en la tabla «Copias hechas»,
-   con destino **Google Drive** y estado **Completada**, y el nombre del archivo
-   es un enlace que lo abre en Drive.
-4. Mira la carpeta de Drive: el ZIP debe estar ahí.
+1. **Configuración → Copias de seguridad → Subir a Google Drive**.
+2. En unos segundos aparece una fila nueva en «Copias hechas», con destino
+   **Google Drive** y estado **Completada**, y el nombre del archivo es un
+   enlace que lo abre.
+3. Entra en [drive.google.com](https://drive.google.com) con
+   metalplafer@gmail.com y abre **METALPLAFER360 · Copias de seguridad**: el
+   ZIP tiene que estar ahí.
+4. Para comprobar semanas después que la copia automática se sigue haciendo,
+   ejecuta la consulta 25 de `supabase/sql/05_verificacion.sql`.
 
-A partir de ese momento, la copia se hace sola cada madrugada. Para comprobar
-semanas después que se sigue haciendo, ejecuta la consulta 25 de
-`supabase/sql/05_verificacion.sql`.
+> **Si algún día deja de funcionar**, el recuadro de Configuración pondrá
+> **Error de conexión** y explicará por qué. Lo más habitual es que alguien
+> haya retirado el permiso desde la cuenta de Google: se arregla pulsando
+> **Reconectar**.
 
 > **¿Cuánto se guarda?** 30 días, y se puede cambiar en **Configuración →
 > Copias de seguridad → Días que se conservan**. Las copias automáticas más
@@ -610,7 +658,7 @@ semanas después que se sigue haciendo, ejecuta la consulta 25 de
 
 ## 16. Dar de alta trabajadores desde la aplicación (opcional)
 
-Si has hecho el [paso 15.4](#154-publicar-los-dos-programas-del-servidor), ya no
+Si has hecho el [paso 15.3](#153-publicar-los-dos-programas-del-servidor), ya no
 hace falta crear a nadie a mano en Supabase:
 
 1. Entra como administración → **Trabajadores** → **Nuevo trabajador**.

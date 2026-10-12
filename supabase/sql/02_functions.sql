@@ -262,7 +262,9 @@ create trigger zz_audit after insert or update or delete on public.app_settings
   for each row execute function public.trg_audit();
 
 -- El historial es inmutable. La única excepción es el mantenimiento desde
--- el servidor (limpieza de datos demo y restauración, fases posteriores).
+-- el servidor (la restauración de una copia de seguridad).
+-- El archivo 25 añade una segunda excepción, igual de estrecha: retirar
+-- las anotaciones MARCADAS COMO EJEMPLO mientras se limpia el ejemplo.
 create or replace function public.trg_audit_immutable() returns trigger
 language plpgsql as $$
 begin

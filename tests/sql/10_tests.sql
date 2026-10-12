@@ -27,6 +27,20 @@ begin
   if not coalesce(p_cond, false) then raise exception 'FALLO [%] %', p_area, p_name; end if;
 end $$;
 
+-- Igual que la anterior, pero con un dato de diagnóstico que solo se
+-- añade al mensaje si la comprobación FALLA. Las revisiones que recorren
+-- el catálogo lo necesitan: sin esto, un fallo dice «hay una fuga» y no
+-- dice dónde.
+create or replace function test.ok(p_area text, p_name text, p_cond boolean, p_detail text)
+returns void language plpgsql as $$
+begin
+  perform test.ok(
+    p_area,
+    p_name || case when coalesce(p_cond, false) then ''
+                   else ' → ' || coalesce(nullif(p_detail, ''), '(sin detalle)') end,
+    p_cond);
+end $$;
+
 -- Comprueba que una operación es RECHAZADA con el código de error esperado.
 create or replace function test.err(p_area text, p_name text, p_sql text, p_state text) returns void
 language plpgsql as $$
@@ -161,7 +175,7 @@ select test.ok('seguridad', 'No puede ascenderse a administrador',
   (select role = 'worker' from public.profiles where id = test.id('juan')));
 update public.profiles set active = false, username = 'otro' where id = test.id('juan');
 select test.ok('seguridad', 'No puede cambiar su estado ni su nombre de usuario',
-  (select active and username = 'juan' from public.profiles where id = test.id('juan')));
+  (select active and username = 'juan' from public.profiles_full where id = test.id('juan')));
 update public.profiles set full_name = 'HACKEADO' where id = test.id('salvi');
 select test.ok('seguridad', 'No puede modificar la ficha de un administrador',
   (select full_name = 'Salvi' from public.profiles where id = test.id('salvi')));
@@ -179,8 +193,15 @@ select test.ok('seguridad', 'Solo ve en el historial lo que ha hecho él',
 -- Cambios propios permitidos
 update public.profiles set full_name = 'Juan Ortega', phone = '600111222',
        preferences = '{"vista":"lista"}'::jsonb where id = test.id('juan');
+-- REVISIÓN: el teléfono, el correo, el usuario y las preferencias ya no
+-- se conceden columna a columna sobre «profiles». Cada uno lee los suyos
+-- por «profiles_full», que es la puerta que les corresponde.
 select test.ok('trabajador', 'Sí puede corregir su nombre, teléfono y preferencias',
-  (select full_name = 'Juan Ortega' and phone = '600111222' from public.profiles where id = test.id('juan')));
+  (select full_name = 'Juan Ortega' and phone = '600111222'
+     from public.profiles_full where id = test.id('juan')));
+
+select test.ok('trabajador', 'Y pedir el teléfono por la tabla es un error, no un dato',
+  not has_column_privilege('authenticated', 'public.profiles'::regclass, 'phone', 'SELECT'));
 
 
 \echo '== ALMACENAMIENTO DE ARCHIVOS'

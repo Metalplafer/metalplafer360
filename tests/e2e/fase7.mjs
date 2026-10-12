@@ -222,7 +222,14 @@ try {
   await page.locator('.sidebar nav a:has-text("Calendario")').click();
   await page.waitForTimeout(1100);
   const calendario = await page.locator('main').innerText();
-  check('La orden aparece en el calendario', calendario.includes(`OT-${YEAR}-001`));
+  // BLOQUE 3: el calendario pinta la PLANIFICACIÓN del proyecto, no la
+  // orden suelta. Este proyecto del recorrido se creó SIN horas
+  // previstas, así que no hay nada que planificar: no se inventa una
+  // duración. Eso también hay que comprobarlo.
+  check('Un proyecto sin horas previstas no se planifica solo',
+    Number(db.projects[0].budget_hours_fab) === 0 && !db.projects[0].fab_start);
+  check('Y por eso no aparece en el calendario',
+    !calendario.includes(`PROY-${YEAR}-001`));
   check('Y el material previsto también', calendario.includes('Pletina'));
   check('Los estados del calendario salen en castellano, no como los guarda la base',
     !/por_asignar|en_curso|pendiente_cobro|cobrado_parcial/.test(calendario));
@@ -478,6 +485,10 @@ try {
     ['/rest/v1/rpc/start_backup', 'POST', { p_kind: 'manual', p_destination: 'descarga' }],
     ['/rest/v1/rpc/restore_data', 'POST', { p_payload: {}, p_scope: ['clientes'] }],
     ['/rest/v1/rpc/set_company', 'POST', { p_company: { name: 'Mía SL' } }],
+    ['/rest/v1/rpc/drive_status', 'POST', {}],
+    ['/rest/v1/rpc/drive_get_token', 'POST', {}],
+    ['/rest/v1/rpc/drive_put_token', 'POST', { p_refresh: 'token-robado' }],
+    ['/rest/v1/rpc/drive_disconnect', 'POST', {}],
     ['/rest/v1/rpc/archive_contact', 'POST', { p_contact: db.client_contacts[0]?.id }],
   ];
 
@@ -498,6 +509,17 @@ try {
     check(`Un trabajador NO puede ${r.ruta.split('/').pop()}`,
       r.status >= 400 && /permiso/i.test(r.texto), `${r.status} · ${r.texto}`);
   }
+
+  // Y tampoco puede conectar ni desconectar Google Drive desde la función.
+  const drive = await m.evaluate(async (base) => {
+    const r = await fetch(`${base}/functions/v1/google-oauth`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'start' }),
+    });
+    return { status: r.status, texto: (await r.text()).slice(0, 120) };
+  }, 'https://ejemplo.supabase.co');
+  check('Un trabajador NO puede conectar ni cambiar Google Drive',
+    drive.status >= 400 && /permiso/i.test(drive.texto), `${drive.status} · ${drive.texto}`);
 
   const lecturas = await m.evaluate(async (base) => {
     const out = {};

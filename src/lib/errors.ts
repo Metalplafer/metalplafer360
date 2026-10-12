@@ -67,13 +67,36 @@ export function toUserMessage(err: unknown): string {
   if (e.code && OWN_CODES.has(e.code) && msg) return msg;
   if (e.code === '42501' || low.includes('row-level security') ||
       low.includes('permission denied') || low.includes('no tienes permisos')) {
-    return msg.startsWith('No tienes') ? msg : 'No tienes permisos para realizar esta acción.';
+    // La base de datos usa este mismo código para dos cosas distintas:
+    //   · sus propios rechazos, en inglés («permission denied for table …»),
+    //     que no le dicen nada a nadie y se sustituyen;
+    //   · nuestros avisos, escritos en castellano, que explican el motivo
+    //     de verdad («El historial no se puede modificar ni eliminar»).
+    // Tapar los segundos hacía que la pantalla dijese «no tienes permisos»
+    // cuando el problema era otro, y despistaba a quien lo estaba usando.
+    const esDePostgres = low.includes('permission denied')
+      || low.includes('must be owner')
+      || low.includes('row-level security')
+      || low.includes('insufficient privilege');
+    return msg && !esDePostgres ? msg : 'No tienes permisos para realizar esta acción.';
   }
   if (e.code === '23505') {
     if (low.includes('profiles_username_key')) return 'Ya existe un usuario con ese nombre.';
     return 'Ya existe un registro con esos datos.';
   }
-  if (e.code === '23503') return 'No se puede completar: hay datos relacionados que faltan o están en uso.';
+  if (e.code === '23503') {
+    // Igual que con el 42501: este código lo usan DOS cosas distintas.
+    //   · PostgreSQL, en inglés, cuando una clave foránea no cuadra;
+    //   · nosotros, en castellano, cuando nos negamos a borrar algo y
+    //     explicamos exactamente por qué («tiene 12 partes y 40 h»).
+    // Tapar el segundo dejaba al usuario sin saber qué le pasa.
+    const esDePostgres = low.includes('violates foreign key constraint')
+      || low.includes('is still referenced')
+      || low.includes('insert or update on table');
+    return msg && !esDePostgres
+      ? msg
+      : 'No se puede completar: hay datos relacionados que faltan o están en uso.';
+  }
   if (e.code === '23514') {
     if (low.includes('administrador')) return msg;
     return 'Algún dato no es válido. Revisa el formulario.';

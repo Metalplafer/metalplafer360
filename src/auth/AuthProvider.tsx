@@ -38,8 +38,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loadProfile = useCallback(async (current: Session | null) => {
     if (!current) { setProfile(null); return; }
 
+    // «profiles_full» en lugar de «profiles»: el teléfono, el correo y las
+    // preferencias ya no se conceden sobre la tabla (REVISIÓN), y cada
+    // persona los lee por esta vista, que solo le devuelve los suyos.
     const { data, error } = await supabase
-      .from('profiles').select('*').eq('id', current.user.id).maybeSingle();
+      .from('profiles_full').select('*').eq('id', current.user.id).maybeSingle();
 
     if (error) { setAuthError(toUserMessage(error)); setProfile(null); return; }
 

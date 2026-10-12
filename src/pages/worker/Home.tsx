@@ -1,11 +1,17 @@
 import { Link } from 'react-router-dom';
-import { Bell, CalendarDays, CheckCircle2, ClipboardList, Info, TriangleAlert } from 'lucide-react';
+import {
+  Bell, CalendarDays, CheckCircle2, ClipboardList, FileOutput, FolderKanban, Info, Plus,
+  TriangleAlert,
+} from 'lucide-react';
 import { useAuth } from '@/auth/AuthProvider';
 import { useAsync } from '@/hooks/useAsync';
 import { Empty, ErrorBox, Loading } from '@/components/ui/Feedback';
 import { OrderCard } from '@/components/shared/OrderCard';
 import { myOrders } from '@/services/orders';
 import { listNotifications, markRead } from '@/services/notifications';
+import { listReports, myProjects } from '@/services/partes';
+import { MaterialNeedButton } from '@/components/shared/MaterialNeedButton';
+import { PlanLine } from '@/components/shared/PlanLine';
 import { addDays, fmtDateTime, greeting, longDate, todayMadrid } from '@/lib/format';
 
 /**
@@ -23,6 +29,13 @@ export default function WorkerHome() {
     [today],
   );
   const notices = useAsync(() => listNotifications(10), []);
+  const proyectos = useAsync(() => myProjects(), []);
+  const partes = useAsync(
+    async () => (profile
+      ? listReports({ workerId: profile.id, pageSize: 50 })
+      : { rows: [], total: 0 }),
+    [profile?.id],
+  );
 
   if (orders.loading && !orders.data) return <Loading />;
   if (orders.error) return <ErrorBox message={orders.error} onRetry={orders.reload} />;
@@ -36,6 +49,9 @@ export default function WorkerHome() {
     (o.status === 'devuelta') || (o.scheduled_date < today && open.has(o.status)));
 
   const unread = (notices.data ?? []).filter((n) => !n.read_at);
+  const misProyectos = proyectos.data ?? [];
+  const porCorregir = (partes.data?.rows ?? [])
+    .filter((r) => r.status === 'rechazado' || r.status === 'borrador');
 
   async function readAll() {
     try { await markRead(); await notices.reload(); } catch { /* sin conexión */ }
@@ -46,6 +62,65 @@ export default function WorkerHome() {
       <div className="w-greeting">
         <span className="muted">{longDate(today)}</span>
         <h1>{greeting()}, {profile?.full_name.split(' ')[0]}</h1>
+      </div>
+
+      {porCorregir.length > 0 && (
+        <section className="w-section">
+          <h2><TriangleAlert size={17} aria-hidden />Partes por terminar</h2>
+          <div className="stack">
+            {porCorregir.map((r) => (
+              <Link key={r.id} className="ot-card" to={`/t/partes/${r.id}`}>
+                <div className="ot-card-top">
+                  <span className="plate">{r.code}</span>
+                </div>
+                <strong className="ot-card-title">
+                  {r.project ? r.project.name : 'Sin proyecto'}
+                </strong>
+                <p className="ot-card-desc">
+                  {r.status === 'rechazado'
+                    ? `Devuelto por administración. Motivo: ${r.reject_reason ?? ''}`
+                    : 'Lo tienes guardado sin enviar.'}
+                </p>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <section className="w-section">
+        <h2><FolderKanban size={17} aria-hidden />Mis proyectos</h2>
+        <div className="w-block">
+          {misProyectos.length ? (
+            <ul className="mini-list">
+              {misProyectos.slice(0, 5).map((p) => (
+                <li key={p.id}>
+                  <Link to={`/t/proyectos/${p.id}`}>
+                    <span className="mono">{p.code}</span>
+                    <span>{p.name}</span>
+                    <PlanLine plan={p} compact />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted" style={{ margin: 0 }}>
+              Todavía no tienes proyectos asignados. Puedes rellenar un parte igualmente
+              con «Parte sin proyecto»: administración lo asignará después.
+            </p>
+          )}
+        </div>
+      </section>
+
+      <div className="stack" style={{ marginBottom: 16, gap: 8 }}>
+        <Link className="btn btn-lg btn-primary btn-block" to="/t/partes/nuevo">
+          <Plus />Parte de trabajo
+        </Link>
+        {/* BLOQUE 5: las dos cosas que antes había que pedir a
+            administración, ahora a un toque. */}
+        <Link className="btn btn-lg btn-block" to="/t/partes/nuevo?sin-proyecto=1">
+          <FileOutput />Parte sin proyecto
+        </Link>
+        <MaterialNeedButton block />
       </div>
 
       {alertas.length > 0 && (
@@ -131,6 +206,9 @@ export default function WorkerHome() {
       <section className="w-section">
         <h2>Accesos rápidos</h2>
         <div className="w-big-actions">
+          <Link className="btn" to="/t/proyectos"><FolderKanban aria-hidden />Mis proyectos</Link>
+          <Link className="btn" to="/t/partes"><ClipboardList aria-hidden />Mis partes</Link>
+          <Link className="btn" to="/t/calendario"><CalendarDays aria-hidden />Calendario</Link>
           <Link className="btn" to="/t/ordenes"><ClipboardList aria-hidden />Mis órdenes</Link>
           <Link className="btn" to="/t/historial"><CheckCircle2 aria-hidden />Historial</Link>
         </div>

@@ -15,6 +15,9 @@ const ClientDetail = lazy(() => import('@/pages/admin/ClientDetail'));
 const FichasList = lazy(() => import('@/pages/admin/FichasList'));
 const FichaForm = lazy(() => import('@/pages/admin/FichaForm'));
 const FichaDetail = lazy(() => import('@/pages/admin/FichaDetail'));
+const WorksList = lazy(() => import('@/pages/admin/WorksList'));
+const WorkForm = lazy(() => import('@/pages/admin/WorkForm'));
+const WorkDetail = lazy(() => import('@/pages/admin/WorkDetail'));
 const ProjectsList = lazy(() => import('@/pages/admin/ProjectsList'));
 const ProjectForm = lazy(() => import('@/pages/admin/ProjectForm'));
 const ProjectDetail = lazy(() => import('@/pages/admin/ProjectDetail'));
@@ -32,6 +35,12 @@ const WorkerHome = lazy(() => import('@/pages/worker/Home'));
 const WorkerOrders = lazy(() => import('@/pages/worker/MyOrders'));
 const WorkerOrderDetail = lazy(() => import('@/pages/worker/OrderDetail'));
 const WorkerHistory = lazy(() => import('@/pages/worker/History'));
+const AdminReports = lazy(() => import('@/pages/admin/ReportsList'));
+const AdminReportDetail = lazy(() => import('@/pages/admin/ReportDetail'));
+const WorkerProjects = lazy(() => import('@/pages/worker/MyProjects'));
+const WorkerProjectDetail = lazy(() => import('@/pages/worker/ProjectDetail'));
+const WorkerReports = lazy(() => import('@/pages/worker/MyReports'));
+const WorkerReportDetail = lazy(() => import('@/pages/worker/ReportDetail'));
 const WorkerModule = lazy(() => import('@/pages/worker/ModulePage'));
 const Profile = lazy(() => import('@/pages/worker/Profile'));
 
@@ -70,11 +79,18 @@ export function App() {
             <Route path="fichas/:id" element={<Lazy><FichaDetail /></Lazy>} />
             <Route path="fichas/:id/editar" element={<Lazy><FichaForm /></Lazy>} />
 
+            <Route path="obras" element={<Lazy><WorksList /></Lazy>} />
+            <Route path="obras/nueva" element={<Lazy><WorkForm /></Lazy>} />
+            <Route path="obras/:id" element={<Lazy><WorkDetail /></Lazy>} />
+            <Route path="obras/:id/editar" element={<Lazy><WorkForm /></Lazy>} />
+
             <Route path="proyectos" element={<Lazy><ProjectsList /></Lazy>} />
             <Route path="proyectos/nuevo" element={<Lazy><ProjectForm /></Lazy>} />
             <Route path="proyectos/:id" element={<Lazy><ProjectDetail /></Lazy>} />
             <Route path="proyectos/:id/editar" element={<Lazy><ProjectForm /></Lazy>} />
 
+            <Route path="partes" element={<Lazy><AdminReports /></Lazy>} />
+            <Route path="partes/:id" element={<Lazy><AdminReportDetail /></Lazy>} />
             <Route path="ordenes" element={<Lazy><OrdersList /></Lazy>} />
             <Route path="ordenes/nueva" element={<Lazy><OrderForm /></Lazy>} />
             <Route path="ordenes/:id" element={<Lazy><OrderDetail /></Lazy>} />
@@ -99,6 +115,10 @@ export function App() {
           {/* ---------- TRABAJADOR ---------- */}
           <Route path="/t" element={<RequireRole role="worker"><WorkerLayout /></RequireRole>}>
             <Route index element={<Lazy><WorkerHome /></Lazy>} />
+            <Route path="proyectos" element={<Lazy><WorkerProjects /></Lazy>} />
+            <Route path="proyectos/:id" element={<Lazy><WorkerProjectDetail /></Lazy>} />
+            <Route path="partes" element={<Lazy><WorkerReports /></Lazy>} />
+            <Route path="partes/:id" element={<Lazy><WorkerReportDetail /></Lazy>} />
             <Route path="ordenes" element={<Lazy><WorkerOrders /></Lazy>} />
             <Route path="ordenes/:id" element={<Lazy><WorkerOrderDetail /></Lazy>} />
             <Route path="historial" element={<Lazy><WorkerHistory /></Lazy>} />

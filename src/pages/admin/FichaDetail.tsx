@@ -1,7 +1,7 @@
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
-  Archive, ArchiveRestore, ArrowLeft, Building2, CalendarClock, FolderKanban, MapPin,
-  MessageCircle, Pencil, Phone, UserRound,
+  Archive, ArchiveRestore, ArrowLeft, Building2, CalendarClock, Clock, FolderKanban, Mail,
+  MapPin, MessageCircle, Pencil, Phone, Trash2, UserRound,
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAsync } from '@/hooks/useAsync';
@@ -9,13 +9,14 @@ import { useDialogs } from '@/components/ui/Dialogs';
 import { Badge, PageHeader, Panel } from '@/components/ui/Layout';
 import { Alert, ErrorBox, Loading } from '@/components/ui/Feedback';
 import { DocumentsPanel } from '@/components/shared/DocumentsPanel';
+import { documentPaths, removeStoredFiles } from '@/services/documents';
 import { CommentsPanel } from '@/components/shared/CommentsPanel';
 import { HistoryPanel } from '@/components/shared/HistoryPanel';
-import { getFicha, updateFicha } from '@/services/fichas';
+import { deleteFicha, getFicha, updateFicha } from '@/services/fichas';
 import { convertBudget, projectFromFicha } from '@/services/projects';
 import { listPeople } from '@/services/people';
 import { FICHA_STATUSES, FICHA_TYPE_LABEL, fichaStatus } from '@/config/constants';
-import { fmtDate, fmtDateTime, fmtEur, fmtPhone, fmtTimeShort } from '@/lib/format';
+import { fmtDate, fmtDateTime, fmtEur, fmtHours, fmtPhone, fmtTimeShort } from '@/lib/format';
 import { telLink, whatsappLink } from '@/lib/whatsapp';
 
 /** Detalle de un presupuesto, una visita o un aviso. */
@@ -92,6 +93,40 @@ export default function FichaDetail() {
     } catch (e) { toast.error(e); }
   }
 
+  /**
+   * ELIMINAR la ficha. Archivar y eliminar conviven a propósito:
+   * archivar la quita de los listados y lo conserva todo; eliminar la
+   * borra de verdad, con sus comentarios y sus archivos.
+   *
+   * Los archivos del almacén se retiran ANTES: al borrar la ficha, sus
+   * documentos se van en cascada y los archivos se quedarían huérfanos
+   * ocupando sitio para siempre.
+   */
+  async function eliminar() {
+    const ok = await confirm({
+      title: `¿Estás seguro de que quieres eliminar ${f.code}?`,
+      message: (
+        <>
+          Se borrarán también sus comentarios y sus archivos. Esto no se puede deshacer.
+          <div style={{ marginTop: 8 }}>
+            Si solo quieres quitarla de los listados, <strong>archívala</strong>:
+            se conserva todo.
+          </div>
+        </>
+      ),
+      confirmLabel: 'Eliminar',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      const rutas = await documentPaths({ fichaId: f.id });
+      await deleteFicha(f.id);
+      await removeStoredFiles(rutas).catch(() => undefined);
+      toast.success(`${f.code} se ha eliminado`);
+      navigate('/admin/fichas');
+    } catch (e) { toast.error(e); }
+  }
+
   async function convert() {
     const ok = await confirm({
       title: 'Convertir en proyecto',
@@ -137,6 +172,9 @@ export default function FichaDetail() {
           <Link className="btn" to={`/admin/fichas/${f.id}/editar`}><Pencil />Editar</Link>
           <button className="btn" onClick={toggleArchive}>
             {archived ? <><ArchiveRestore />Recuperar</> : <><Archive />Archivar</>}
+          </button>
+          <button className="btn btn-danger" onClick={eliminar}>
+            <Trash2 />Eliminar
           </button>
         </>}
       />
@@ -237,7 +275,32 @@ export default function FichaDetail() {
                 </>
               )}
 
-              {f.type === 'presupuesto' && (<><dt>Importe</dt><dd className="num">{fmtEur(f.amount)}</dd></>)}
+              {/* BLOQUE 5: el correo y las horas, que es lo que le faltaba al
+                  aviso para poder facturarlo. */}
+              {f.type === 'aviso' && f.email && (
+                <>
+                  <dt><span className="row" style={{ gap: 6 }}><Mail size={15} />Correo</span></dt>
+                  <dd>{f.email}</dd>
+                </>
+              )}
+
+              {f.type === 'aviso' && (
+                <>
+                  <dt><span className="row" style={{ gap: 6 }}><Clock size={15} />Horas dedicadas</span></dt>
+                  <dd className="num">
+                    {f.hours != null ? fmtHours(f.hours) : <span className="faint">Sin anotar</span>}
+                  </dd>
+                </>
+              )}
+
+              {f.type !== 'visita' && (
+                <>
+                  <dt>Importe</dt>
+                  <dd className="num">
+                    {f.amount != null ? fmtEur(f.amount) : <span className="faint">Sin importe</span>}
+                  </dd>
+                </>
+              )}
 
               <dt><span className="row" style={{ gap: 6 }}><UserRound size={15} />Responsable</span></dt>
               <dd>{f.assignee?.full_name ?? <span className="faint">Sin asignar</span>}</dd>
@@ -254,7 +317,8 @@ export default function FichaDetail() {
         </div>
 
         <div className="stack">
-          <DocumentsPanel owner={{ fichaId: f.id }} />
+          <DocumentsPanel owner={{ fichaId: f.id }}
+            onChange={() => setHistoryKey((k) => k + 1)} />
           <CommentsPanel owner={{ fichaId: f.id }} />
         </div>
       </div>

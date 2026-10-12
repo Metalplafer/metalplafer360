@@ -24,6 +24,8 @@ export interface AppSettings {
   /** Ajustes del backup automático. Las credenciales de Google NO están aquí. */
   backup: Record<string, unknown>;
   updated_at: string;
+  /** Días laborables libres entre proyectos en la planificación. */
+  gap_days: number;
 }
 
 export interface AuditRow {
@@ -118,6 +120,10 @@ export interface Ficha {
   description: string | null;
   address: string | null;
   phone: string | null;
+  /** BLOQUE 5 · correo de contacto del aviso. La aplicación no envía correos. */
+  email: string | null;
+  /** BLOQUE 5 · horas dedicadas al aviso, para que administración lo facture. */
+  hours: number | null;
   scheduled_date: string | null;
   scheduled_time: string | null;
   assigned_to: string | null;
@@ -131,6 +137,13 @@ export interface Ficha {
   assignee?: Pick<Profile, 'id' | 'full_name'> | null;
 }
 
+/**
+ * Las dos únicas categorías de documentación.
+ * «tecnica» la ve el trabajador asignado; «administrativa», solo
+ * administración, y lo impide la base de datos, no la pantalla.
+ */
+export type DocScope = 'tecnica' | 'administrativa';
+
 export interface DocumentRow {
   id: string;
   ficha_id: string | null;
@@ -142,6 +155,9 @@ export interface DocumentRow {
   mime_type: string | null;
   size_bytes: number;
   category: DocCategory;
+  /** Quién puede verlo. Ver DocScope. */
+  scope: DocScope;
+  report_id?: string | null;
   uploaded_by: string | null;
   deleted_at: string | null;
   created_at: string;
@@ -193,6 +209,21 @@ export interface Project {
   contact?: Pick<ClientContact, 'id' | 'name' | 'phone'> | null;
   source?: Pick<Ficha, 'id' | 'code'> | null;
   substatuses?: { phase: ProjectPhase; substatus: string }[];
+  // BLOQUE 3 · planificación
+  fab_start: string | null;
+  fab_end: string | null;
+  mont_start: string | null;
+  mont_end: string | null;
+  fab_workers: number;
+  mont_workers: number;
+  fab_manual: boolean;
+  mont_manual: boolean;
+  autoplan: boolean;
+  // BLOQUE 4 · obra y facturación manual
+  work_id: string | null;
+  invoiced_amount: number | null;
+  invoiced_on: string | null;
+  work?: { id: string; code: string; name: string } | null;
 }
 
 export interface PhaseSuggestion {
@@ -324,7 +355,8 @@ export interface Material {
 /** Lo que comunica un trabajador. Nunca se convierte solo en material. */
 export interface MaterialRequest {
   id: string;
-  project_id: string;
+  /** BLOQUE 5 · puede no haberlo: material de taller, o todavía no se sabe. */
+  project_id: string | null;
   order_id: string | null;
   worker_id: string;
   body: string;
@@ -367,7 +399,8 @@ export interface ProjectMaterials {
 }
 
 /** Tipos de evento del calendario. El color lo da el tipo, no la persona. */
-export type CalendarKind = 'fabricacion' | 'montaje' | 'material' | 'visita' | 'aviso';
+export type CalendarKind =
+  'fabricacion' | 'montaje' | 'material' | 'visita' | 'aviso' | 'otro' | 'obra';
 
 export interface CalendarEvent {
   kind: CalendarKind;
@@ -382,4 +415,174 @@ export interface CalendarEvent {
   client_name: string | null;
   assigned: string[];
   movable: boolean;
+}
+
+// =====================================================================
+// BLOQUE 1 · Proyectos, trabajadores asignados y partes de trabajo
+// =====================================================================
+
+/** Lo que ve un trabajador de un proyecto: sin importes ni facturación. */
+export interface WorkerProject {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  measures: string | null;
+  finish: string | null;
+  location: string | null;
+  address: string | null;
+  observations: string | null;
+  phase: ProjectPhase;
+  no_assembly: boolean;
+  budget_hours_fab: number;
+  budget_hours_mont: number;
+  client_id: string | null;
+  client_name: string | null;
+  archived_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+  updated_at: string;
+  // BLOQUE 5 · las fechas planificadas. Son fechas, no dinero: así el
+  // trabajador sabe qué le toca antes.
+  fab_start: string | null;
+  fab_end: string | null;
+  mont_start: string | null;
+  mont_end: string | null;
+  fab_workers: number;
+  mont_workers: number;
+  /** La primera fecha que le afecta. Sirve para ordenar. */
+  proximo: string | null;
+}
+
+export interface ProjectTeamRow {
+  project_id: string;
+  worker_id: string;
+  full_name: string;
+  role: UserRole;
+}
+
+export type ReportStatus = 'borrador' | 'enviado' | 'validado' | 'rechazado';
+
+/** Un parte de trabajo. Las horas son SIEMPRE de quien lo firma. */
+export interface WorkReport {
+  id: string;
+  code: string;
+  worker_id: string;
+  project_id: string | null;
+  work_type: OrderType;
+  work_date: string;
+  work_done: string | null;
+  hours: number | null;
+  needs_material: boolean;
+  status: ReportStatus;
+  submitted_at: string | null;
+  validated_at: string | null;
+  validated_by: string | null;
+  rejected_at: string | null;
+  reject_reason: string | null;
+  assigned_at: string | null;
+  assigned_by: string | null;
+  is_demo: boolean;
+  created_at: string;
+  updated_at: string;
+  worker?: Pick<Profile, 'id' | 'full_name'> | null;
+  project?: Pick<Project, 'id' | 'code' | 'name'> | null;
+}
+
+/** Previstas contra realizadas. Solo cuentan las horas ya validadas. */
+export interface ProjectHours {
+  project_id: string;
+  previstas_fab: number;
+  previstas_mont: number;
+  previstas_total: number;
+  realizadas_fab: number;
+  realizadas_mont: number;
+  realizadas_total: number;
+}
+
+export interface ProjectReports {
+  project_id: string;
+  total: number;
+  por_validar: number;
+  validados: number;
+  rechazados: number;
+  horas_validadas: number;
+}
+
+// =====================================================================
+// BLOQUE 5 · La visita o el aviso tal como los ve un trabajador
+// =====================================================================
+
+/** Como «Ficha», pero SIN importe: el dinero es de administración. */
+export interface WorkerFicha {
+  id: string;
+  code: string;
+  type: FichaType;
+  status: string;
+  title: string | null;
+  description: string | null;
+  address: string | null;
+  phone: string | null;
+  email: string | null;
+  hours: number | null;
+  scheduled_date: string | null;
+  scheduled_time: string | null;
+  assigned_to: string | null;
+  client_id: string | null;
+  client_name: string | null;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// =====================================================================
+// BLOQUE 4 · Obras
+// =====================================================================
+
+/** Una obra agrupa varios proyectos. Su dinero es de administración. */
+export interface Work {
+  id: string;
+  code: string;
+  name: string;
+  client_id: string | null;
+  address: string | null;
+  description: string | null;
+  observations: string | null;
+  archived_at: string | null;
+  is_demo: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  client?: Pick<Client, 'id' | 'name'> | null;
+}
+
+/** Un coste extra de la obra: transporte, trabajos añadidos, etc. */
+export interface WorkExtra {
+  id: string;
+  work_id: string;
+  concept: string;
+  amount: number;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Las cuentas de la obra: proyectos + extras, facturado y pendiente. */
+export interface WorkSummary {
+  work_id: string;
+  code: string;
+  name: string;
+  proyectos: number;
+  proyectos_activos: number;
+  proyectos_finalizados: number;
+  total_proyectos: number;
+  extras: number;
+  total_estimado: number;
+  facturado: number;
+  pendiente_facturar: number;
+  cobrado: number;
+  material_pendiente: number;
+  desde: string | null;
+  hasta: string | null;
 }

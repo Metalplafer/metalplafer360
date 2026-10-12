@@ -34,11 +34,72 @@ const write = (name: string, bytes: Uint8Array) => {
  */
 const EN_CI = Boolean(process.env.CI);
 
-function run(cmd: string, args: string[]): string | null {
-  try { return execFileSync(cmd, args, { encoding: 'utf8' }); }
+/**
+ * EN QUÉ CODIFICACIÓN TIENE QUE HABLAR PYTHON.
+ *
+ * Cuando la salida de Python no va a una consola sino a una tubería (que es
+ * lo que hace Node al leerla), Python elige la codificación del sistema:
+ *   · en Linux y macOS es UTF-8, así que no pasa nada;
+ *   · en Windows es la PÁGINA DE CÓDIGOS ANSI (en España, cp1252).
+ *
+ * En cp1252 la «á» sale como un único byte 0xE1, que NO es UTF-8 válido, así
+ * que al descodificar llegaba «el r<?>pido» con el carácter de reemplazo.
+ * Con esto Python escribe UTF-8 en todas partes, sin importar el idioma ni
+ * la configuración del equipo.
+ */
+const ENTORNO_PYTHON = { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' };
+
+/**
+ * CÓMO SE LLAMA AQUÍ AL INTÉRPRETE DE PYTHON.
+ *
+ * No existe un nombre que valga en todas partes:
+ *   · en Linux y macOS es «python3»;
+ *   · en Windows lo normal es el lanzador «py -3», y «python3» NO existe.
+ *
+ * Y hay una trampa en Windows: el sistema trae un «alias de ejecución» de
+ * la Microsoft Store para «python3». Al llamarlo, el proceso ARRANCA (así
+ * que no da ENOENT, no parece que falte), sale con error y no imprime
+ * nada. Por eso no basta con mirar si el comando existe: hay que
+ * ejecutarlo y comprobar que de verdad es un Python 3.
+ *
+ * Se resuelve UNA vez y se reutiliza.
+ */
+interface Interprete { cmd: string; base: string[] }
+
+function resolverPython(): Interprete | null {
+  const candidatos: Interprete[] = process.platform === 'win32'
+    ? [{ cmd: 'py', base: ['-3'] }, { cmd: 'python', base: [] }, { cmd: 'python3', base: [] }]
+    : [{ cmd: 'python3', base: [] }, { cmd: 'python', base: [] }];
+
+  for (const candidato of candidatos) {
+    try {
+      const version = execFileSync(
+        candidato.cmd,
+        [...candidato.base, '-c', 'import sys; print(sys.version_info[0])'],
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], env: ENTORNO_PYTHON },
+      ).trim();
+      if (version === '3') return candidato;       // es un Python 3 de verdad
+    } catch { /* no está, o es el alias de la Store: se prueba el siguiente */ }
+  }
+  return null;
+}
+
+const PYTHON = resolverPython();
+
+/**
+ * Ejecuta una herramienta y devuelve su salida descodificada como UTF-8.
+ *
+ * Se recoge el BÚFER de bytes y se descodifica aquí de forma explícita, en
+ * lugar de dejar que lo adivine nadie. «env» solo se pasa para Python; para
+ * `unzip` y `pdftotext` queda sin tocar, igual que antes.
+ */
+function run(cmd: string, args: string[], env?: NodeJS.ProcessEnv): string | null {
+  try { return execFileSync(cmd, args, env ? { env } : {}).toString('utf8'); }
   catch (e) {
     const err = e as { code?: string; status?: number; stderr?: Buffer | string };
-    const detalle = String(err.stderr ?? '').trim();
+    const detalle = (Buffer.isBuffer(err.stderr)
+      ? err.stderr.toString('utf8')
+      : String(err.stderr ?? '')).trim();
 
     // El programa no está instalado.
     if (err.code === 'ENOENT') {
@@ -68,6 +129,66 @@ function run(cmd: string, args: string[]): string | null {
     throw e;
   }
 }
+
+/**
+ * Ejecuta un trozo de Python y devuelve su salida.
+ *
+ * Mismas reglas que «run»: si no hay Python (o le falta openpyxl) se salta
+ * la comprobación en un ordenador cualquiera, y FALLA en integración
+ * continua, donde las herramientas tienen que estar.
+ *
+ * LAS RUTAS Y LOS TEXTOS VAN COMO ARGUMENTOS, no incrustados en el código.
+ * Se leen con «sys.argv[1]», «sys.argv[2]»… Así no hay que escapar nada y,
+ * sobre todo, el código que se envía es ASCII puro aunque la carpeta
+ * temporal lleve acentos (C:\Users\María\…): los argumentos los pasa el
+ * sistema en Unicode y Python los recibe intactos.
+ */
+function runPython(codigo: string, ...argumentos: string[]): string | null {
+  if (!PYTHON) {
+    if (EN_CI) {
+      throw new Error(
+        'No se encuentra Python 3 en este equipo y sin él no se puede abrir el Excel que '
+        + 'genera la aplicación. Se han probado «python3», «python» y «py -3». '
+        + 'En GitHub Actions lo instala el paso «Instalar las herramientas que abren el '
+        + 'Excel y el PDF».',
+      );
+    }
+    return null;
+  }
+
+  const salida = run(PYTHON.cmd, [...PYTHON.base, '-c', codigo, ...argumentos], ENTORNO_PYTHON);
+
+  // Si algo hubiera vuelto a torcer la codificación, se dice aquí y con
+  // nombre y apellidos, en vez de dejar que aparezca más adelante como una
+  // comparación de textos que no se entiende.
+  if (salida !== null && salida.includes('\uFFFD')) {
+    throw new Error(
+      'La salida de Python ha llegado con caracteres ilegibles, así que no se ha escrito '
+      + 'en UTF-8 pese a PYTHONIOENCODING y PYTHONUTF8. No es un fallo del archivo que '
+      + `genera la aplicación, sino de la tubería entre los dos procesos. Salida: ${salida.slice(0, 200)}`,
+    );
+  }
+  return salida;
+}
+
+describe('el puente con las herramientas externas', () => {
+  /**
+   * Esta comprobación vigila al propio andamiaje de las pruebas, no a la
+   * aplicación. Existe porque en Windows los acentos se perdían al volver
+   * de Python (llegaba «el r<?>pido») y la comprobación del Excel fallaba
+   * señalando al archivo generado, que estaba perfecto.
+   *
+   * Se manda un texto con todo lo que suele romperse —acentos, eñe,
+   * comillas españolas, el euro— y tiene que volver idéntico. Si algún día
+   * vuelve a torcerse la codificación, falla aquí, que es donde se entiende.
+   */
+  it('los acentos y el euro vuelven intactos del intérprete de Python', () => {
+    const ida = 'Ñandú «el rápido»: 6.400,50 € — García e Hijos';
+    const out = runPython('import json,sys;print(json.dumps({"eco": sys.argv[1]}))', ida);
+    if (out === null) return;                        // sin python instalado
+    expect(JSON.parse(out).eco).toBe(ida);
+  });
+});
 
 describe('archivos ZIP', () => {
   it('escribe y vuelve a leer lo mismo', () => {
@@ -159,10 +280,15 @@ describe('hojas de cálculo', () => {
     ], { company: 'METALPLAFER S.L.', title: 'Informe de horas' });
 
     const path = write('informe.xlsx', bytes);
-    const out = run('python3', ['-c', `
-import openpyxl, json
-wb = openpyxl.load_workbook(${JSON.stringify(path)})
+    const out = runPython(`
+import openpyxl, json, sys
+wb = openpyxl.load_workbook(sys.argv[1])
 ws = wb['Horas']
+# Se deja que json.dumps escape los acentos, que es lo que hace por
+# omisión: la «á» viaja como \\u00e1, ASCII puro, y ya no depende de la
+# codificación de la tubería. JSON.parse la devuelve siendo exactamente la
+# misma «á» que leyó openpyxl de la celda, así que lo que se comprueba
+# sigue siendo el valor REAL del archivo Excel.
 print(json.dumps({
   'hojas': wb.sheetnames,
   'titulo': ws['A1'].value,
@@ -178,8 +304,8 @@ print(json.dumps({
   'negrita_cabecera': ws['A4'].font.bold,
   'inmovilizado': ws.freeze_panes,
   'ancho': ws.column_dimensions['A'].width,
-}, ensure_ascii=False))
-`]);
+}))
+`, path);
     if (out === null) return;                        // sin python/openpyxl
 
     const info = JSON.parse(out);
@@ -205,8 +331,9 @@ print(json.dumps({
       { name: 'Material: pendiente/retrasado', columns: [{ key: 'a', label: 'A' }], rows: [] },
     ]);
     const path = write('dos-hojas.xlsx', bytes);
-    const out = run('python3', ['-c',
-      `import openpyxl,json;print(json.dumps(openpyxl.load_workbook(${JSON.stringify(path)}).sheetnames))`]);
+    const out = runPython(
+      'import openpyxl,json,sys;print(json.dumps(openpyxl.load_workbook(sys.argv[1]).sheetnames))',
+      path);
     if (out === null) return;
     // El nombre de hoja no admite : ni /, y se limpian sin romper el archivo.
     expect(JSON.parse(out)).toEqual(['Proyectos', 'Material  pendiente retrasado']);

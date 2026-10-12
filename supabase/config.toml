@@ -1,0 +1,28 @@
+# =====================================================================
+# METALPLAFER360 · Configuración de las funciones del servidor
+#
+# De serie, Supabase exige una sesión iniciada para poder llamar a una
+# Edge Function. Para dos de ellas eso NO sirve, y hay que apagarlo:
+#
+#   · backup-drive  la llama la propia base de datos a las 02:00, y una
+#                   tarea programada no tiene sesión de nadie.
+#   · google-oauth  recibe la vuelta de Google después de autorizar, que
+#                   llega como una visita normal del navegador.
+#
+# Apagarlo NO las deja abiertas: cada una comprueba por su cuenta quién
+# llama antes de hacer nada.
+#   · backup-drive  exige una sesión de administración activa, o el
+#                   secreto BACKUP_CRON_SECRET que solo conoce la base.
+#   · google-oauth  exige una sesión de administración para empezar, y
+#                   un «state» de un solo uso para aceptar la vuelta.
+#
+# admin-users se queda como está: siempre se llama desde la aplicación
+# con la sesión de quien la usa, así que la comprobación de Supabase le
+# viene bien y se mantiene.
+# =====================================================================
+
+[functions.backup-drive]
+verify_jwt = false
+
+[functions.google-oauth]
+verify_jwt = false

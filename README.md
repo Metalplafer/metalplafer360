@@ -97,6 +97,10 @@ Y en PDF, pensado para imprimir y para quien no programa:
 
 **[`docs/manual/METALPLAFER360-Manual.pdf`](docs/manual/METALPLAFER360-Manual.pdf)**
 
+Y las decisiones de arquitectura, con el porqué de cada una:
+
+**[`docs/DECISIONES.md`](docs/DECISIONES.md)**
+
 Resumen de los pasos:
 
 1. Crear una cuenta y un proyecto en [supabase.com](https://supabase.com).
@@ -104,6 +108,16 @@ Resumen de los pasos:
 3. Crear el primer usuario (será automáticamente el administrador).
 4. Copiar las dos claves de Supabase a las variables de GitHub.
 5. Activar GitHub Pages. La aplicación se publica sola.
+
+### Si ya la tienes instalada
+
+Ejecuta en el editor SQL de Supabase, una sola vez, los archivos que todavía
+no hayas pasado. No borran ni cambian datos:
+
+| Archivo | Qué corrige |
+|---|---|
+| `supabase/sql/24_google_oauth.sql` | Hace posible conectar Google Drive con tu propia cuenta |
+| `supabase/sql/25_correccion_limpiar_demo.sql` | «Limpiar datos demo» fallaba si ya se había usado el ejemplo |
 
 ---
 
@@ -114,19 +128,24 @@ Navegador (React)  ──►  Supabase
                           ├── Auth ........ usuarios y contraseñas
                           ├── PostgreSQL .. datos + permisos (RLS) + historial
                           ├── Storage ..... documentos, fotos y vídeos (privado)
-                          └── Functions ... alta de trabajadores y copia a Drive
-                                            (aquí, y solo aquí, viven las claves)
+                          ├── Functions ... alta de trabajadores, conexión con
+                          │                 Google y copia a Drive (aquí, y solo
+                          │                 aquí, viven las claves)
+                          └── Vault ....... el permiso de Google, cifrado
                                                         │
                                                         └──►  Google Drive
                                                               (copias de seguridad)
 ```
 
-El navegador nunca habla con Google ni maneja ninguna credencial. Cuando
-administración pulsa «Subir a Google Drive», la aplicación se lo pide a un
-programa que corre dentro de Supabase; ese programa es el único que conoce la
-cuenta de Google. La copia que se descarga al ordenador no necesita nada de
-eso: la genera el propio navegador con los datos que la base de datos le
-permite leer.
+El navegador nunca habla con Google ni maneja ninguna credencial. La empresa
+autoriza su cuenta de Google **una vez** desde Configuración; el código que
+devuelve Google se canjea dentro de Supabase y el permiso resultante se guarda
+cifrado en la bóveda, sin pasar por el navegador. A partir de ahí, el programa
+del servidor es el único que puede usarlo, y por eso la copia de las 02:00
+funciona sin que nadie tenga la aplicación abierta.
+
+La copia que se descarga al ordenador no necesita nada de eso: la genera el
+propio navegador con los datos que la base de datos le permite leer.
 
 **La seguridad no está en la pantalla, está en la base de datos.** Cada consulta
 pasa por las políticas de *Row Level Security*: aunque alguien manipule la
@@ -221,6 +240,12 @@ npm run dev                 # abre http://localhost:5173
 | `npm run test:fase5` | Prueba material, calendario y facturación |
 | `npm run test:fase6` | Prueba panel, informes, copias, restauración y PWA |
 | `npm run test:fase7` | Recorrido completo de principio a fin, seguridad y datos demo |
+| `npm run test:bloque1` | Prueba los partes de trabajo y el cierre del acceso al dinero |
+| `npm run test:bloque2` | Prueba las dos categorías de documentación, el visor y el borrado |
+| `npm run test:bloque3` | Prueba el calendario y la planificación automática |
+| `npm run test:bloque4` | Prueba las obras: cuentas, facturación, calendario y permisos |
+| `npm run test:bloque5` | Prueba el día del trabajador: avisos, calendario, partes y material |
+| `npm run test:qa` | Recorrido completo antes de producción, con capturas |
 | `npm run test:all` | Todo lo anterior, de una vez |
 
 Las pruebas de navegador necesitan Chromium la primera vez:
@@ -278,6 +303,16 @@ Archivos en `supabase/sql/`, pensados para ejecutarse **en este orden**:
 | `21_backup_automatico.sql` | Copia diaria a las 02:00 (opcional, solo en Supabase) |
 | `22_correcciones_auditoria.sql` | Correcciones de la auditoría final: seguridad, integridad e índices |
 | `23_datos_demo.sql` | Datos de ejemplo y su limpieza (opcional) |
+| `24_google_oauth.sql` | La conexión con Google Drive: estado y permiso en la bóveda |
+| `25_correccion_limpiar_demo.sql` | Corrige «Limpiar datos demo» cuando ya se ha usado el ejemplo |
+| `26_schema_partes.sql` | Trabajadores asignados a proyectos y partes de trabajo |
+| `27_funciones_partes.sql` | Guardar, enviar, validar y rechazar partes; horas realizadas |
+| `28_seguridad_partes.sql` | Permisos de partes y cierre del acceso del trabajador al dinero |
+| `29_documentacion_borrado.sql` | Las dos categorías de documentación y el borrado real |
+| `30_calendario_planificacion.sql` | Planificación automática, festivos, margen y «Otros» |
+| `31_obras.sql` | Las obras: agrupan proyectos, sus cuentas, sus extras y su facturación |
+| `32_trabajador_avisos_material.sql` | Avisos de taller facturables, pedir material sin parte, y el calendario del trabajador |
+| `33_revision_permisos.sql` | Revisión transversal: datos personales por columna, almacén y usuarios desactivados |
 
 Tablas creadas hasta ahora:
 
@@ -295,9 +330,25 @@ Tablas creadas hasta ahora:
 - **`materials`** — material pendiente. Sin precio, sin número de pedido y sin solicitante.
 - **`material_requests`** — lo que comunica el taller. Nunca se convierte solo en material.
 - **`payments`** — cobros parciales. Sin número de factura.
-- **`documents`** — archivos de fichas, proyectos y órdenes, con papelera.
-- **`comments`** — comentarios de texto de fichas, proyectos y órdenes.
+- **`documents`** — archivos de fichas, proyectos, órdenes y partes, con papelera
+  y dos categorías: técnica y administrativa.
+- **`comments`** — comentarios de texto de fichas, proyectos, órdenes, partes y obras.
 - **`backups`** — qué copia se hizo, cuándo, con cuántas filas y dónde quedó.
+- **`project_workers`** — quién está asignado a cada proyecto.
+- **`work_reports`** — partes de trabajo (`PT-2026-001`): qué se hizo y cuántas horas.
+- **`non_working_days`** — festivos y días que el taller no abre.
+- **`calendar_notes`** — los eventos «Otros» del calendario.
+- **`works`** — las obras (`OBRA-2026-001`): agrupan los proyectos de un mismo sitio.
+- **`work_extras`** — costes extras de una obra: transporte, grúa, trabajos añadidos.
+
+Y tres vistas que existen solo para que el trabajador no toque las tablas
+donde está el dinero:
+
+- **`worker_projects`** — su proyecto, con las fechas planificadas y sin un euro.
+- **`worker_fichas`** — su visita o su aviso, sin el importe.
+- **`planned_spans`** — los tramos planificados, filtrados por a quién le toca.
+- **`profiles_full`** — el perfil con sus datos personales: el propio, o todos si
+  quien pregunta es administración.
 
 Los datos son accesibles y modificables directamente desde el editor SQL de
 Supabase: la aplicación no es el único camino para trabajar con ellos.
@@ -315,7 +366,12 @@ el candado real está en el servidor.
 |---|---|
 | Administración | Todo |
 | Trabajador | Solo sus órdenes, los proyectos y clientes de esas órdenes, sus horas, sus avisos y su historial |
-| Trabajador | **Nunca**: informes, configuración, facturación, cobros, copias de seguridad, numeración ni datos de otros compañeros |
+| Trabajador | **Nunca**: informes, configuración, facturación, cobros, copias de seguridad, numeración, obras (ni sus importes, ni lo facturado, ni los extras), documentación administrativa, el importe de un proyecto o de una ficha, la paga y señal, ni datos de otros compañeros |
+
+Un trabajador **sí** puede hacer su trabajo sin pedir nada a administración:
+consultar sus proyectos y su documentación técnica, ver su calendario,
+rellenar partes (con proyecto o sin proyecto), corregir los que le devuelvan
+y solicitar material.
 
 Lo que la auditoría final dejó cerrado:
 
@@ -329,9 +385,15 @@ Lo que la auditoría final dejó cerrado:
   presupuestos y facturas de papel.
 - **El único borrado abierto** a la aplicación es vaciar la papelera de documentos, y
   pasa por una política que exige ser administración y que el archivo ya esté dentro.
-- **Ninguna credencial vive en el repositorio.** Las claves de Google y la clave
-  `service_role` solo existen como secretos dentro de Supabase, y hay una prueba
-  automática que recorre todo el proyecto buscando fugas.
+- **Los datos personales no viajan con la fila.** `profiles` no concede el
+  teléfono, el correo, el usuario de acceso ni las preferencias a quien tiene
+  sesión: son **permisos por columna**. El nombre y el rol sí, porque hacen
+  falta para saber con quién se trabaja. Lo demás se lee por `profiles_full`.
+- **Ninguna credencial vive en el repositorio.** El secreto de cliente de Google
+  y la clave `service_role` solo existen como secretos dentro de Supabase, y el
+  permiso de Google vive cifrado en la bóveda: ni administración puede leerlo.
+  Hay pruebas automáticas que recorren todo el proyecto buscando fugas y que
+  comprueban que el navegador no nombra ninguna credencial.
 
 ---
 

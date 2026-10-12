@@ -14,7 +14,25 @@
 --
 -- Este archivo NO hace falta para trabajar. Si la empresa ya está
 -- usando la aplicación con datos reales, puede no ejecutarlo nunca.
+--
+-- NECESITA el archivo 25_correccion_limpiar_demo.sql. Sin él, limpiar el
+-- ejemplo falla en cuanto alguien lo ha usado. Si no está ejecutado, el
+-- aviso de abajo lo recuerda.
 -- =====================================================================
+
+
+-- ---------------------------------------------------------------------
+-- Aviso si falta la corrección del archivo 25
+-- ---------------------------------------------------------------------
+do $$
+begin
+  if to_regprocedure('public.trg_audit_immutable()') is not null
+     and position('app.demo_cleanup' in
+           pg_get_functiondef('public.trg_audit_immutable()'::regprocedure)) = 0 then
+    raise notice '%', 'ATENCIÓN: ejecuta también supabase/sql/25_correccion_limpiar_demo.sql, '
+      || 'o «Limpiar datos demo» fallará cuando ya se haya usado el ejemplo.';
+  end if;
+end $$;
 
 
 -- ---------------------------------------------------------------------
@@ -388,6 +406,9 @@ begin
 
   -- El historial de cada borrado sería ruido: se deja una sola anotación.
   perform set_config('app.skip_audit', 'on', true);
+  -- Y se permite retirar las anotaciones del propio ejemplo: el historial
+  -- de verdad sigue siendo intocable (ver el archivo 25).
+  perform set_config('app.demo_cleanup', 'on', true);
 
   foreach t in array array[
     'comments', 'documents', 'payments', 'material_requests', 'materials',
@@ -412,6 +433,7 @@ begin
     v_total := v_total + array_length(v_users, 1);
   end if;
 
+  perform set_config('app.demo_cleanup', 'off', true);
   perform set_config('app.skip_audit', 'off', true);
 
   perform public.log_event('limpiar_demo', 'app_settings',

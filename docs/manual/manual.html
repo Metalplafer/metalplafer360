@@ -288,6 +288,16 @@
     <tr><td>18</td><td><code>19_funciones_informes.sql</code></td><td>Panel, informes, copias y restauración</td></tr>
     <tr><td>19</td><td><code>20_seguridad_informes.sql</code></td><td>Permisos de informes y copias</td></tr>
     <tr><td>20</td><td><code>22_correcciones_auditoria.sql</code></td><td>Correcciones de seguridad e índices</td></tr>
+    <tr><td>21</td><td><code>24_google_oauth.sql</code></td><td>La conexión con Google Drive (apartado 10)</td></tr>
+    <tr><td>22</td><td><code>25_correccion_limpiar_demo.sql</code></td><td>Corrección de «Limpiar datos demo»</td></tr>
+    <tr><td>23</td><td><code>26_schema_partes.sql</code></td><td>Trabajadores asignados a proyectos y partes de trabajo</td></tr>
+    <tr><td>24</td><td><code>27_funciones_partes.sql</code></td><td>Guardar, enviar, validar y rechazar partes</td></tr>
+    <tr><td>25</td><td><code>28_seguridad_partes.sql</code></td><td>Permisos de los partes</td></tr>
+    <tr><td>26</td><td><code>29_documentacion_borrado.sql</code></td><td>Las dos categorías de documentación y el borrado real</td></tr>
+    <tr><td>27</td><td><code>30_calendario_planificacion.sql</code></td><td>Calendario y planificación automática</td></tr>
+    <tr><td>28</td><td><code>31_obras.sql</code></td><td>Las obras: agrupan proyectos, sus cuentas y su facturación</td></tr>
+    <tr><td>29</td><td><code>32_trabajador_avisos_material.sql</code></td><td>Avisos de taller facturables, pedir material y el calendario del trabajador</td></tr>
+    <tr><td>30</td><td><code>33_revision_permisos.sql</code></td><td>Revisión de permisos: datos personales, almacén y usuarios desactivados</td></tr>
   </table>
 
   <div class="caja">
@@ -354,7 +364,12 @@ select 'Panel, informes y copias',
     <tr><td><code>materials</code> · <code>material_requests</code></td><td>Material pendiente y lo que comunica el taller</td></tr>
     <tr><td><code>payments</code></td><td>Cobros parciales (sin número de factura, a propósito)</td></tr>
     <tr><td><code>documents</code></td><td>Fotos, planos, vídeos y firmas, con su papelera</td></tr>
-    <tr><td><code>comments</code></td><td>Comentarios de texto de fichas, proyectos y órdenes</td></tr>
+    <tr><td><code>comments</code></td><td>Comentarios de texto de fichas, proyectos, órdenes, partes y obras</td></tr>
+    <tr><td><code>project_workers</code></td><td>Quién está asignado a cada proyecto</td></tr>
+    <tr><td><code>work_reports</code></td><td>Los partes de trabajo: qué se hizo y cuántas horas</td></tr>
+    <tr><td><code>non_working_days</code> · <code>calendar_notes</code></td><td>Festivos del taller y eventos sueltos del calendario</td></tr>
+    <tr><td><code>works</code> · <code>work_extras</code></td><td>Las obras, que agrupan proyectos, y sus costes extras</td></tr>
+    <tr><td><code>worker_projects</code> · <code>worker_fichas</code></td><td>No son tablas: son las vistas por las que entra el trabajador, escritas sin ninguna columna de dinero</td></tr>
     <tr><td><code>audit_log</code></td><td>El historial: quién hizo qué y cuándo. No se puede modificar</td></tr>
     <tr><td><code>backups</code></td><td>Qué copia de seguridad se hizo y dónde quedó</td></tr>
     <tr><td><code>app_settings</code> · <code>code_counters</code></td><td>Datos de la empresa y numeración anual</td></tr>
@@ -368,6 +383,13 @@ select 'Panel, informes y copias',
       <strong>papelera</strong> de la que se pueden recuperar. Un cobro apuntado por error
       se <strong>anula</strong> y se queda tachado a la vista. Y a las personas no se les
       borra: se les <strong>desactiva</strong>.
+    </p>
+    <p>
+      Eliminar de verdad existe, pero solo para lo que no arrastra nada:
+      administración puede borrar una ficha, un proyecto, una obra o a un
+      trabajador <strong>si no tienen horas apuntadas, cobros ni facturación</strong>.
+      Si los tienen, la base de datos se niega y explica por qué. Al eliminar una
+      obra, sus proyectos <strong>no</strong> se borran: se quedan sueltos.
     </p>
   </div>
 </section>
@@ -559,83 +581,99 @@ select 'Panel, informes y copias',
   <h2><span class="n">10</span>Google Drive (opcional)</h2>
   <p>
     Esto se puede dejar para otro día. Sin hacer nada de este apartado, la aplicación ya
-    hace copias de seguridad: en
-    <span class="ruta">Configuración → Copias de seguridad</span> tienes el botón
-    <strong>GENERAR BACKUP AHORA</strong>, que descarga un ZIP a tu ordenador.
+    hace copias: en <span class="ruta">Configuración → Copias de seguridad</span> tienes el
+    botón <strong>GENERAR BACKUP AHORA</strong>, que descarga un ZIP a tu ordenador.
   </p>
   <p>
-    Lo que se configura aquí es que esa copia se haga <strong>sola, todas las noches, y
-    se guarde en Google Drive</strong>, fuera de Supabase.
+    Lo que se configura aquí es que esa copia se haga <strong>sola, todas las noches, y se
+    guarde en Google Drive</strong>, fuera de Supabase.
   </p>
 
-  <h3>10.1 · Crear la cuenta de servicio en Google</h3>
-  <p>Una «cuenta de servicio» es un usuario de Google que no es una persona: es el programa que sube las copias.</p>
-  <ol class="pasos">
-    <li>Entra en <span class="ruta">console.cloud.google.com</span> con la cuenta de la empresa.</li>
-    <li>Arriba a la izquierda, <strong>New project</strong>. Llámalo <code>metalplafer360</code> y créalo.</li>
-    <li>En el buscador de arriba escribe <strong>Google Drive API</strong>, ábrela y pulsa <strong>Enable</strong>.</li>
-    <li>En el buscador escribe <strong>Service accounts</strong> y ábrelo.</li>
-    <li><strong>Create service account</strong> → nombre <code>copias-metalplafer360</code> →
-        <strong>Create and continue</strong> → <strong>Done</strong>.</li>
-    <li>Copia su <strong>dirección de correo</strong>, que acaba en
-        <code>.iam.gserviceaccount.com</code>. La necesitarás dos veces.</li>
-    <li>Pulsa sobre ella → pestaña <strong>Keys</strong> → <strong>Add key</strong> →
-        <strong>Create new key</strong> → formato <strong>JSON</strong> → <strong>Create</strong>.</li>
-  </ol>
-  <div class="caja peligro">
+  <div class="caja nota">
+    <span class="titulo">Por qué hay que autorizar la cuenta</span>
     <p>
-      Se te descarga un archivo <code>.json</code>. <strong>Ese archivo es la llave de la
-      caja fuerte.</strong> No lo subas a ningún sitio y bórralo de tu ordenador en cuanto
-      termines este apartado.
+      Google no da espacio de almacenamiento propio a las «cuentas de servicio», así que
+      una de ellas no puede guardar nada en «Mi unidad» de una cuenta Gmail normal. Por eso
+      METALPLAFER360 pide autorización a la cuenta de la empresa <strong>una sola vez</strong>,
+      y a partir de ahí sube las copias con ese permiso, también las de la madrugada.
     </p>
   </div>
 
-  <h3>10.2 · Crear la carpeta en Drive y compartirla</h3>
+  <div class="caja peligro">
+    <p>
+      Vas a manejar un <strong>secreto de cliente</strong> de Google. No se pega nunca en el
+      repositorio ni en ningún archivo del proyecto: solo en la pantalla de secretos de
+      Supabase. El permiso que Google devuelve al autorizar no lo verás nunca: se guarda
+      cifrado en la bóveda de Supabase sin pasar por el navegador.
+    </p>
+  </div>
+
+  <h3>10.1 · Crear el cliente OAuth en Google</h3>
   <ol class="pasos">
-    <li>En <span class="ruta">drive.google.com</span>, crea una carpeta llamada
-        <strong>METALPLAFER360 · Copias de seguridad</strong>.</li>
-    <li>Ábrela, pulsa <strong>Compartir</strong>, pega la dirección de la cuenta de
-        servicio, dale permiso de <strong>Editor</strong> y envía.</li>
-    <li>Con la carpeta abierta, mira la dirección del navegador: al final hay un código
-        largo después de <code>/folders/</code>. Cópialo.</li>
+    <li>Entra en <span class="ruta">console.cloud.google.com</span> con la cuenta donde
+        quieres las copias (<code>metalplafer@gmail.com</code>).</li>
+    <li><strong>New project</strong> → nómbralo <code>metalplafer360</code> → <strong>Create</strong>.</li>
+    <li>En el buscador, <strong>Google Drive API</strong> → <strong>Enable</strong>.</li>
+    <li><strong>APIs y servicios → Pantalla de consentimiento de OAuth</strong>:
+        tipo <strong>External</strong>, nombre <code>METALPLAFER360</code>, y tu correo
+        en los dos campos de contacto.</li>
+    <li>En <strong>Scopes</strong>, añade <em>solo</em> este:
+        <code>https://www.googleapis.com/auth/drive.file</code>. Es el permiso más pequeño
+        que sirve: la aplicación solo puede tocar sus propios archivos, nada más de tu Drive.</li>
+    <li><strong>Pulsa PUBLISH APP</strong> hasta que el estado diga <strong>In production</strong>.</li>
+    <li><strong>Credenciales → Create credentials → OAuth client ID</strong>, tipo
+        <strong>Web application</strong>. En <em>Authorized redirect URIs</em> pega
+        exactamente, sin barra al final:
+        <code>https://TU-REFERENCIA.supabase.co/functions/v1/google-oauth/callback</code></li>
+    <li>Google te enseña el <strong>Client ID</strong> y el <strong>Client secret</strong>.</li>
   </ol>
 
-  <h3>10.3 · Guardar los secretos en Supabase</h3>
-  <p>
-    En Supabase: <strong>Edge Functions</strong> → pestaña <strong>Secrets</strong>
-    (en algunas versiones, <strong>Project Settings → Edge Functions → Secrets</strong>).
-    Añade estos cuatro:
-  </p>
+  <div class="caja aviso">
+    <span class="titulo">El paso 6 no es opcional</span>
+    <p>
+      Mientras la aplicación esté en «Testing», Google caduca el permiso <strong>cada 7
+      días</strong> y la copia automática dejaría de funcionar al cabo de una semana. Como
+      solo se usa <code>drive.file</code>, que no es un permiso sensible, publicarla es
+      inmediato y <strong>no hace falta ninguna verificación de Google</strong>.
+    </p>
+  </div>
+
+  <h3>10.2 · Guardar los secretos en Supabase</h3>
+  <p><strong>Edge Functions → Secrets</strong>, y añade:</p>
   <table>
     <tr><th>Nombre</th><th>Valor</th></tr>
-    <tr><td><code>GOOGLE_SERVICE_ACCOUNT_EMAIL</code></td><td>La dirección de la cuenta de servicio</td></tr>
-    <tr><td><code>GOOGLE_PRIVATE_KEY</code></td><td>El valor de <code>private_key</code> del archivo JSON</td></tr>
-    <tr><td><code>GOOGLE_DRIVE_FOLDER_ID</code></td><td>El código de la carpeta</td></tr>
+    <tr><td><code>GOOGLE_OAUTH_CLIENT_ID</code></td><td>El Client ID</td></tr>
+    <tr><td><code>GOOGLE_OAUTH_CLIENT_SECRET</code></td><td>El Client secret</td></tr>
     <tr><td><code>BACKUP_CRON_SECRET</code></td><td>Una frase larga que te inventes</td></tr>
   </table>
-  <p class="mini">
-    Para sacar <code>GOOGLE_PRIVATE_KEY</code>: abre el archivo <code>.json</code> con el
-    Bloc de notas, busca la línea que empieza por <code>"private_key":</code> y copia todo
-    lo que hay entre comillas, desde <code>-----BEGIN PRIVATE KEY-----</code> hasta el
-    final. Se copia tal cual, con los <code>\n</code> incluidos.
-  </p>
 
-  <h3>10.4 · Publicar los dos programas del servidor</h3>
-  <p>Esto se hace una sola vez, desde la Terminal, en la carpeta del proyecto:</p>
-  <pre>npm install -g supabase
+  <h3>10.3 · Publicar los programas del servidor</h3>
+<pre>npm install -g supabase
 supabase login
 supabase link --project-ref TU-REFERENCIA-DE-PROYECTO
-supabase functions deploy admin-users
-supabase functions deploy backup-drive</pre>
+supabase functions deploy google-oauth
+supabase functions deploy backup-drive
+supabase functions deploy admin-users</pre>
   <p class="mini">
-    La referencia del proyecto es el trozo de la dirección de Supabase entre
-    <code>https://</code> y <code>.supabase.co</code>.
+    El proyecto trae un <code>supabase/config.toml</code> que permite que la vuelta de
+    Google y la tarea de las 02:00 lleguen sin sesión iniciada. Hace falta, y no deja nada
+    abierto: cada programa comprueba por su cuenta quién llama.
   </p>
+
+  <h3>10.4 · Conectar</h3>
+  <ol class="pasos">
+    <li>En la aplicación: <span class="ruta">Configuración → Copias de seguridad</span>.</li>
+    <li>Pulsa <strong>Conectar Google Drive</strong> y acepta en la ventana de Google.</li>
+    <li>Si avisa de que la aplicación no está verificada, pulsa
+        <strong>Configuración avanzada → Ir a METALPLAFER360</strong>: es tu propia aplicación.</li>
+    <li>El recuadro debe pasar a <strong>Conectado</strong>, con la cuenta y la carpeta.</li>
+  </ol>
   <div class="caja">
     <p>
-      Si prefieres no instalar nada, la aplicación funciona igual. Solo dejan de estar
-      disponibles el botón «Subir a Google Drive», la copia automática y el alta de
-      trabajadores desde la aplicación (se pueden seguir creando a mano, apartado 16).
+      La aplicación <strong>crea ella misma</strong> la carpeta
+      «METALPLAFER360 · Copias de seguridad» en tu Mi unidad. Es necesario: con el permiso
+      <code>drive.file</code> solo puede escribir en carpetas creadas por ella. Puedes
+      moverla o renombrarla después; la seguirá encontrando.
     </p>
   </div>
 </section>
@@ -664,7 +702,7 @@ supabase functions deploy backup-drive</pre>
   </div>
 
   <h3>Automática, todas las noches</h3>
-  <p>Solo si has hecho el apartado 10. En el SQL Editor de Supabase, una vez:</p>
+  <p>Solo si has hecho el apartado 10 y Google Drive aparece como «Conectado». En el SQL Editor de Supabase, una vez:</p>
   <pre>select vault.create_secret('https://TU-REFERENCIA.supabase.co', 'm360_project_url');
 select vault.create_secret('la-misma-frase-de-BACKUP_CRON_SECRET', 'm360_backup_secret');</pre>
   <p>
@@ -910,12 +948,20 @@ select vault.create_secret('la-misma-frase-de-BACKUP_CRON_SECRET', 'm360_backup_
     <tr><td>El trabajador no ve ninguna orden</td>
         <td>No se le ha asignado ninguna, o son de días futuros. Las futuras se ven,
             pero no se rellenan hasta su fecha.</td></tr>
-    <tr><td>«Falta configurar Google Drive»</td>
-        <td>No están puestos los secretos de Google. Repasa el apartado 10.3. El botón
+    <tr><td>«Falta configurar la conexión con Google»</td>
+        <td>No están puestos los secretos de Google. Repasa el apartado 10.2. El botón
             GENERAR BACKUP AHORA funciona igual sin eso.</td></tr>
+    <tr><td>«Google ya no acepta el permiso guardado»</td>
+        <td>Se retiró el acceso desde la cuenta de Google, o la aplicación se quedó en
+            «Testing» y Google caduca el permiso cada 7 días. Publícala (paso 6 del
+            apartado 10.1) y vuelve a pulsar <strong>Conectar Google Drive</strong>.</td></tr>
     <tr><td>«Google no ha dado acceso»</td>
-        <td>La clave privada está mal copiada, o la carpeta de Drive no está compartida
-            con la cuenta de servicio. Repasa 10.2 y 10.3.</td></tr>
+        <td>Un fallo momentáneo de Google. Vuelve a intentarlo más tarde; la copia
+            automática lo reintenta al día siguiente por su cuenta.</td></tr>
+    <tr><td>«No tienes permisos» al limpiar los datos de ejemplo</td>
+        <td>Falta ejecutar <code>supabase/sql/25_correccion_limpiar_demo.sql</code>.
+            Ejecútalo una vez en el SQL Editor y vuelve a pulsar el botón. No borra
+            ni cambia ningún dato.</td></tr>
     <tr><td>La copia automática no se hace</td>
         <td>No se ejecutó el archivo 21, o faltan los secretos de la bóveda.
             Repasa el apartado 11.</td></tr>

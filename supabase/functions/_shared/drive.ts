@@ -1,84 +1,74 @@
 /**
- * METALPLAFER360 · Subida a Google Drive con una cuenta de servicio.
+ * METALPLAFER360 · Subida de las copias a Google Drive.
  *
- * LAS CREDENCIALES NO ESTÁN AQUÍ. Se leen de las variables de entorno de
- * Supabase (GOOGLE_SERVICE_ACCOUNT_EMAIL y GOOGLE_PRIVATE_KEY), que nunca
- * salen del servidor ni se suben a GitHub.
+ * LAS CREDENCIALES NO ESTÁN AQUÍ. El identificador y el secreto del
+ * cliente de Google son secretos de Supabase, y el permiso duradero vive
+ * en la bóveda: nada de eso sale del servidor ni se sube a GitHub.
  *
- * El acceso se consigue firmando un JWT con la clave privada y
- * cambiándolo por un token de una hora, que es el procedimiento estándar
- * de Google para cuentas de servicio.
+ * CÓMO SE CONSIGUE EL ACCESO
+ * La empresa autoriza su cuenta una vez (ver la función «google-oauth»)
+ * y Google entrega un permiso duradero. Con ese permiso se pide, cada
+ * vez que hace falta, un acceso de una hora. Por eso la copia de las
+ * 02:00 funciona sin que nadie tenga la aplicación abierta.
+ *
+ * Antes se usaba una cuenta de servicio, pero Google no le da
+ * almacenamiento propio («Service Accounts do not have storage quota»),
+ * así que no podía guardar nada en «Mi unidad» de una cuenta Gmail.
  */
 
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const UPLOAD_URL = 'https://www.googleapis.com/upload/drive/v3/files';
 const FILES_URL = 'https://www.googleapis.com/drive/v3/files';
 
-const b64url = (bytes: Uint8Array) =>
-  btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-
-const b64urlText = (text: string) => b64url(new TextEncoder().encode(text));
-
-/** La clave privada llega con los saltos de línea escritos como \n. */
-function pemToBytes(pem: string): Uint8Array {
-  const clean = pem
-    .replace(/\\n/g, '\n')
-    .replace(/-----BEGIN PRIVATE KEY-----/, '')
-    .replace(/-----END PRIVATE KEY-----/, '')
-    .replace(/\s+/g, '');
-  const raw = atob(clean);
-  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
-}
-
 export interface DriveConfig {
-  email: string;
-  privateKey: string;
-  /** Carpeta compartida con la cuenta de servicio (opcional). */
+  /** Identificador del cliente OAuth de Google. */
+  clientId: string;
+  /** Secreto del cliente OAuth. Solo existe en el servidor. */
+  clientSecret: string;
+  /** Permiso duradero de la cuenta de la empresa, leído de la bóveda. */
+  refreshToken: string;
+  /** Carpeta creada por la aplicación en «Mi unidad». */
   folderId?: string;
-  /** Unidad compartida, si se usa una. */
-  driveId?: string;
 }
 
-/** Datos del JWT que Google pide para dar acceso. */
-export function claimSet(email: string, now = Math.floor(Date.now() / 1000)) {
-  return {
-    iss: email,
-    scope: 'https://www.googleapis.com/auth/drive.file',
-    aud: TOKEN_URL,
-    exp: now + 3600,
-    iat: now,
-  };
+/** Cuando hay que volver a autorizar, se distingue del resto de fallos. */
+export class DriveNoAutorizado extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'DriveNoAutorizado';
+  }
 }
 
+/**
+ * Cambia el permiso duradero por un acceso de una hora.
+ * Si Google responde «invalid_grant» es que la empresa retiró el permiso
+ * o caducó, y hay que volver a conectar desde Configuración.
+ */
 export async function accessToken(config: DriveConfig): Promise<string> {
-  const header = { alg: 'RS256', typ: 'JWT' };
-  const payload = claimSet(config.email);
-  const unsigned = `${b64urlText(JSON.stringify(header))}.${b64urlText(JSON.stringify(payload))}`;
-
-  const key = await crypto.subtle.importKey(
-    'pkcs8',
-    pemToBytes(config.privateKey) as unknown as ArrayBuffer,
-    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  );
-  const signature = new Uint8Array(
-    await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(unsigned)),
-  );
-  const assertion = `${unsigned}.${b64url(signature)}`;
-
   const response = await fetch(TOKEN_URL, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
-      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-      assertion,
+      client_id: config.clientId,
+      client_secret: config.clientSecret,
+      refresh_token: config.refreshToken,
+      grant_type: 'refresh_token',
     }),
   });
 
   if (!response.ok) {
-    throw new Error(`Google no ha dado acceso (${response.status}). Revisa las credenciales.`);
+    let detalle = '';
+    try { detalle = ((await response.json()) as { error?: string }).error ?? ''; } catch { /* da igual */ }
+
+    if (response.status === 400 || response.status === 401 || detalle === 'invalid_grant') {
+      throw new DriveNoAutorizado(
+        'Google ya no acepta el permiso guardado. Entra en Configuración → Copias de '
+        + 'seguridad y vuelve a conectar Google Drive.',
+      );
+    }
+    throw new Error(`Google no ha dado acceso (${response.status}). Inténtalo más tarde.`);
   }
+
   const data = await response.json() as { access_token?: string };
   if (!data.access_token) throw new Error('Google no ha devuelto ningún token de acceso.');
   return data.access_token;
@@ -111,13 +101,13 @@ export async function uploadToDrive(
   const metadata: Record<string, unknown> = {
     name: fileName,
     mimeType: 'application/zip',
-    description: 'Copia de seguridad automática de METALPLAFER360',
+    description: 'Copia de seguridad de METALPLAFER360',
     appProperties: { aplicacion: 'METALPLAFER360' },
   };
   if (config.folderId) metadata.parents = [config.folderId];
 
   const response = await fetch(
-    `${UPLOAD_URL}?uploadType=multipart&fields=id,name,webViewLink&supportsAllDrives=true`,
+    `${UPLOAD_URL}?uploadType=multipart&fields=id,name,webViewLink`,
     {
       method: 'POST',
       headers: {
@@ -129,15 +119,28 @@ export async function uploadToDrive(
   );
 
   if (!response.ok) {
-    throw new Error(`Google Drive ha rechazado la subida (${response.status}): ${await response.text()}`);
+    if (response.status === 404) {
+      throw new Error(
+        'No se encuentra la carpeta de las copias en Google Drive. Si la has borrado o '
+        + 'movido a la papelera, vuelve a conectar Google Drive desde Configuración.',
+      );
+    }
+    if (response.status === 403) {
+      throw new Error(
+        'Google Drive no ha dejado guardar el archivo. Lo más habitual es que la cuenta '
+        + 'no tenga espacio libre.',
+      );
+    }
+    throw new Error(`Google Drive ha rechazado la subida (${response.status}).`);
   }
+
   const data = await response.json() as { id: string; name: string; webViewLink?: string };
   return { id: data.id, name: data.name, link: data.webViewLink };
 }
 
 export async function deleteFromDrive(config: DriveConfig, fileId: string): Promise<boolean> {
   const token = await accessToken(config);
-  const response = await fetch(`${FILES_URL}/${fileId}?supportsAllDrives=true`, {
+  const response = await fetch(`${FILES_URL}/${fileId}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${token}` },
   });

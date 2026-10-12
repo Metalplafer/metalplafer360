@@ -1,16 +1,21 @@
 import { supabase, unwrap } from '@/lib/supabase';
 import { STORAGE_BUCKET } from '@/config/env';
 import { categoryFor, safeStorageName, validateFileSize } from '@/lib/files';
-import type { DocumentRow } from '@/types/db';
+import type { DocScope, DocumentRow } from '@/types/db';
 
 const SELECT = '*, uploader:profiles!documents_uploaded_by_fkey(full_name)';
 
-/** Los documentos cuelgan de una ficha, de un proyecto o de una orden. */
-export type DocOwner = { fichaId: string } | { projectId: string } | { orderId: string };
+/**
+ * Los documentos cuelgan de una ficha, de un proyecto, de una orden o de
+ * un parte de trabajo. Siempre de uno solo: la base de datos lo impone.
+ */
+export type DocOwner =
+  { fichaId: string } | { projectId: string } | { orderId: string } | { reportId: string };
 
 function ownerColumn(owner: DocOwner) {
   if ('fichaId' in owner) return { column: 'ficha_id', id: owner.fichaId, folder: `fichas/${owner.fichaId}` };
   if ('projectId' in owner) return { column: 'project_id', id: owner.projectId, folder: `projects/${owner.projectId}` };
+  if ('reportId' in owner) return { column: 'report_id', id: owner.reportId, folder: `reports/${owner.reportId}` };
   return { column: 'order_id', id: owner.orderId, folder: `orders/${owner.orderId}` };
 }
 
@@ -45,7 +50,7 @@ export async function listTrashed(owner: DocOwner) {
 export async function uploadDocument(
   owner: DocOwner,
   file: File,
-  opts: { userId: string; maxMb: number; category?: DocumentRow['category'] },
+  opts: { userId: string; maxMb: number; category?: DocumentRow['category']; scope?: DocScope },
 ) {
   const sizeError = validateFileSize(file, opts.maxMb);
   if (sizeError) throw new Error(sizeError);
@@ -66,6 +71,9 @@ export async function uploadDocument(
     mime_type: contentType,
     size_bytes: file.size,
     category: opts.category ?? categoryFor(contentType, file.name),
+    // Técnica si no se dice otra cosa: lo que sube un trabajador es
+    // siempre técnico, y la base de datos no le deja poner otra cosa.
+    scope: opts.scope ?? 'tecnica',
     uploaded_by: opts.userId,
   }).select(SELECT).single();
 
@@ -99,4 +107,28 @@ export async function trashDocument(id: string) {
 
 export async function restoreDocument(id: string) {
   unwrap(await supabase.rpc('restore_document', { p_doc: id }));
+}
+
+/**
+ * Mover un documento de categoría SIN descargarlo ni volver a subirlo.
+ * El archivo no se toca: solo cambia quién puede verlo.
+ */
+export async function moveDocumentScope(id: string, scope: DocScope) {
+  return unwrap(await supabase.rpc('move_document_scope', {
+    p_doc: id, p_scope: scope,
+  })) as unknown as DocumentRow;
+}
+
+/** Las rutas de todos los archivos de una ficha o un proyecto. */
+export async function documentPaths(owner: DocOwner) {
+  const { column, id } = ownerColumn(owner);
+  const rows = unwrap(await supabase.from('documents')
+    .select('storage_path').eq(column, id)) as { storage_path: string }[];
+  return rows.map((r) => r.storage_path);
+}
+
+/** Retira archivos del almacén. Se usa antes de eliminar su dueño. */
+export async function removeStoredFiles(paths: string[]) {
+  if (!paths.length) return;
+  await supabase.storage.from(STORAGE_BUCKET).remove(paths);
 }

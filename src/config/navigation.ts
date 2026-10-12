@@ -1,6 +1,6 @@
 import {
-  BarChart3, Boxes, Building2, CalendarDays, ClipboardList, FileStack, FolderKanban,
-  History, Home, LayoutDashboard, Receipt, Settings, Siren, UserRound, Users,
+  BarChart3, Boxes, Building2, CalendarDays, ClipboardList, FileStack, FileText, FolderKanban,
+  HardHat, Home, LayoutDashboard, Receipt, Settings, Siren, UserRound, Users,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -14,14 +14,16 @@ export interface NavItem {
 }
 
 /**
- * MENÚ DE ADMINISTRACIÓN · las 12 secciones definitivas.
+ * MENÚ DE ADMINISTRACIÓN.
  * Las secciones con «pending» todavía no están construidas: muestran una
  * pantalla que explica qué contendrán. Se van completando por fases.
  */
 export const ADMIN_NAV: NavItem[] = [
   { path: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { path: '/admin/fichas', label: 'Fichas', icon: FileStack },
+  { path: '/admin/obras', label: 'Obras', icon: HardHat },
   { path: '/admin/proyectos', label: 'Proyectos', icon: FolderKanban },
+  { path: '/admin/partes', label: 'Partes de trabajo', icon: FileText },
   { path: '/admin/ordenes', label: 'Órdenes de trabajo', icon: ClipboardList },
   { path: '/admin/material', label: 'Material pendiente', icon: Boxes },
   { path: '/admin/calendario', label: 'Calendario', icon: CalendarDays },
@@ -38,8 +40,8 @@ export const ADMIN_NAV: NavItem[] = [
  */
 export const WORKER_NAV: NavItem[] = [
   { path: '/t', label: 'Inicio', icon: Home, end: true },
+  { path: '/t/proyectos', label: 'Proyectos', icon: FolderKanban },
+  { path: '/t/partes', label: 'Mis partes', icon: ClipboardList },
   { path: '/t/calendario', label: 'Calendario', icon: CalendarDays },
-  { path: '/t/ordenes', label: 'Mis órdenes', icon: ClipboardList },
-  { path: '/t/historial', label: 'Historial', icon: History },
   { path: '/t/perfil', label: 'Perfil', icon: UserRound },
 ];

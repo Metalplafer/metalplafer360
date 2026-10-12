@@ -201,7 +201,12 @@ try {
   check('En el móvil no hay desplazamiento horizontal', sinScroll <= 0, `sobran ${sinScroll}px`);
 
   // --- La orden futura se consulta, pero no se toca
-  await m.locator('.w-tabbar a:has-text("Mis órdenes")').click();
+  // BLOQUE 1: la barra inferior pasa a ser Inicio · Proyectos · Mis partes ·
+  // Calendario · Perfil. Las órdenes siguen existiendo y se llega a ellas
+  // desde los accesos rápidos del inicio, hasta que se retiren.
+  await m.goto(`http://localhost:${PORT}/#/t`, { waitUntil: 'networkidle' });
+  await m.waitForTimeout(500);
+  await m.locator('.w-big-actions a:has-text("Mis órdenes")').click();
   await m.waitForTimeout(700);
   check('«Mis órdenes» separa Hoy, Próximas y Por enviar',
     (await m.locator('.tabs').innerText()).includes('Por enviar'));
@@ -448,7 +453,11 @@ try {
     (await m3.locator('.alert-ok').innerText()).includes('Orden validada'));
   check('Validada, ya no puede modificar nada', await m3.locator('#ot-done').count() === 0);
 
-  await m3.locator('.w-tabbar a:has-text("Historial")').click();
+  // BLOQUE 1: el historial sale de la barra inferior y queda en los
+  // accesos rápidos del inicio. La pantalla no cambia.
+  await m3.goto(`http://localhost:${PORT}/#/t`, { waitUntil: 'networkidle' });
+  await m3.waitForTimeout(500);
+  await m3.locator('.w-big-actions a:has-text("Historial")').click();
   await m3.waitForTimeout(900);
   const historial = await m3.locator('.w-content').innerText();
   check('El historial suma sus horas de la semana', historial.includes('Esta semana'));

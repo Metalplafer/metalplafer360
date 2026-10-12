@@ -1,4 +1,4 @@
-import type { ClientKind, FichaType } from '@/types/db';
+import type { ClientKind, FichaType, ReportStatus } from '@/types/db';
 
 export type Tone = 'neutral' | 'blue' | 'green' | 'amber' | 'red' | 'violet' | 'steel' | 'signal';
 
@@ -202,6 +202,35 @@ export const ORDER_STATUS_TONE: Record<OrderStatus, Tone> = {
 export const ORDER_OPEN_STATUSES = new Set<OrderStatus>(['pendiente', 'en_curso', 'devuelta']);
 
 // ---------------------------------------------------------------------
+// BLOQUE 1 · Partes de trabajo
+// ---------------------------------------------------------------------
+
+export const REPORT_STATUS_LABEL: Record<ReportStatus, string> = {
+  borrador: 'Sin enviar',
+  enviado: 'Pendiente de validación',
+  validado: 'Validado',
+  rechazado: 'Rechazado',
+};
+
+/** Versión corta para las listas estrechas del móvil. */
+export const REPORT_STATUS_SHORT: Record<ReportStatus, string> = {
+  borrador: 'Sin enviar',
+  enviado: 'Pendiente',
+  validado: 'Validado',
+  rechazado: 'Rechazado',
+};
+
+export const REPORT_STATUS_TONE: Record<ReportStatus, Tone> = {
+  borrador: 'neutral',
+  enviado: 'signal',
+  validado: 'green',
+  rechazado: 'red',
+};
+
+/** Estados en los que el trabajador todavía puede corregir su parte. */
+export const REPORT_OPEN_STATUSES = new Set<ReportStatus>(['borrador', 'enviado', 'rechazado']);
+
+// ---------------------------------------------------------------------
 // FASE 5 · Material, calendario y cobros
 // ---------------------------------------------------------------------
 import type { CalendarKind, RequestStatus } from '@/types/db';
@@ -223,7 +252,9 @@ export const REQUEST_STATUS_TONE: Record<RequestStatus, Tone> = {
  * El color lo da SIEMPRE el tipo de trabajo, nunca la persona asignada:
  * así se lee de un vistazo qué clase de día tiene la empresa.
  */
-export const CALENDAR_KINDS: CalendarKind[] = ['fabricacion', 'montaje', 'material', 'visita', 'aviso'];
+export const CALENDAR_KINDS: CalendarKind[] = [
+  'obra', 'fabricacion', 'montaje', 'material', 'visita', 'aviso', 'otro',
+];
 
 export const CALENDAR_LABEL: Record<CalendarKind, string> = {
   fabricacion: 'Fabricación',
@@ -231,6 +262,8 @@ export const CALENDAR_LABEL: Record<CalendarKind, string> = {
   material: 'Material',
   visita: 'Visita',
   aviso: 'Aviso',
+  otro: 'Otros',
+  obra: 'Obras',
 };
 
 /** Se corresponden con las variables --ev-* de tokens.css. */
@@ -240,6 +273,8 @@ export const CALENDAR_COLOR: Record<CalendarKind, string> = {
   material: 'var(--ev-material)',
   visita: 'var(--ev-visita)',
   aviso: 'var(--ev-aviso)',
+  otro: 'var(--ev-otro)',
+  obra: 'var(--ev-obra)',
 };
 
 export type CalendarView = 'mes' | 'semana' | 'dia' | 'agenda';

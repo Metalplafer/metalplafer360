@@ -6,12 +6,11 @@
  * También se comprueba que en el repositorio no hay ninguna credencial.
  */
 import { describe, expect, it, afterEach, vi } from 'vitest';
-import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
-  accessToken, claimSet, deleteFromDrive, multipartBody, uploadToDrive,
+  DriveNoAutorizado, accessToken, deleteFromDrive, multipartBody, uploadToDrive,
 } from '../../supabase/functions/_shared/drive.ts';
 
 const ROOT = join(__dirname, '../..');
@@ -34,71 +33,47 @@ function publicados(base = ''): string[] {
   return salida;
 }
 
-// ---------------------------------------------------------------------
-// Una clave de usar y tirar para firmar en la prueba
-// ---------------------------------------------------------------------
-async function testKey() {
-  const pair = await crypto.subtle.generateKey(
-    { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
-    true,
-    ['sign', 'verify'],
-  );
-  const pkcs8 = new Uint8Array(await crypto.subtle.exportKey('pkcs8', pair.privateKey));
-  const base64 = Buffer.from(pkcs8).toString('base64').match(/.{1,64}/g)!.join('\\n');
-  return {
-    pem: `-----BEGIN PRIVATE KEY-----\\n${base64}\\n-----END PRIVATE KEY-----\\n`,
-    publicKey: pair.publicKey,
-  };
-}
-
-const fromB64Url = (text: string) =>
-  Buffer.from(text.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
-
 afterEach(() => { vi.unstubAllGlobals(); });
 
-describe('acceso a Google Drive', () => {
-  it('pide exactamente el permiso que necesita y por una hora', () => {
-    const now = 1_800_000_000;
-    const claims = claimSet('copias@metalplafer.iam.gserviceaccount.com', now);
-    expect(claims.iss).toBe('copias@metalplafer.iam.gserviceaccount.com');
-    expect(claims.scope).toBe('https://www.googleapis.com/auth/drive.file');
-    expect(claims.aud).toBe('https://oauth2.googleapis.com/token');
-    expect(claims.exp - claims.iat).toBe(3600);
-  });
+/** Una configuración de Drive cualquiera, con credenciales inventadas. */
+const CONFIG = {
+  clientId: 'cliente-de-prueba.apps.googleusercontent.com',
+  clientSecret: 'secreto-de-prueba',
+  refreshToken: 'permiso-duradero-de-prueba',
+  folderId: 'carpeta-de-las-copias',
+};
 
-  it('firma el JWT con la clave privada y la firma es válida', async () => {
-    const { pem, publicKey } = await testKey();
+describe('acceso a Google Drive con la cuenta de la empresa', () => {
+  it('cambia el permiso duradero por un acceso de una hora', async () => {
     let enviado: { url: string; body: URLSearchParams } | null = null;
 
     vi.stubGlobal('fetch', async (url: string, init: { body: URLSearchParams }) => {
       enviado = { url, body: init.body };
-      return { ok: true, json: async () => ({ access_token: 'token-de-prueba' }) };
+      return { ok: true, json: async () => ({ access_token: 'acceso-de-una-hora' }) };
     });
 
-    const token = await accessToken({ email: 'copias@metalplafer.iam.gserviceaccount.com', privateKey: pem });
-    expect(token).toBe('token-de-prueba');
+    expect(await accessToken(CONFIG)).toBe('acceso-de-una-hora');
     expect(enviado!.url).toBe('https://oauth2.googleapis.com/token');
-    expect(enviado!.body.get('grant_type')).toBe('urn:ietf:params:oauth:grant-type:jwt-bearer');
-
-    const assertion = enviado!.body.get('assertion')!;
-    const [head, payload, signature] = assertion.split('.');
-    expect(JSON.parse(fromB64Url(head).toString())).toEqual({ alg: 'RS256', typ: 'JWT' });
-    expect(JSON.parse(fromB64Url(payload).toString()).iss)
-      .toBe('copias@metalplafer.iam.gserviceaccount.com');
-
-    const valida = await crypto.subtle.verify(
-      'RSASSA-PKCS1-v1_5', publicKey,
-      fromB64Url(signature),
-      new TextEncoder().encode(`${head}.${payload}`),
-    );
-    expect(valida).toBe(true);
+    expect(enviado!.body.get('grant_type')).toBe('refresh_token');
+    expect(enviado!.body.get('refresh_token')).toBe(CONFIG.refreshToken);
+    // El secreto del cliente viaja al servidor de Google, nunca al navegador.
+    expect(enviado!.body.get('client_secret')).toBe(CONFIG.clientSecret);
   });
 
-  it('avisa en castellano si Google rechaza las credenciales', async () => {
-    const { pem } = await testKey();
-    vi.stubGlobal('fetch', async () => ({ ok: false, status: 401 }));
-    await expect(accessToken({ email: 'x@y.z', privateKey: pem }))
-      .rejects.toThrow(/Google no ha dado acceso/);
+  it('si Google ya no acepta el permiso, pide volver a conectar', async () => {
+    vi.stubGlobal('fetch', async () => ({
+      ok: false, status: 400, json: async () => ({ error: 'invalid_grant' }),
+    }));
+
+    await expect(accessToken(CONFIG)).rejects.toBeInstanceOf(DriveNoAutorizado);
+    await expect(accessToken(CONFIG)).rejects.toThrow(/vuelve a conectar Google Drive/i);
+  });
+
+  it('un fallo pasajero de Google NO se confunde con tener que reautorizar', async () => {
+    vi.stubGlobal('fetch', async () => ({ ok: false, status: 503, json: async () => ({}) }));
+
+    await expect(accessToken(CONFIG)).rejects.not.toBeInstanceOf(DriveNoAutorizado);
+    await expect(accessToken(CONFIG)).rejects.toThrow(/más tarde/i);
   });
 });
 
@@ -117,35 +92,49 @@ describe('subida del archivo', () => {
     expect(Array.from(body).join(',')).toContain('80,75,3,4,9,9');
   });
 
-  it('sube a la carpeta indicada y devuelve el enlace', async () => {
-    const { pem } = await testKey();
+  it('sube a la carpeta de la empresa y devuelve el enlace', async () => {
     const llamadas: string[] = [];
 
-    vi.stubGlobal('fetch', async (url: string) => {
+    vi.stubGlobal('fetch', async (url: string, init: { body?: unknown }) => {
       llamadas.push(url);
       if (url.includes('oauth2')) return { ok: true, json: async () => ({ access_token: 't' }) };
+      const cuerpo = Buffer.from(init!.body as Uint8Array).toString('latin1');
+      expect(cuerpo).toContain('"parents":["carpeta-de-las-copias"]');
       return {
         ok: true,
         json: async () => ({ id: 'archivo-1', name: 'copia.zip', webViewLink: 'https://drive/1' }),
       };
     });
 
-    const subido = await uploadToDrive(
-      { email: 'a@b.c', privateKey: pem, folderId: 'carpeta-123' },
-      'copia.zip', new Uint8Array([1, 2, 3]),
-    );
-
+    const subido = await uploadToDrive(CONFIG, 'copia.zip', new Uint8Array([1, 2, 3]));
     expect(subido).toEqual({ id: 'archivo-1', name: 'copia.zip', link: 'https://drive/1' });
     expect(llamadas[1]).toContain('uploadType=multipart');
   });
 
+  it('si la carpeta ya no existe, lo explica en castellano', async () => {
+    vi.stubGlobal('fetch', async (url: string) => (url.includes('oauth2')
+      ? { ok: true, json: async () => ({ access_token: 't' }) }
+      : { ok: false, status: 404, text: async () => 'File not found' }));
+
+    await expect(uploadToDrive(CONFIG, 'copia.zip', new Uint8Array([1])))
+      .rejects.toThrow(/No se encuentra la carpeta de las copias/i);
+  });
+
+  it('si la cuenta de Google no tiene espacio, también', async () => {
+    vi.stubGlobal('fetch', async (url: string) => (url.includes('oauth2')
+      ? { ok: true, json: async () => ({ access_token: 't' }) }
+      : { ok: false, status: 403, text: async () => 'quota' }));
+
+    await expect(uploadToDrive(CONFIG, 'copia.zip', new Uint8Array([1])))
+      .rejects.toThrow(/no tenga espacio libre/i);
+  });
+
   it('borrar una copia que ya no está se da por hecho', async () => {
-    const { pem } = await testKey();
     vi.stubGlobal('fetch', async (url: string) => (url.includes('oauth2')
       ? { ok: true, json: async () => ({ access_token: 't' }) }
       : { ok: false, status: 404 }));
 
-    expect(await deleteFromDrive({ email: 'a@b.c', privateKey: pem }, 'ya-no-esta')).toBe(true);
+    expect(await deleteFromDrive(CONFIG, 'ya-no-esta')).toBe(true);
   });
 });
 
@@ -153,8 +142,10 @@ describe('seguridad del repositorio', () => {
   const archivos = [
     'supabase/functions/admin-users/index.ts',
     'supabase/functions/backup-drive/index.ts',
+    'supabase/functions/google-oauth/index.ts',
     'supabase/functions/_shared/drive.ts',
     'supabase/sql/21_backup_automatico.sql',
+    'supabase/sql/24_google_oauth.sql',
     '.env.example',
   ];
 
@@ -187,6 +178,70 @@ describe('seguridad del repositorio', () => {
       .filter((f) => f.startsWith('src/'))
       .filter((f) => /service_role_key|SUPABASE_SERVICE_ROLE/.test(readFileSync(join(ROOT, f), 'utf8')));
     expect(encontrados).toEqual([]);
+  });
+
+  it('la aplicación no toca NINGUNA credencial de Google', () => {
+    // El navegador solo pregunta el estado y pide una dirección a la que
+    // ir. El secreto del cliente y el permiso duradero se quedan en el
+    // servidor; aquí no puede aparecer ni el nombre de la variable.
+    const prohibido = [
+      /GOOGLE_OAUTH_CLIENT_SECRET/,
+      /GOOGLE_PRIVATE_KEY/,
+      /GOOGLE_SERVICE_ACCOUNT/,
+      /refresh_token/,
+      /drive_get_token/,
+      /drive_put_token/,
+      /client_secret/,
+    ];
+    const fugas: string[] = [];
+    for (const archivo of publicados().filter((f) => f.startsWith('src/'))) {
+      const texto = readFileSync(join(ROOT, archivo), 'utf8');
+      for (const patron of prohibido) {
+        if (patron.test(texto)) fugas.push(`${archivo}: ${patron.source}`);
+      }
+    }
+    expect(fugas).toEqual([]);
+  });
+
+  it('ninguna credencial de Google viaja en una variable VITE_', () => {
+    const ejemplo = readFileSync(join(ROOT, '.env.example'), 'utf8');
+    expect(ejemplo).not.toMatch(/VITE_[A-Z_]*GOOGLE/);
+    expect(ejemplo).not.toMatch(/VITE_[A-Z_]*SECRET/);
+    expect(ejemplo).not.toMatch(/VITE_[A-Z_]*TOKEN/);
+
+    // Y lo que de verdad se publica: ninguna VITE_ con pinta de secreto.
+    const usadas = new Set<string>();
+    for (const archivo of publicados().filter((f) => f.startsWith('src/'))) {
+      for (const m of readFileSync(join(ROOT, archivo), 'utf8').matchAll(/VITE_[A-Z0-9_]+/g)) {
+        usadas.add(m[0]);
+      }
+    }
+    // VITE_BASE_PATH solo lo usa la construcción (vite.config.ts), no el
+    // código de la aplicación.
+    expect([...usadas].sort()).toEqual(
+      ['VITE_LOGIN_DOMAIN', 'VITE_SUPABASE_ANON_KEY', 'VITE_SUPABASE_URL'],
+    );
+  });
+
+  it('las dos funciones sin sesión comprueban ellas mismas quién llama', () => {
+    // backup-drive y google-oauth se publican con --no-verify-jwt porque
+    // ni el cron ni la vuelta de Google traen sesión. Eso solo es seguro
+    // si la comprobación la hacen ellas, así que se exige aquí.
+    const backup = readFileSync(join(ROOT, 'supabase/functions/backup-drive/index.ts'), 'utf8');
+    expect(backup).toMatch(/role !== 'admin'/);
+    expect(backup).toMatch(/BACKUP_CRON_SECRET/);
+
+    const oauth = readFileSync(join(ROOT, 'supabase/functions/google-oauth/index.ts'), 'utf8');
+    expect(oauth).toMatch(/role !== 'admin'/);
+    // La vuelta de Google se acepta solo con un «state» que se gasta.
+    expect(oauth).toMatch(/google_oauth_state/);
+    expect(oauth).toMatch(/\.delete\(\)\.eq\('state', state\)/);
+
+    const config = readFileSync(join(ROOT, 'supabase/config.toml'), 'utf8');
+    expect(config).toMatch(/\[functions\.backup-drive\][\s\S]*?verify_jwt = false/);
+    expect(config).toMatch(/\[functions\.google-oauth\][\s\S]*?verify_jwt = false/);
+    // admin-users se queda con la comprobación de Supabase puesta.
+    expect(config).not.toMatch(/\[functions\.admin-users\]/);
   });
 
   it('en todo lo que se publica no hay ninguna credencial de verdad', () => {
@@ -223,15 +278,46 @@ describe('seguridad del repositorio', () => {
 });
 
 describe('las funciones del servidor son código válido', () => {
-  it('se compilan sin errores de sintaxis', () => {
+  /**
+   * Se compilan con esbuild llamándolo COMO BIBLIOTECA, no como programa.
+   *
+   * Antes se lanzaba esbuild como PROGRAMA externo a través del lanzador
+   * de npm, y eso daba dos problemas en Windows:
+   *   · ese lanzador allí es un archivo .cmd, y «execFileSync» sin shell
+   *     no lo encuentra (termina en ENOENT);
+   *   · la salida se mandaba al dispositivo nulo de Unix, que en Windows
+   *     no existe: esbuild habría intentado escribir un archivo de verdad
+   *     con ese nombre.
+   *
+   * Usando la API de esbuild no se lanza ningún proceso externo, así que
+   * funciona igual en Windows, macOS y Linux, y además no escribe nada
+   * («write: false»): se compila en memoria.
+   *
+   * La comprobación es MÁS estricta que antes: antes se miraba que la
+   * salida de texto no dijera «error» —y si esbuild fallaba de verdad,
+   * «execFileSync» lanzaba la excepción antes de llegar a mirarla—.
+   * Ahora se exige que la lista de errores esté vacía, y se enseñan.
+   */
+  it('se compilan sin errores de sintaxis', async () => {
+    const { buildSync } = await import('esbuild');
+
     for (const archivo of ['supabase/functions/admin-users/index.ts',
                            'supabase/functions/backup-drive/index.ts',
+                           'supabase/functions/google-oauth/index.ts',
                            'supabase/functions/_shared/drive.ts']) {
-      const salida = execFileSync('npx', [
-        'esbuild', archivo, '--bundle', '--format=esm', '--platform=neutral',
-        '--external:https://*', '--outfile=/dev/null',
-      ], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-      expect(salida).not.toContain('error');
+      const resultado = buildSync({
+        entryPoints: [join(ROOT, archivo)],
+        bundle: true,
+        format: 'esm',
+        platform: 'neutral',
+        external: ['https://*'],
+        write: false,            // nada en el disco: se compila en memoria
+        logLevel: 'silent',      // los errores se leen del resultado, no de la consola
+      });
+
+      expect(resultado.errors.map((e) => `${archivo}: ${e.text}`)).toEqual([]);
+      expect(resultado.outputFiles?.length, `${archivo} no ha generado nada`)
+        .toBeGreaterThan(0);
     }
   });
 });

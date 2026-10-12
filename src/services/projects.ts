@@ -5,7 +5,8 @@ const SELECT =
   '*, client:clients(id, name, phone, kind, address), ' +
   'contact:client_contacts(id, name, phone), ' +
   'source:fichas!projects_source_ficha_id_fkey(id, code), ' +
-  'substatuses:project_substatuses(phase, substatus)';
+  'substatuses:project_substatuses(phase, substatus), ' +
+  'work:works(id, code, name)';
 
 export type ProjectInput = Partial<Pick<Project,
   'client_id' | 'contact_id' | 'name' | 'description' | 'measures' | 'finish' | 'location' |
@@ -132,4 +133,15 @@ export async function projectFromFicha(fichaId: string) {
   return unwrap(
     await supabase.from('projects').select('id, code, name').eq('source_ficha_id', fichaId).maybeSingle(),
   ) as { id: string; code: string; name: string } | null;
+}
+
+/**
+ * ELIMINAR un proyecto con sus documentos, órdenes y materiales.
+ * La base de datos se niega si tiene cobros u horas ya validadas: eso es
+ * dinero y producción de verdad, y no se borra en silencio.
+ */
+export async function deleteProject(id: string) {
+  return unwrap(await supabase.rpc('delete_project', { p_project: id })) as unknown as {
+    ok: boolean; code: string; documentos: number; ordenes: number; partes_desvinculados: number;
+  };
 }

@@ -226,6 +226,73 @@ select test.ok('demo', 'La limpieza dice cuántos registros se llevó',
 select test.ok('demo', 'Y queda anotada en el historial',
   exists (select 1 from public.audit_log where summary like '%limpió los datos de ejemplo%'));
 
+-- ---------------------------------------------------------------------
+-- El fallo de verdad: limpiar DESPUÉS de haber usado la aplicación.
+--
+-- Al tocar un dato de ejemplo, el historial lo anota y esa anotación
+-- hereda la marca de ejemplo. Limpiar entonces chocaba con la protección
+-- que hace inmutable el historial, y la pantalla decía «no tienes
+-- permisos», que no era lo que pasaba. Probarlo justo después de sembrar
+-- no bastaba: hay que USAR la aplicación primero.
+-- ---------------------------------------------------------------------
+select public.seed_demo();
+
+update public.materials set received = true
+ where id = (select id from public.materials where is_demo and not received limit 1);
+update public.projects set budget_amount = 1234
+ where id = (select id from public.projects where is_demo limit 1);
+
+select test.ok('demo', 'Usar el ejemplo deja anotaciones marcadas como ejemplo',
+  (select count(*) > 0 from public.audit_log where is_demo));
+
+-- Se apunta el historial de verdad que hay ahora mismo, anotación por
+-- anotación (no solo cuántas): así se comprueba que no se pierde ninguna,
+-- no que el total cuadre por casualidad.
+select test.setnote('reales_historial', (
+  select coalesce(string_agg(id::text, ',' order by id), '')
+    from public.audit_log where not is_demo));
+select test.setnote('reales_historial_n',
+  (select count(*)::text from public.audit_log where not is_demo));
+
+select test.setnote('limpieza2', public.clear_demo()::text);
+
+select test.ok('demo', 'Se puede limpiar el ejemplo DESPUÉS de haberlo usado',
+  (test.note('limpieza2')::jsonb ->> 'total')::int > 0);
+
+select test.ok('demo', 'Y se lleva también las anotaciones del ejemplo',
+  not exists (select 1 from public.audit_log where is_demo));
+
+select test.ok('demo', 'Sin perder ni una anotación del trabajo de verdad',
+  (select count(*) from unnest(string_to_array(test.note('reales_historial'), ',')) as a(id)
+    where not exists (select 1 from public.audit_log l where l.id::text = a.id)) = 0);
+
+-- Lo único que se añade al historial de verdad es la anotación de que
+-- alguien limpió el ejemplo, que es una acción de verdad de una persona
+-- de verdad.
+select test.ok('demo', 'Y lo único que se añade es la anotación de la limpieza',
+  (select count(*) from public.audit_log where not is_demo)
+    = test.note('reales_historial_n')::int + 1
+  and (select count(*) from public.audit_log
+        where not is_demo and action = 'limpiar_demo') = 2);
+
+-- La puerta que se abre para limpiar es estrecha: hace falta estar
+-- limpiando Y que la fila sea de ejemplo. Si falta cualquiera de las dos,
+-- el historial sigue siendo intocable.
+reset role; select test.as_server();
+
+select test.err('demo', 'Ni limpiando se puede borrar historial de verdad',
+  $$select set_config('app.demo_cleanup', 'on', true);
+    delete from public.audit_log where not is_demo$$, '42501');
+
+insert into public.audit_log (actor_name, action, entity_type, summary, is_demo)
+values ('Prueba', 'insert', 'clients', 'Anotación de ejemplo suelta', true);
+
+select test.err('demo', 'Y fuera de la limpieza no se borra ni lo de ejemplo',
+  $$select set_config('app.demo_cleanup', 'off', true);
+    delete from public.audit_log where is_demo$$, '42501');
+
+set role authenticated; select test.as_user(test.id('salvi'));
+
 \echo '== ÍNDICES QUE FALTABAN'
 
 select test.ok('indices', 'Toda columna de clave foránea tiene su índice',

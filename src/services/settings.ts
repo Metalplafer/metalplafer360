@@ -62,31 +62,42 @@ export async function storageUsage() {
 // Personas
 // ---------------------------------------------------------------------
 
+/**
+ * Las personas, con sus datos de contacto. Se lee por «profiles_full»:
+ * el teléfono, el correo y las preferencias no se conceden sobre la
+ * tabla, y esta vista los devuelve a quien le corresponde (cada uno los
+ * suyos, administración los de todos).
+ */
 export async function listAllPeople() {
   return unwrap(
-    await supabase.from('profiles').select('*').order('role').order('full_name'),
+    await supabase.from('profiles_full').select('*').order('role').order('full_name'),
   ) as Profile[];
+}
+
+/** Vuelve a leer la ficha completa después de cambiarla. */
+async function readPerson(id: string) {
+  return unwrap(
+    await supabase.from('profiles_full').select('*').eq('id', id).single(),
+  ) as Profile;
 }
 
 /** Cambiar el rol o desactivar a alguien: lo permiten las políticas de la base de datos. */
 export async function setRole(id: string, role: UserRole) {
-  return unwrap(
-    await supabase.from('profiles').update({ role }).eq('id', id).select('*').single(),
-  ) as Profile;
+  unwrap(await supabase.from('profiles').update({ role }).eq('id', id).select('id').single());
+  return readPerson(id);
 }
 
 export async function setActive(id: string, active: boolean) {
-  return unwrap(
-    await supabase.from('profiles').update({ active }).eq('id', id).select('*').single(),
-  ) as Profile;
+  unwrap(await supabase.from('profiles').update({ active }).eq('id', id).select('id').single());
+  return readPerson(id);
 }
 
 export async function renamePerson(id: string, fullName: string, phone: string | null) {
   const name = fullName.trim();
   if (!name) throw new Aviso('El nombre no puede quedar vacío.');
-  return unwrap(
-    await supabase.from('profiles').update({ full_name: name, phone }).eq('id', id).select('*').single(),
-  ) as Profile;
+  unwrap(await supabase.from('profiles')
+    .update({ full_name: name, phone }).eq('id', id).select('id').single());
+  return readPerson(id);
 }
 
 /**
@@ -139,4 +150,12 @@ export async function createWorker(user: NewUser) {
 export async function resetPassword(id: string, password: string) {
   if (password.length < 8) throw new Aviso('La contraseña debe tener al menos 8 caracteres.');
   return callAdminUsers('password', { id, password });
+}
+
+/**
+ * El margen entre proyectos, en días laborables libres.
+ * Vale de aquí en adelante: no mueve lo que ya esté colocado.
+ */
+export async function setGapDays(days: number) {
+  return unwrap(await supabase.rpc('set_gap_days', { p_days: days })) as unknown as AppSettings;
 }

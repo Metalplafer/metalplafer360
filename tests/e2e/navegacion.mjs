@@ -145,8 +145,8 @@ try {
   check('El administrador entra y llega a su panel', page.url().includes('#/admin'));
   check('Se le saluda por su nombre',
     (await page.locator('h1').first().innerText()).includes('Salvi'));
-  check('El menú de administración tiene las 12 secciones',
-    (await page.locator('.sidebar nav a').count()) === 12);
+  check('El menú de administración tiene las 14 secciones',
+    (await page.locator('.sidebar nav a').count()) === 14);
 
   // ---------------------------------------------------------------------
   // La cabecera del menú lateral: [icono 360] [logo Metalplafer].
@@ -237,8 +237,11 @@ try {
   await page.waitForTimeout(250);
 
   const menu = await page.locator('.sidebar nav a').allInnerTexts();
-  const expected = ['Dashboard', 'Fichas', 'Proyectos', 'Órdenes de trabajo', 'Material pendiente',
-    'Calendario', 'Avisos', 'Clientes', 'Trabajadores', 'Facturación', 'Informes', 'Configuración'];
+  // BLOQUE 1: «Partes de trabajo» entra entre Proyectos y Órdenes.
+  // BLOQUE 4: «Obras» entra delante de Proyectos, porque es su contenedor.
+  const expected = ['Dashboard', 'Fichas', 'Obras', 'Proyectos', 'Partes de trabajo',
+    'Órdenes de trabajo', 'Material pendiente', 'Calendario', 'Avisos', 'Clientes',
+    'Trabajadores', 'Facturación', 'Informes', 'Configuración'];
   check('Las secciones son exactamente las previstas',
     expected.every((label, i) => menu[i].includes(label)), menu.join(' | '));
 
@@ -346,16 +349,16 @@ try {
     (await wpage.locator('.w-tabbar a').count()) === 5);
   const tabs = await wpage.locator('.w-tabbar a').allInnerTexts();
   check('Las secciones del móvil son las previstas',
-    ['Inicio', 'Calendario', 'Mis órdenes', 'Historial', 'Perfil']
+    ['Inicio', 'Proyectos', 'Mis partes', 'Calendario', 'Perfil']
       .every((t, i) => tabs[i].includes(t)), tabs.join(' | '));
 
   const tabBox = await wpage.locator('.w-tabbar a').first().boundingBox();
   check('Los botones de la barra son cómodos de pulsar con el dedo', tabBox.height >= 48,
     `${tabBox?.height}px de alto`);
 
-  await wpage.locator('.w-tabbar a:has-text("Mis órdenes")').click();
+  await wpage.locator('.w-tabbar a:has-text("Mis partes")').click();
   await wpage.waitForTimeout(350);
-  check('La navegación del móvil funciona', wpage.url().includes('#/t/ordenes'));
+  check('La navegación del móvil funciona', wpage.url().includes('#/t/partes'));
 
   await wpage.locator('.w-tabbar a:has-text("Perfil")').click();
   await wpage.waitForTimeout(350);

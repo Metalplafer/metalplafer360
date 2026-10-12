@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import {
-  Building2, CloudUpload, Database, Download, FlaskConical, HardDrive, Hash, Save,
-  Smartphone, Trash2, TriangleAlert, Upload,
+  Building2, CalendarRange, CloudUpload, Database, Download, FlaskConical, HardDrive, Hash,
+  RefreshCw, Save, Smartphone, Trash2, TriangleAlert, Upload,
 } from 'lucide-react';
 import { useAsync } from '@/hooks/useAsync';
 import { useAuth } from '@/auth/AuthProvider';
@@ -11,18 +11,22 @@ import { Modal } from '@/components/ui/Modal';
 import { Badge, Field, PageHeader, Panel, Tabs } from '@/components/ui/Layout';
 import { Alert, Empty, ErrorBox, Loading } from '@/components/ui/Feedback';
 import {
-  backupToDrive, generateBackup, listBackups, readBackupFile, restoreBackup,
+  backupToDrive, driveAuthUrl, driveDisconnect, driveStatus,
+  generateBackup, listBackups, readBackupFile, restoreBackup,
 } from '@/services/backup';
 import {
   getSettings, listCounters, setBackupSettings, setCompany, setCounter,
-  setMaxFileMb, storageUsage,
+  setGapDays, setMaxFileMb, storageUsage,
 } from '@/services/settings';
 import { clearDemo, demoStatus, seedDemo } from '@/services/demo';
 import { RESTORE_SCOPES, tablesForScopes, type BackupContents } from '@/lib/export/backup';
 import { MIME, downloadBytes } from '@/lib/download';
 import { fmtBytes, fmtDateTime, fmtNumber } from '@/lib/format';
 
-type Tab = 'empresa' | 'numeracion' | 'copias' | 'almacenamiento' | 'preferencias';
+import type { AppSettings } from '@/types/db';
+
+type Tab = 'empresa' | 'numeracion' | 'copias' | 'planificacion'
+  | 'almacenamiento' | 'preferencias';
 
 const CODE_LABEL: Record<string, string> = {
   PRES: 'Presupuestos', VIS: 'Visitas', AVI: 'Avisos',
@@ -50,6 +54,7 @@ export default function SettingsPage() {
             { key: 'empresa' as const, label: 'Empresa' },
             { key: 'numeracion' as const, label: 'Numeración' },
             { key: 'copias' as const, label: 'Copias de seguridad' },
+            { key: 'planificacion' as const, label: 'Planificación' },
             { key: 'almacenamiento' as const, label: 'Almacenamiento' },
             { key: 'preferencias' as const, label: 'Aplicación' },
           ]}
@@ -65,6 +70,9 @@ export default function SettingsPage() {
               {tab === 'numeracion' && <CountersTab />}
               {tab === 'copias' && (
                 <BackupTab settings={settings.data} company={companyName} onSaved={reload} />
+              )}
+              {tab === 'planificacion' && (
+                <PlanningTab settings={settings.data} onSaved={reload} />
               )}
               {tab === 'almacenamiento' && (
                 <StorageTab maxFileMb={maxFileMb} onSaved={reload} />
@@ -240,9 +248,10 @@ function BackupTab({ settings, company, onSaved }: {
   company: string;
   onSaved: () => void;
 }) {
-  const { toast } = useDialogs();
+  const { confirm, toast } = useDialogs();
   const [reloadKey, setReloadKey] = useState(0);
   const backups = useAsync(() => listBackups(20), [reloadKey]);
+  const drive = useAsync(() => driveStatus(), [reloadKey]);
 
   const [busy, setBusy] = useState(false);
   const [retention, setRetention] = useState(String(settings.backup_retention_days ?? 30));
@@ -263,6 +272,36 @@ function BackupTab({ settings, company, onSaved }: {
       const { bytes, fileName: name } = await generateBackup({ company });
       downloadBytes(bytes, name, MIME.zip);
       toast.success('Copia generada y descargada');
+      setReloadKey((n) => n + 1);
+    } catch (e) { toast.error(e); } finally { setBusy(false); }
+  }
+
+  async function conectarDrive() {
+    setBusy(true);
+    try {
+      // La autorización ocurre en Google y vuelve al servidor: por aquí
+      // no pasa ninguna credencial.
+      const url = await driveAuthUrl();
+      window.open(url, '_blank', 'noopener,width=520,height=680');
+      toast.success('Se ha abierto Google en otra ventana. Autoriza y vuelve aquí.');
+    } catch (e) { toast.error(e); } finally { setBusy(false); }
+  }
+
+  async function desconectarDrive() {
+    const ok = await confirm({
+      title: 'Desconectar Google Drive',
+      message: <>
+        Se olvidará el permiso de Google y dejarán de subirse copias, también la
+        automática de las 02:00. Las copias que ya están en Drive no se tocan,
+        y seguirás pudiendo descargar copias a tu ordenador.
+      </>,
+      confirmLabel: 'Desconectar', danger: true,
+    });
+    if (!ok) return;
+    setBusy(true);
+    try {
+      await driveDisconnect();
+      toast.success('Google Drive desconectado');
       setReloadKey((n) => n + 1);
     } catch (e) { toast.error(e); } finally { setBusy(false); }
   }
@@ -325,9 +364,57 @@ function BackupTab({ settings, company, onSaved }: {
           <button className="btn btn-primary btn-lg" onClick={generateNow} disabled={busy}>
             <Download />{busy ? 'Generando…' : 'GENERAR BACKUP AHORA'}
           </button>
-          <button className="btn" onClick={sendToDrive} disabled={busy}>
+          <button className="btn" onClick={sendToDrive}
+                  disabled={busy || !drive.data?.conectado}>
             <CloudUpload />Subir a Google Drive
           </button>
+        </div>
+
+        {/* Estado de la conexión con Google Drive */}
+        <div className="drive-box" style={{ marginTop: 14 }}>
+          <span className="row" style={{ gap: 9, flex: 1, minWidth: 0 }}>
+            <CloudUpload size={17} aria-hidden />
+            <span className="cell-main">
+              <strong className="row" style={{ gap: 8 }}>
+                Google Drive
+                {drive.data?.estado === 'conectado' && <Badge tone="green">Conectado</Badge>}
+                {drive.data?.estado === 'error' && <Badge tone="red">Error de conexión</Badge>}
+                {(!drive.data || drive.data.estado === 'sin_conectar')
+                  && <Badge tone="steel">No conectado</Badge>}
+              </strong>
+              <small>
+                {drive.data?.estado === 'conectado' ? (
+                  <>
+                    {drive.data.cuenta ? `${drive.data.cuenta} · ` : ''}
+                    carpeta «{drive.data.carpeta}»
+                    {drive.data.ultima_copia
+                      ? ` · última copia subida el ${fmtDateTime(drive.data.ultima_copia)}`
+                      : ' · todavía no se ha subido ninguna copia'}
+                  </>
+                ) : drive.data?.estado === 'error' ? (
+                  drive.data.error
+                ) : (
+                  'Sin conectar, las copias solo se descargan a tu ordenador. '
+                  + 'Conéctalo para guardarlas también en Google Drive y para que se '
+                  + 'hagan solas cada noche.'
+                )}
+              </small>
+            </span>
+          </span>
+          <span className="row" style={{ gap: 6 }}>
+            <button className="btn btn-sm" onClick={conectarDrive} disabled={busy}>
+              {drive.data?.conectado ? 'Reconectar' : 'Conectar Google Drive'}
+            </button>
+            {drive.data?.conectado && (
+              <button className="btn btn-sm btn-ghost" onClick={desconectarDrive} disabled={busy}>
+                Desconectar
+              </button>
+            )}
+            <button className="btn btn-sm btn-ghost" onClick={() => setReloadKey((n) => n + 1)}
+                    aria-label="Comprobar la conexión con Google Drive">
+              <RefreshCw />
+            </button>
+          </span>
         </div>
 
         <p className="hint" style={{ marginTop: 12 }}>
@@ -349,7 +436,11 @@ function BackupTab({ settings, company, onSaved }: {
             <input id="bk-retention" className="input" inputMode="numeric" value={retention}
                    onChange={(e) => setRetention(e.target.value)} />
           </Field>
-          <Field label="Carpeta de Google Drive" htmlFor="bk-folder">
+          <Field label="Nombre de la carpeta en Google Drive" htmlFor="bk-folder"
+                 hint={drive.data?.conectado
+                   ? 'La carpeta ya está creada. Si cambias el nombre aquí, se usará la '
+                     + 'próxima vez que conectes; para renombrarla ahora, hazlo en Google Drive.'
+                   : 'La aplicación creará esta carpeta en «Mi unidad» al conectar.'}>
             <input id="bk-folder" className="input" value={folder}
                    onChange={(e) => setFolder(e.target.value)} />
           </Field>
@@ -606,6 +697,61 @@ function StorageTab({ maxFileMb, onSaved }: { maxFileMb: number; onSaved: () => 
       <p className="hint" style={{ marginBottom: 0 }}>
         Los archivos viven en el contenedor privado de Supabase. Lo que se envía a la papelera
         deja de verse en la aplicación pero sigue ocupando hasta que se elimina del todo.
+      </p>
+    </Panel>
+  );
+}
+
+// ---------------------------------------------------------------------
+// PLANIFICACIÓN
+// ---------------------------------------------------------------------
+function PlanningTab({ settings, onSaved }: { settings: AppSettings; onSaved: () => void }) {
+  const { toast } = useDialogs();
+  const [gap, setGap] = useState(String(settings.gap_days ?? 1).replace('.', ','));
+  const [busy, setBusy] = useState(false);
+
+  async function save() {
+    setBusy(true);
+    try {
+      await setGapDays(Number(gap.replace(',', '.')));
+      toast.success('Margen guardado');
+      onSaved();
+    } catch (e) { toast.error(e); } finally { setBusy(false); }
+  }
+
+  return (
+    <Panel title={<span className="row" style={{ gap: 7 }}><CalendarRange size={17} />Planificación</span>}>
+      <div className="form-grid">
+        <Field
+          label="Margen entre proyectos (días laborables)"
+          htmlFor="st-gap"
+          hint="Días laborables LIBRES que se dejan entre un proyecto y el siguiente."
+        >
+          <input id="st-gap" className="input" inputMode="decimal" value={gap}
+                 onChange={(e) => setGap(e.target.value)} />
+        </Field>
+      </div>
+
+      <div className="row" style={{ marginTop: 12 }}>
+        <button className="btn" onClick={save} disabled={busy}><Save />Guardar</button>
+      </div>
+
+      <div className="table-wrap" style={{ marginTop: 16 }}>
+        <table className="table">
+          <thead><tr><th>Si pones</th><th>El siguiente proyecto empieza</th></tr></thead>
+          <tbody>
+            <tr><td className="num">0</td><td>El día laborable siguiente, sin dejar ninguno libre</td></tr>
+            <tr><td className="num">0,5</td><td>Igual que 0: medio día libre no existe planificando por días enteros</td></tr>
+            <tr><td className="num">1</td><td>Dejando 1 día laborable libre (acaba lunes → empieza miércoles)</td></tr>
+            <tr><td className="num">2</td><td>Dejando 2 días laborables libres</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p className="hint" style={{ marginBottom: 0 }}>
+        El margen vale <strong>de aquí en adelante</strong>: lo que ya esté colocado en el
+        calendario no se mueve. La planificación automática nunca solapa dos proyectos;
+        si hace falta solapar, se hace a mano desde el calendario y entonces manda eso.
       </p>
     </Panel>
   );

@@ -387,6 +387,22 @@ print(json.dumps({'hojas': hojas, 'congelada': wb.worksheets[0].freeze_panes,
     clientesCsv.charCodeAt(0) === 0xFEFF && clientesCsv.split('\n')[0].includes(';'));
   check('Y traen los datos de verdad', clientesCsv.includes('García Construcciones SL'));
 
+  // REVISIÓN: el teléfono, el correo y las preferencias dejaron de
+  // concederse sobre la tabla «profiles» (son permisos por columna). La
+  // copia se lee por «profiles_full» justo para que no salga incompleta
+  // sin que nadie se entere. Esto lo comprueba.
+  const personasCsv = readFileSync(
+    join(carpeta, listado.find((f) => f.includes('profiles.csv'))), 'utf8');
+  check('La copia incluye las personas',
+    listado.some((f) => f.includes('profiles.csv')));
+  check('Con sus columnas personales, no recortadas',
+    ['phone', 'email', 'preferences', 'username']
+      .every((c) => personasCsv.split('\n')[0].includes(c)),
+    personasCsv.split('\n')[0].replace(/\uFEFF/, '').slice(0, 200));
+  check('Y con el valor dentro, no la columna vacía',
+    personasCsv.includes('Juan Ortega'),
+    personasCsv.split('\n').slice(0, 3).join(' | ').slice(0, 220));
+
   check('La copia queda registrada en el historial de copias',
     db.backups.length === 1 && db.backups[0].status === 'completado');
   await page.waitForTimeout(400);
@@ -394,6 +410,27 @@ print(json.dumps({'hojas': hojas, 'congelada': wb.worksheets[0].freeze_panes,
     (await page.locator('main').innerText()).includes('Completada'));
 
   // ---- Google Drive ----
+  // Sin conectar no se puede subir: el botón está apagado y se explica
+  // por qué, en vez de dejar pulsar y fallar.
+  check('Sin conectar, no deja subir a Google Drive',
+    await page.locator('button:has-text("Subir a Google Drive")').isDisabled());
+  check('Y la pantalla dice que no está conectado',
+    (await page.locator('.drive-box').innerText()).includes('No conectado'));
+
+  // Se conecta (en la prueba, Google responde solo).
+  db.drive.connected = true;
+  db.drive.account_email = 'metalplafer@gmail.com';
+  db.drive.folder_id = 'carpeta-123';
+  db.drive.folder_name = 'METALPLAFER360 · Copias de seguridad';
+  db.drive.connected_at = new Date().toISOString();
+  await page.locator('button[aria-label="Comprobar la conexión con Google Drive"]').click();
+  await page.waitForTimeout(900);
+
+  const estadoDrive = await page.locator('.drive-box').innerText();
+  check('Conectado, la pantalla dice con qué cuenta y en qué carpeta',
+    estadoDrive.includes('Conectado') && estadoDrive.includes('metalplafer@gmail.com')
+    && estadoDrive.includes('METALPLAFER360 · Copias de seguridad'), estadoDrive.replace(/\n/g, ' · '));
+
   await page.locator('button:has-text("Subir a Google Drive")').click();
   await page.waitForTimeout(1200);
   check('Se puede subir la copia a Google Drive',

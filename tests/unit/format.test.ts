@@ -143,6 +143,27 @@ describe('mensajes de error comprensibles', () => {
   it('nunca muestra jerga técnica al usuario', () => {
     expect(toUserMessage({ message: 'PGRST116: JSON object requested, multiple rows returned' }))
       .toBe('Ha ocurrido un error inesperado. Inténtalo de nuevo.');
+
+    // Lo que rechaza PostgreSQL por su cuenta viene en inglés y no se enseña.
+    expect(toUserMessage({ code: '42501', message: 'permission denied for table audit_log' }))
+      .toBe('No tienes permisos para realizar esta acción.');
+    expect(toUserMessage({ code: '42501', message: 'new row violates row-level security policy' }))
+      .toBe('No tienes permisos para realizar esta acción.');
+  });
+
+  it('pero sí explica el motivo de verdad cuando lo sabemos', () => {
+    // Estos avisos los escribe la propia aplicación, en castellano, y
+    // llevan el mismo código de error. Taparlos hacía que la pantalla
+    // dijera «no tienes permisos» cuando el problema era otro.
+    expect(toUserMessage({ code: '42501', message: 'El historial no se puede modificar ni eliminar' }))
+      .toBe('El historial no se puede modificar ni eliminar');
+    expect(toUserMessage({
+      code: '42501',
+      message: 'El código «PRES-2026-001» no se puede cambiar: identifica el expediente.',
+    })).toContain('no se puede cambiar');
+    // Y el mensaje de permisos de siempre sigue saliendo igual.
+    expect(toUserMessage({ code: '42501', message: 'No tienes permisos para realizar esta acción.' }))
+      .toBe('No tienes permisos para realizar esta acción.');
   });
 });
 

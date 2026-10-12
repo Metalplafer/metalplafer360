@@ -21,12 +21,21 @@ export interface BackupRow {
   finished_at: string | null;
 }
 
+/**
+ * Por dónde se lee cada tabla. «profiles» no concede el teléfono, el
+ * correo ni las preferencias sobre la tabla (REVISIÓN), así que la copia
+ * se lee por la vista, que a administración le devuelve todo. Sin esto,
+ * la copia de seguridad saldría incompleta sin avisar.
+ */
+const LEER_POR: Record<string, string> = { profiles: 'profiles_full' };
+
 /** Trae una tabla entera, de mil en mil (es el máximo que devuelve Supabase). */
 async function fetchAll(table: string): Promise<Record<string, unknown>[]> {
   const page = 1000;
   const rows: Record<string, unknown>[] = [];
+  const origen = LEER_POR[table] ?? table;
   for (let from = 0; ; from += page) {
-    const { data, error } = await supabase.from(table).select('*').range(from, from + page - 1);
+    const { data, error } = await supabase.from(origen).select('*').range(from, from + page - 1);
     if (error) throw error;
     rows.push(...(data ?? []) as Record<string, unknown>[]);
     if (!data || data.length < page) break;
@@ -129,6 +138,50 @@ export async function restoreBackup(contents: BackupContents, scopes: string[]) 
     p_payload: contents.payload,
     p_scope: scopes,
   })) as { filas: Record<string, number>; total: number; apartados: string[] };
+}
+
+// ---------------------------------------------------------------------
+// CONEXIÓN CON GOOGLE DRIVE
+//
+// La aplicación NO ve ninguna credencial de Google: solo pregunta cómo
+// está la conexión y, para conectarla, pide al servidor una dirección a
+// la que mandar a la persona. El permiso que devuelve Google se queda en
+// el servidor y jamás pasa por el navegador.
+// ---------------------------------------------------------------------
+export interface DriveStatus {
+  estado: 'sin_conectar' | 'conectado' | 'error';
+  conectado: boolean;
+  cuenta: string | null;
+  carpeta: string | null;
+  carpeta_id: string | null;
+  conectado_el: string | null;
+  ultima_copia: string | null;
+  error: string | null;
+}
+
+export async function driveStatus() {
+  return unwrap(await supabase.rpc('drive_status')) as unknown as DriveStatus;
+}
+
+/** Devuelve la dirección de Google a la que hay que ir para autorizar. */
+export async function driveAuthUrl() {
+  const { data, error } = await supabase.functions.invoke('google-oauth', {
+    body: { action: 'start' },
+  });
+  if (error || !(data as { url?: string })?.url) {
+    throw new Aviso(
+      'No se ha podido preparar la conexión con Google. Revisa en Supabase que la función '
+      + '«google-oauth» esté publicada y que tenga sus dos secretos.',
+    );
+  }
+  return (data as { url: string }).url;
+}
+
+export async function driveDisconnect() {
+  const { error } = await supabase.functions.invoke('google-oauth', {
+    body: { action: 'disconnect' },
+  });
+  if (error) throw new Aviso('No se ha podido desconectar Google Drive.');
 }
 
 export async function backupSettings() {

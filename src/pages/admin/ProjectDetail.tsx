@@ -1,8 +1,9 @@
-import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   Archive, ArchiveRestore, ArrowLeft, Boxes, Building2, CheckCircle2, ClipboardList,
-  FileStack, Lightbulb, MapPin, Pencil, Plus, RotateCcw,
+  FileStack, FileText, HardHat, Lightbulb, MapPin, Pencil, Plus, RotateCcw, Trash2,
+  Users, Wand2,
 } from 'lucide-react';
 import { useAsync } from '@/hooks/useAsync';
 import { useDialogs } from '@/components/ui/Dialogs';
@@ -10,10 +11,11 @@ import { Badge, PageHeader, Panel } from '@/components/ui/Layout';
 import { Alert, ErrorBox, Loading } from '@/components/ui/Feedback';
 import { PhaseRail } from '@/components/ui/PhaseRail';
 import { DocumentsPanel } from '@/components/shared/DocumentsPanel';
+import { documentPaths, removeStoredFiles } from '@/services/documents';
 import { CommentsPanel } from '@/components/shared/CommentsPanel';
 import { HistoryPanel } from '@/components/shared/HistoryPanel';
 import {
-  changePhase, finalizeProject, getProject, phaseSuggestion, reopenProject,
+  changePhase, deleteProject, finalizeProject, getProject, phaseSuggestion, reopenProject,
   setBillingStatus, setSubstatuses, updateProject,
 } from '@/services/projects';
 import {
@@ -21,7 +23,12 @@ import {
 } from '@/config/constants';
 import { listOrders } from '@/services/orders';
 import { listMaterials, setReceived } from '@/services/materials';
+import { MaterialNeedButton } from '@/components/shared/MaterialNeedButton';
 import { billing } from '@/services/billing';
+import { listPeople } from '@/services/people';
+import { assignProjectWorkers, listReports, projectHours, projectTeam } from '@/services/partes';
+import { planProject, releasePhase, setPhaseWorkers } from '@/services/calendar';
+import { REPORT_STATUS_SHORT, REPORT_STATUS_TONE } from '@/config/constants';
 import { ORDER_STATUS_SHORT, ORDER_STATUS_TONE, ORDER_TYPE_LABEL } from '@/config/constants';
 import { fmtDate, fmtDateTime, fmtEur, fmtHours, fmtNumber, todayMadrid } from '@/lib/format';
 import type { BillingStatus, ProjectPhase } from '@/types/db';
@@ -29,6 +36,7 @@ import type { BillingStatus, ProjectPhase } from '@/types/db';
 export default function ProjectDetail() {
   const { id = '' } = useParams();
   const { toast, confirm } = useDialogs();
+  const navigate = useNavigate();
 
   const [saving, setSaving] = useState(false);
   // Se incrementa tras cada acción para volver a pedir los datos dependientes.
@@ -39,6 +47,70 @@ export default function ProjectDetail() {
   const orders = useAsync(() => listOrders({ projectId: id, pageSize: 50 }), [id, historyKey]);
   const materials = useAsync(() => listMaterials({ projectId: id, state: 'todos' }), [id, historyKey]);
   const money = useAsync(() => billing(id), [id, historyKey]);
+
+  // BLOQUE 1 · trabajadores asignados, partes y horas realizadas.
+  const equipo = useAsync(() => projectTeam(id), [id, historyKey]);
+  const personas = useAsync(() => listPeople('worker'), []);
+  const partes = useAsync(() => listReports({ projectId: id, pageSize: 50 }), [id, historyKey]);
+  const horas = useAsync(() => projectHours(id), [id, historyKey]);
+  const [asignados, setAsignados] = useState<string[]>([]);
+  const [editandoEquipo, setEditandoEquipo] = useState(false);
+
+  useEffect(() => {
+    setAsignados((equipo.data ?? []).map((m) => m.worker_id));
+  }, [equipo.data]);
+
+  /** Buscar hueco en el calendario para este proyecto. */
+  async function planificar() {
+    setSaving(true);
+    try {
+      await planProject(id, 'ambas');
+      toast.success('Proyecto planificado');
+      setHistoryKey((k) => k + 1);
+      await project.reload();
+    } catch (e) { toast.error(e); } finally { setSaving(false); }
+  }
+
+  /** Devolver una fase al cálculo automático y recolocarla. */
+  async function soltar(fase: 'fabricacion' | 'montaje') {
+    const ok = await confirm({
+      title: 'Volver a la planificación automática',
+      message: (
+        <>
+          Esta fase está fijada a mano. Al soltarla, el sistema le buscará hueco
+          respetando lo que ya está programado, los festivos y el margen configurado.
+        </>
+      ),
+      confirmLabel: 'Soltar y recolocar',
+    });
+    if (!ok) return;
+    setSaving(true);
+    try {
+      await releasePhase(id, fase);
+      toast.success('Fase recolocada');
+      setHistoryKey((k) => k + 1);
+      await project.reload();
+    } catch (e) { toast.error(e); } finally { setSaving(false); }
+  }
+
+  async function cambiarEquipoFase(fase: 'fabricacion' | 'montaje', n: number) {
+    setSaving(true);
+    try {
+      await setPhaseWorkers(id, fase, n);
+      setHistoryKey((k) => k + 1);
+      await project.reload();
+    } catch (e) { toast.error(e); } finally { setSaving(false); }
+  }
+
+  async function guardarEquipo() {
+    setSaving(true);
+    try {
+      await assignProjectWorkers(id, asignados);
+      toast.success('Equipo del proyecto actualizado');
+      setEditandoEquipo(false);
+      setHistoryKey((k) => k + 1);
+    } catch (e) { toast.error(e); } finally { setSaving(false); }
+  }
 
   if (project.loading && !project.data) return <Loading />;
   if (project.error) return <ErrorBox message={project.error} onRetry={project.reload} />;
@@ -136,6 +208,38 @@ export default function ProjectDetail() {
     catch (e) { toast.error(e); }
   }
 
+  /**
+   * ELIMINAR el proyecto. La base de datos se niega si tiene cobros u
+   * horas ya validadas: eso es dinero y producción de verdad, y
+   * borrarlo cambiaría los informes sin que nadie se entere. En ese
+   * caso dice exactamente qué tiene y se enseña tal cual.
+   */
+  async function eliminar() {
+    const ok = await confirm({
+      title: `¿Estás seguro de que quieres eliminar ${p.code}?`,
+      message: (
+        <>
+          Se borrarán también sus documentos, órdenes de trabajo, materiales y comentarios.
+          Esto no se puede deshacer.
+          <div style={{ marginTop: 8 }}>
+            Si solo quieres quitarlo de los listados, <strong>archívalo</strong>:
+            se conserva todo.
+          </div>
+        </>
+      ),
+      confirmLabel: 'Eliminar',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      const rutas = await documentPaths({ projectId: p.id });
+      await deleteProject(p.id);
+      await removeStoredFiles(rutas).catch(() => undefined);
+      toast.success(`${p.code} se ha eliminado`);
+      navigate('/admin/proyectos');
+    } catch (e) { toast.error(e); }
+  }
+
   async function toggleArchive() {
     const ok = await confirm({
       title: archived ? 'Recuperar proyecto' : 'Archivar proyecto',
@@ -184,6 +288,9 @@ export default function ProjectDetail() {
           <Link className="btn" to={`/admin/proyectos/${p.id}/editar`}><Pencil />Editar</Link>
           <button className="btn" onClick={toggleArchive}>
             {archived ? <><ArchiveRestore />Recuperar</> : <><Archive />Archivar</>}
+          </button>
+          <button className="btn btn-danger" onClick={eliminar}>
+            <Trash2 />Eliminar
           </button>
         </>}
       />
@@ -301,6 +408,17 @@ export default function ProjectDetail() {
               <dt>Ubicación</dt><dd>{p.location ?? '—'}</dd>
               <dt>Observaciones</dt><dd className="pre">{p.observations ?? '—'}</dd>
 
+              {/* BLOQUE 4: la obra que agrupa este proyecto, si la hay. */}
+              {p.work && (
+                <>
+                  <dt><span className="row" style={{ gap: 6 }}><HardHat size={15} />Obra</span></dt>
+                  <dd>
+                    <Link to={`/admin/obras/${p.work.id}`}>{p.work.code}</Link>
+                    <div className="faint">{p.work.name}</div>
+                  </dd>
+                </>
+              )}
+
               {p.source && (
                 <>
                   <dt><span className="row" style={{ gap: 6 }}><FileStack size={15} />Viene de</span></dt>
@@ -312,6 +430,76 @@ export default function ProjectDetail() {
             </dl>
           </Panel>
 
+          {/* ------------------------------------- PLANIFICACIÓN ---- */}
+          <Panel
+            title="Planificación"
+            actions={!locked && (
+              <button className="btn btn-sm" disabled={saving} onClick={planificar}>
+                <Wand2 />Buscar hueco
+              </button>
+            )}
+          >
+            {(['fabricacion', 'montaje'] as const)
+              .filter((fase) => !(fase === 'montaje' && p.no_assembly))
+              .map((fase) => {
+                const esFab = fase === 'fabricacion';
+                const desde = esFab ? p.fab_start : p.mont_start;
+                const hasta = esFab ? p.fab_end : p.mont_end;
+                const gente = esFab ? p.fab_workers : p.mont_workers;
+                const aMano = esFab ? p.fab_manual : p.mont_manual;
+                const horas = esFab ? p.budget_hours_fab : p.budget_hours_mont;
+                return (
+                  <div key={fase} className="plan-fase">
+                    <div className="row-between" style={{ gap: 10, alignItems: 'flex-start' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <strong>{esFab ? 'Fabricación' : 'Montaje'}</strong>
+                        <div className="muted">
+                          {desde
+                            ? <>
+                                {fmtDate(desde)}
+                                {hasta && hasta !== desde ? ` → ${fmtDate(hasta)}` : ''}
+                              </>
+                            : 'Sin fecha todavía'}
+                        </div>
+                      </div>
+                      {aMano && <Badge tone="amber">Fijado a mano</Badge>}
+                    </div>
+
+                    <div className="row" style={{ gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
+                      <label className="row" style={{ gap: 6 }}>
+                        <span className="muted">Van</span>
+                        <select className="input" style={{ width: 70 }} value={gente}
+                                disabled={locked || saving}
+                                onChange={(e) => cambiarEquipoFase(fase, Number(e.target.value))}>
+                          {[1, 2, 3, 4, 5, 6].map((n) => <option key={n} value={n}>{n}</option>)}
+                        </select>
+                        <span className="muted">
+                          {gente === 1 ? 'persona' : 'personas'}
+                        </span>
+                      </label>
+                      <span className="muted">
+                        {fmtHours(horas)} previstas ·{' '}
+                        <strong>{Math.max(1, Math.ceil(Number(horas) / Math.max(gente, 1) / 8)) }</strong>
+                        {' '}{Number(horas) > 0 ? 'día(s)' : ''}
+                      </span>
+                      {aMano && !locked && (
+                        <button className="btn btn-sm" disabled={saving}
+                                onClick={() => soltar(fase)}>
+                          <RotateCcw />Soltar
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            <p className="hint" style={{ marginBottom: 0 }}>
+              Los días salen de las horas previstas y de cuánta gente va:
+              horas ÷ personas ÷ 8. «Buscar hueco» respeta lo ya programado,
+              los fines de semana, los festivos y el margen entre proyectos.
+              Lo que muevas a mano en el calendario no se vuelve a tocar.
+            </p>
+          </Panel>
+
           <Panel title="Presupuesto y horas previstas">
             <div className="figure-row">
               <span className="figure"><b>{fmtEur(p.budget_amount)}</b><span>Presupuesto</span></span>
@@ -319,8 +507,19 @@ export default function ProjectDetail() {
               <span className="figure"><b>{fmtHours(p.budget_hours_fab)}</b><span>Fabricación prevista</span></span>
               <span className="figure"><b>{fmtHours(p.budget_hours_mont)}</b><span>Montaje previsto</span></span>
             </div>
+            <div className="figure-row" style={{ marginTop: 12 }}>
+              <span className="figure">
+                <b>{fmtHours(horas.data?.realizadas_fab ?? 0)}</b>
+                <span>Fabricación realizada</span>
+              </span>
+              <span className="figure">
+                <b>{fmtHours(horas.data?.realizadas_mont ?? 0)}</b>
+                <span>Montaje realizado</span>
+              </span>
+            </div>
             <p className="hint" style={{ marginTop: 12, marginBottom: 0 }}>
-              Las horas reales de cada persona se apuntan en las órdenes de trabajo.
+              Cada persona apunta SUS horas en su parte de trabajo. Solo cuentan como realizadas
+              cuando administración valida el parte.
             </p>
           </Panel>
 
@@ -328,8 +527,88 @@ export default function ProjectDetail() {
         </div>
 
         <div className="stack">
-          <DocumentsPanel owner={{ projectId: p.id }} title="Documentos, fotografías y vídeos" />
+          <DocumentsPanel owner={{ projectId: p.id }} title="Documentos, fotografías y vídeos"
+            onChange={() => setHistoryKey((k) => k + 1)} />
           <CommentsPanel owner={{ projectId: p.id }} />
+
+          <Panel
+            title="Quién trabaja en este proyecto"
+            actions={!locked && (
+              <button className="btn btn-sm" onClick={() => setEditandoEquipo((v) => !v)}>
+                <Users />{editandoEquipo ? 'Cancelar' : 'Asignar'}
+              </button>
+            )}
+          >
+            {editandoEquipo ? (
+              <>
+                {!personas.data?.length ? (
+                  <p className="muted" style={{ margin: 0 }}>
+                    Todavía no hay trabajadores dados de alta.
+                  </p>
+                ) : (
+                  <>
+                    <div className="substatus-grid">
+                      {personas.data.map((w) => (
+                        <label key={w.id} className="checkbox">
+                          <input type="checkbox" checked={asignados.includes(w.id)}
+                                 onChange={() => setAsignados((prev) => (prev.includes(w.id)
+                                   ? prev.filter((x) => x !== w.id)
+                                   : [...prev, w.id]))} />
+                          {w.full_name}
+                        </label>
+                      ))}
+                    </div>
+                    <p className="hint" style={{ marginTop: 10 }}>
+                      Quien esté marcado podrá entrar en el proyecto, ver la documentación y
+                      rellenar partes. No verá importes ni facturación.
+                    </p>
+                    <button className="btn btn-primary" disabled={saving} onClick={guardarEquipo}>
+                      <CheckCircle2 />Guardar el equipo
+                    </button>
+                  </>
+                )}
+              </>
+            ) : equipo.data?.length ? (
+              <ul className="team-list">
+                {equipo.data.map((m) => <li key={m.worker_id}>{m.full_name}</li>)}
+              </ul>
+            ) : (
+              <p className="muted row" style={{ margin: 0, gap: 8 }}>
+                <Users size={17} aria-hidden />
+                Nadie asignado todavía: ningún trabajador puede entrar en este proyecto.
+              </p>
+            )}
+          </Panel>
+
+          <Panel title="Partes de trabajo">
+            {partes.loading && !partes.data ? <Loading />
+              : !partes.data?.rows.length ? (
+                <p className="muted row" style={{ margin: 0, gap: 8 }}>
+                  <FileText size={17} aria-hidden />
+                  Todavía no hay partes de trabajo en este proyecto.
+                </p>
+              ) : (
+                <ul className="mini-list">
+                  {partes.data.rows.map((r) => (
+                    <li key={r.id}>
+                      <Link to={`/admin/partes/${r.id}`}>
+                        <span className="plate">{r.code}</span>
+                        <span className="cell-main">
+                          <strong>
+                            {ORDER_TYPE_LABEL[r.work_type]} · {fmtDate(r.work_date)}
+                            {r.hours != null ? ` · ${fmtHours(r.hours)}` : ''}
+                          </strong>
+                          <small>{r.worker?.full_name ?? ''}</small>
+                        </span>
+                      </Link>
+                      <Badge tone={REPORT_STATUS_TONE[r.status]}>
+                        {REPORT_STATUS_SHORT[r.status]}
+                      </Badge>
+                    </li>
+                  ))}
+                </ul>
+              )}
+          </Panel>
 
           <Panel
             title="Órdenes de trabajo"
@@ -365,7 +644,13 @@ export default function ProjectDetail() {
 
           <Panel
             title="Material"
-            actions={<Link className="btn btn-sm" to="/admin/material"><Boxes />Ver todo</Link>}
+            actions={(
+              <span className="row" style={{ gap: 8 }}>
+                <MaterialNeedButton className="btn btn-sm"
+                                    projectId={p.id} projectLabel={`${p.code} · ${p.name}`} />
+                <Link className="btn btn-sm" to="/admin/material"><Boxes />Ver todo</Link>
+              </span>
+            )}
           >
             {materials.loading && !materials.data ? <Loading />
               : !materials.data?.rows.length ? (

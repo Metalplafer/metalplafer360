@@ -10,7 +10,9 @@ import { Alert, ErrorBox, Loading } from '@/components/ui/Feedback';
 import { Badge } from '@/components/ui/Layout';
 import { CommentsPanel } from '@/components/shared/CommentsPanel';
 import { SignaturePad } from '@/components/shared/SignaturePad';
+import { MediaViewer, isViewable, type MediaItem } from '@/components/shared/MediaViewer';
 import { getOrder, myPart, orderTeam, saveOrderPart } from '@/services/orders';
+import { workerProject } from '@/services/partes';
 import { submitRequest } from '@/services/materials';
 import { Modal } from '@/components/ui/Modal';
 import { listDocuments, signedUrls, trashDocument, uploadDocument } from '@/services/documents';
@@ -40,6 +42,15 @@ export default function WorkerOrderDetail() {
   const team = useAsync(() => orderTeam(id), [id]);
   const files = useAsync(() => listDocuments({ orderId: id }), [id]);
 
+  // El proyecto se pide aparte, no incrustado en la orden: desde el
+  // BLOQUE 1 la tabla «projects» es de administración (ahí está el
+  // dinero) y el trabajador entra por «worker_projects», que no lo tiene.
+  const proyectoId = order.data?.project_id ?? null;
+  const proyecto = useAsync(
+    async () => (proyectoId ? workerProject(proyectoId) : null),
+    [proyectoId],
+  );
+
   const [workDone, setWorkDone] = useState('');
   const [hours, setHours] = useState('');
   const [busy, setBusy] = useState(false);
@@ -48,6 +59,7 @@ export default function WorkerOrderDetail() {
   const [askingMaterial, setAskingMaterial] = useState(false);
   const [materialText, setMaterialText] = useState('');
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
+  const [viendo, setViendo] = useState<number | null>(null);
   const cameraInput = useRef<HTMLInputElement>(null);
   const galleryInput = useRef<HTMLInputElement>(null);
 
@@ -68,6 +80,7 @@ export default function WorkerOrderDetail() {
   if (!order.data) return null;
 
   const o = order.data;
+  const proy = proyecto.data;
   const future = o.scheduled_date > today;
   const abierta = !future && ORDER_OPEN_STATUSES.has(o.status) && !o.archived_at;
   // Con varios trabajadores, quien ya ha enviado su parte lo ve cerrado,
@@ -77,6 +90,18 @@ export default function WorkerOrderDetail() {
   const pendienteDeCompaneros = abierta && yaEnviado;
   const photos = (files.data ?? []).filter((d) => d.category === 'foto' || d.category === 'video');
   const signature = (files.data ?? []).find((d) => d.category === 'firma') ?? null;
+  // Fotos, vídeos y firma se miran DENTRO de la aplicación: en el móvil,
+  // abrir el archivo en otra pestaña acababa muchas veces en una descarga.
+  const verlos: MediaItem[] = [...photos, ...(signature ? [signature] : [])]
+    .filter((d) => isViewable(d) && thumbs[d.storage_path])
+    .map((d) => ({
+      id: d.id, file_name: d.file_name, url: thumbs[d.storage_path],
+      category: d.category, mime_type: d.mime_type,
+    }));
+  const abrirVisor = (id: string) => {
+    const i = verlos.findIndex((x) => x.id === id);
+    if (i >= 0) setViendo(i);
+  };
 
   async function reload() {
     await order.reload();
@@ -178,7 +203,7 @@ export default function WorkerOrderDetail() {
           <span className="plate plate-dark">{o.code}</span>
           <Badge tone={ORDER_STATUS_TONE[o.status]}>{ORDER_STATUS_LABEL[o.status]}</Badge>
         </div>
-        <h1>{ORDER_TYPE_LABEL[o.type]}{o.project ? ` · ${o.project.name}` : ''}</h1>
+        <h1>{ORDER_TYPE_LABEL[o.type]}{proy ? ` · ${proy.name}` : ''}</h1>
         <p className="muted" style={{ margin: 0 }}>
           {dayLabel(o.scheduled_date, today)}
         </p>
@@ -216,16 +241,16 @@ export default function WorkerOrderDetail() {
 
         <div className="w-block">
           <dl className="kv tight">
-            {o.project?.client && <><dt>Cliente</dt><dd>{o.project.client.name}</dd></>}
-            {o.project?.address && (
+            {proy?.client_name && <><dt>Cliente</dt><dd>{proy.client_name}</dd></>}
+            {proy?.address && (
               <>
                 <dt><span className="row" style={{ gap: 5 }}><MapPin size={14} />Dirección</span></dt>
-                <dd>{o.project.address}</dd>
+                <dd>{proy.address}</dd>
               </>
             )}
-            {o.project?.location && <><dt>Ubicación</dt><dd>{o.project.location}</dd></>}
-            {o.project?.measures && <><dt>Medidas</dt><dd>{o.project.measures}</dd></>}
-            {o.project?.finish && <><dt>Acabado</dt><dd>{o.project.finish}</dd></>}
+            {proy?.location && <><dt>Ubicación</dt><dd>{proy.location}</dd></>}
+            {proy?.measures && <><dt>Medidas</dt><dd>{proy.measures}</dd></>}
+            {proy?.finish && <><dt>Acabado</dt><dd>{proy.finish}</dd></>}
             <dt><span className="row" style={{ gap: 5 }}><Clock size={14} />Horas previstas</span></dt>
             <dd className="num">{fmtHours(o.planned_hours)}</dd>
             {o.admin_notes && <><dt>Notas</dt><dd className="pre">{o.admin_notes}</dd></>}
@@ -313,9 +338,12 @@ export default function WorkerOrderDetail() {
             <ul className="photo-grid">
               {photos.map((d) => (
                 <li key={d.id}>
-                  {thumbs[d.storage_path]
-                    ? <img src={thumbs[d.storage_path]} alt={d.file_name} loading="lazy" />
-                    : <span className="photo-placeholder">{d.file_name}</span>}
+                  <button type="button" className="photo-open" onClick={() => abrirVisor(d.id)}
+                          aria-label={`Ver ${d.file_name}`}>
+                    {thumbs[d.storage_path]
+                      ? <img src={thumbs[d.storage_path]} alt={d.file_name} loading="lazy" />
+                      : <span className="photo-placeholder">{d.file_name}</span>}
+                  </button>
                   {editable && d.uploaded_by === profile?.id && (
                     <button className="photo-remove" onClick={() => removeFile(d)}
                             aria-label={`Quitar ${d.file_name}`}><Trash2 size={15} /></button>
@@ -337,7 +365,12 @@ export default function WorkerOrderDetail() {
           {signature ? (
             <div className="sign-preview">
               {thumbs[signature.storage_path]
-                ? <img src={thumbs[signature.storage_path]} alt="Firma del cliente" />
+                ? (
+                  <button type="button" className="photo-open"
+                          onClick={() => abrirVisor(signature.id)} aria-label="Ver la firma">
+                    <img src={thumbs[signature.storage_path]} alt="Firma del cliente" />
+                  </button>
+                )
                 : <span className="muted">Firma guardada</span>}
               <div className="faint">Guardada el {fmtDateTime(signature.created_at)}</div>
               {editable && (
@@ -391,6 +424,10 @@ export default function WorkerOrderDetail() {
       <section className="w-section">
         <CommentsPanel owner={{ orderId: o.id }} />
       </section>
+
+      {viendo != null && verlos[viendo] && (
+        <MediaViewer items={verlos} index={viendo} onClose={() => setViendo(null)} />
+      )}
 
       {askingMaterial && (
         <Modal

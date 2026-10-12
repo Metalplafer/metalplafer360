@@ -53,6 +53,17 @@ select 'Copias y restauración',
  where n.nspname = 'public'
    and p.proname in ('start_backup', 'finish_backup', 'restore_data', 'restore_table')
 union all
+select 'Conexión con Google Drive',
+       case when count(*) = 3 then 'CORRECTO'
+            else 'FALTA EJECUTAR EL ARCHIVO 24 (' || count(*) || ' de 3)' end
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+ where n.nspname = 'public'
+   and p.proname in ('drive_status', 'drive_put_token', 'drive_get_token')
+union all
+select 'El permiso de Google es intocable desde la aplicación',
+       case when not has_function_privilege('authenticated', 'public.drive_get_token()', 'execute')
+            then 'CORRECTO' else 'PELIGRO: el token está al alcance de la aplicación' end
+union all
 select 'Nadie puede restaurar por su cuenta',
        case when not has_function_privilege('authenticated', 'public.restore_table(text, jsonb)', 'execute')
             then 'CORRECTO' else 'PELIGRO: restore_table ESTÁ ABIERTA' end;
@@ -367,6 +378,18 @@ select case when max(started_at) is null then 'NUNCA se ha hecho una copia autom
                  || to_char(max(started_at) at time zone 'Europe/Madrid', 'DD/MM/YYYY') end as copia_automatica
   from public.backups
  where kind = 'automatico' and status = 'completado';
+
+
+-- ---------------------------------------------------------------------
+-- 25b) ¿ESTÁ CONECTADO GOOGLE DRIVE?
+--      Aquí NO sale ningún permiso ni credencial: solo el estado.
+-- ---------------------------------------------------------------------
+select case when connected then 'CONECTADO' else 'SIN CONECTAR' end as google_drive,
+       coalesce(account_email, '—')                                 as cuenta,
+       coalesce(folder_name, '—')                                   as carpeta,
+       to_char(last_ok_at at time zone 'Europe/Madrid', 'DD/MM/YYYY HH24:MI') as ultima_subida,
+       coalesce(last_error, '—')                                    as ultimo_error
+  from public.google_drive_connection where id = 1;
 
 
 -- ---------------------------------------------------------------------

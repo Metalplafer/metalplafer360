@@ -37,7 +37,9 @@ echo "▶ Preparando entorno Supabase simulado"
 $P -d m360 -f "$ROOT/tests/sql/00_mock_supabase.sql" >/dev/null
 
 echo "▶ Instalando el SQL de METALPLAFER360"
-for f in "$ROOT"/supabase/sql/0[1-46-9]_*.sql "$ROOT"/supabase/sql/[12][0-9]_*.sql; do
+# Todos los archivos numerados, en orden. El 05 se salta aparte (son
+# consultas de apoyo, no instalación).
+for f in "$ROOT"/supabase/sql/[0-9][0-9]_*.sql; do
   [ -e "$f" ] || continue
   case "$(basename "$f")" in 05_*) continue;; esac
   echo "   · $(basename "$f")"

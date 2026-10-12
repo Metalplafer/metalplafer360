@@ -351,11 +351,25 @@ select test.ok('cliente_historial', 'Los avisos cerrados no cuentan como abierto
 \echo '== PERMISOS · TRABAJADOR'
 select test.as_user(test.id('juan'));
 
+-- BLOQUE 5: «fichas» guarda el IMPORTE, y RLS filtra filas y no
+-- columnas. La tabla pasó a ser de administración y el trabajador entra
+-- por «worker_fichas», que se escribe sin la columna del dinero. Ve
+-- exactamente las mismas fichas que antes; lo que ya no le llega es el
+-- importe.
+select test.ok('permisos', 'No lee ni una fila de «fichas»: ahí está el importe',
+  not exists (select 1 from public.fichas));
+
 select test.ok('permisos', 'Ve solo la visita y el aviso que tiene asignados',
-  (select count(*) = 2 and bool_and(id in (test.id('vis1'), test.id('avi1'))) from public.fichas));
+  (select count(*) = 2 and bool_and(id in (test.id('vis1'), test.id('avi1')))
+     from public.worker_fichas));
 
 select test.ok('permisos', 'No ve los presupuestos',
-  not exists (select 1 from public.fichas where type = 'presupuesto'));
+  not exists (select 1 from public.worker_fichas where type = 'presupuesto'));
+
+select test.ok('permisos', 'Y «worker_fichas» no tiene ninguna columna de dinero',
+  not exists (select 1 from information_schema.columns
+               where table_schema = 'public' and table_name = 'worker_fichas'
+                 and column_name in ('amount', 'budget_amount', 'advance_amount')));
 
 select test.ok('permisos', 'Ve al cliente del aviso que tiene asignado',
   exists (select 1 from public.clients where id = test.id('cli_laura')));
@@ -377,9 +391,12 @@ update public.clients set name = 'HACKEADO' where id = test.id('cli_laura');
 select test.ok('permisos', 'No puede modificar los datos de un cliente',
   (select name = 'Laura Puig Serra' from public.clients where id = test.id('cli_laura')));
 
+-- Se comprueba leyendo por «worker_fichas», que es por donde entra el
+-- trabajador desde el BLOQUE 5: la ficha sigue como estaba.
 update public.fichas set status = 'cerrado', description = 'HACKEADO' where id = test.id('vis1');
 select test.ok('permisos', 'No puede cambiar el estado de sus fichas por su cuenta',
-  (select status = 'realizada' and description <> 'HACKEADO' from public.fichas where id = test.id('vis1')));
+  (select status = 'realizada' and description <> 'HACKEADO'
+     from public.worker_fichas where id = test.id('vis1')));
 
 select test.ok('permisos', 'No puede usar el buscador de clientes de administración',
   (select count(*) = 0 from public.suggest_clients('García')));

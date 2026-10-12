@@ -312,7 +312,9 @@ select test.err('historial', 'El historial no se puede borrar',
 
 select test.ok('historial', 'Cada apunte guarda quién, qué, cuándo y sobre qué',
   (select bool_and(actor_id is not null and actor_name = 'Salvi'
-               and action in ('insert', 'update', 'delete')
+               -- BLOQUE 3: se añaden «planificar» y «mover_fecha», que
+               -- también son apuntes del proyecto.
+               and action in ('insert', 'update', 'delete', 'planificar', 'mover_fecha')
                and entity_type = 'projects' and entity_code is not null
                and occurred_at is not null)
      from public.audit_log where entity_type = 'projects'));

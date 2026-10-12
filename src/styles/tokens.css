@@ -39,6 +39,10 @@
   --ev-material: #A8660A;
   --ev-visita: #6A4FA3;
   --ev-aviso: #B23A2A;
+  /* «Otros»: lo que crea administración a mano en el calendario. */
+  --ev-otro: #5B6778;
+  /* La obra: el cajón que agrupa varios proyectos. */
+  --ev-obra: #0E7490;
 
   /* Tipografía: Barlow (texto) + Barlow Condensed (cifras y rótulos) */
   --font: 'Barlow', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;

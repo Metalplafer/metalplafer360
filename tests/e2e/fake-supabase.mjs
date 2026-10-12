@@ -109,14 +109,23 @@ export function createDb(seed = {}) {
   return {
     clients: [], client_contacts: [], fichas: [], projects: [], project_substatuses: [],
     work_orders: [], work_order_workers: [], notifications: [],
+    project_workers: [], work_reports: [],
+    non_working_days: [], calendar_notes: [],
+    works: [], work_extras: [],
     materials: [], material_requests: [], payments: [],
     documents: [], comments: [], audit_log: [], backups: [],
-    counters: { PRES: 0, VIS: 0, AVI: 0, PROY: 0, OT: 0 },
+    counters: { PRES: 0, VIS: 0, AVI: 0, PROY: 0, OT: 0, PT: 0, OBRA: 0 },
     code_counters: [
       { prefix: 'PRES', year: YEAR, last_value: 0 }, { prefix: 'VIS', year: YEAR, last_value: 0 },
       { prefix: 'AVI', year: YEAR, last_value: 0 }, { prefix: 'PROY', year: YEAR, last_value: 0 },
       { prefix: 'OT', year: YEAR, last_value: 0 },
+      { prefix: 'PT', year: YEAR, last_value: 0 },
+      { prefix: 'OBRA', year: YEAR, last_value: 0 },
     ],
+    drive: {
+      connected: false, account_email: null, folder_id: null, folder_name: null,
+      connected_at: null, last_ok_at: null, last_error: null,
+    },
     settings: {
       id: 1,
       company: {
@@ -125,6 +134,7 @@ export function createDb(seed = {}) {
         email: 'taller@metalplafer.com',
       },
       max_file_mb: 100,
+      gap_days: 1,
       backup_retention_days: 30,
       backup: { enabled: true, hour: 2, folder: 'METALPLAFER360 · Copias de seguridad' },
       updated_at: '2026-01-15T09:00:00Z',
@@ -146,9 +156,57 @@ export function addDays(iso, days) {
 
 export const startOfMonth = (iso) => `${iso.slice(0, 7)}-01`;
 
+/**
+ * El día laborable más cercano, mirando hacia atrás (hoy, si se trabaja).
+ *
+ * Las pruebas de calendario necesitan una fecha que se PINTE: un tramo
+ * planificado que cae en sábado o domingo no se dibuja (así se decidió en
+ * el BLOQUE 3), y la prueba fallaría solo por ejecutarse en fin de
+ * semana. Se mira hacia atrás para no salirse de la semana visible.
+ */
+export function diaLaborable(iso = today()) {
+  let d = iso;
+  for (let i = 0; i < 7; i++) {
+    const dow = new Date(`${d}T00:00:00Z`).getUTCDay();   // 0 domingo, 6 sábado
+    if (dow !== 0 && dow !== 6) return d;
+    d = addDays(d, -1);
+  }
+  return iso;
+}
+
 export function mondayOf(iso) {
   const [y, m, d] = iso.split('-').map(Number);
   return addDays(iso, -((new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7));
+}
+
+/**
+ * El «order» de PostgREST. La base de datos de verdad ordena, así que las
+ * vistas de mentira también: si no, una prueba de orden pasaría sola.
+ */
+function applyOrder(rows, url) {
+  const order = url.searchParams.get('order');
+  if (!order) return rows;
+  const keys = order.split(',').map((part) => {
+    const [col, ...rest] = part.split('.');
+    return {
+      col,
+      sign: rest.includes('desc') ? -1 : 1,
+      nullsLast: !rest.includes('nullsfirst'),
+    };
+  });
+  return [...rows].sort((a, b) => {
+    for (const { col, sign, nullsLast } of keys) {
+      const x = a[col]; const y = b[col];
+      const vacioX = x === null || x === undefined || x === '';
+      const vacioY = y === null || y === undefined || y === '';
+      if (vacioX && vacioY) continue;
+      if (vacioX) return nullsLast ? 1 : -1;
+      if (vacioY) return nullsLast ? -1 : 1;
+      const diff = String(x).localeCompare(String(y)) * sign;
+      if (diff) return diff;
+    }
+    return 0;
+  });
 }
 
 /** Filtros de PostgREST que usa la aplicación. */
@@ -270,10 +328,15 @@ const BILLING_LABEL = {
 };
 
 /** Tablas que se vacían al limpiar los datos de ejemplo, en orden. */
+// La misma lista que «clear_demo» en 31_obras.sql, en el mismo orden:
+// de la tabla más dependiente a la menos.
 const DEMO_TABLES = [
   'comments', 'documents', 'payments', 'material_requests', 'materials',
-  'work_order_workers', 'work_orders', 'project_substatuses', 'projects',
-  'fichas', 'client_contacts', 'clients', 'notifications', 'audit_log',
+  'work_reports', 'project_workers',
+  'work_order_workers', 'work_orders', 'project_substatuses',
+  'calendar_notes', 'work_extras', 'projects', 'works',
+  'fichas', 'client_contacts', 'clients',
+  'non_working_days', 'notifications', 'audit_log',
 ];
 
 const cuentaDemo = (filas) => (Array.isArray(filas) ? filas.filter((r) => r.is_demo).length : 0);
@@ -454,7 +517,16 @@ export async function stubSupabase(context, {
         substatuses: db.project_substatuses
           .filter((s) => s.project_id === row.id)
           .map((s) => ({ phase: s.phase, substatus: s.substatus })),
+        // BLOQUE 4: la obra que lo agrupa, si pertenece a alguna.
+        work: (() => {
+          const w = (db.works ?? []).find((x) => x.id === row.work_id);
+          return w ? { id: w.id, code: w.code, name: w.name } : null;
+        })(),
       };
+    }
+    if (table === 'works') {
+      const client = db.clients.find((c) => c.id === row.client_id) ?? null;
+      return { ...row, client: client ? { id: client.id, name: client.name } : null };
     }
     if (table === 'work_orders') {
       const project = db.projects.find((p) => p.id === row.project_id) ?? null;
@@ -491,6 +563,15 @@ export async function stubSupabase(context, {
         order: order ? { id: order.id, code: order.code } : null,
       };
     }
+    if (table === 'work_reports') {
+      const worker = people.find((x) => x.id === row.worker_id) ?? null;
+      const project = db.projects.find((x) => x.id === row.project_id) ?? null;
+      return {
+        ...row,
+        worker: worker ? { id: worker.id, full_name: worker.full_name } : null,
+        project: project ? { id: project.id, code: project.code, name: project.name } : null,
+      };
+    }
     if (table === 'material_requests') {
       const worker = people.find((p) => p.id === row.worker_id) ?? null;
       const project = db.projects.find((p) => p.id === row.project_id) ?? null;
@@ -522,32 +603,105 @@ export async function stubSupabase(context, {
     db.work_order_workers.filter((w) => w.worker_id === user.id).map((w) => w.order_id),
   );
 
+  /**
+   * A qué proyectos entra una persona: por estar asignada (BLOQUE 1) o,
+   * mientras las órdenes sigan existiendo, por tener una orden viva.
+   */
+  const assignedProjects = (user) => {
+    const mine = myOrderIds(user);
+    const ids = new Set(
+      db.work_orders.filter((o) => mine.has(o.id) && !o.archived_at).map((o) => o.project_id),
+    );
+    (db.project_workers ?? [])
+      .filter((pw) => pw.worker_id === user.id)
+      .forEach((pw) => ids.add(pw.project_id));
+    return ids;
+  };
+
+  /** ¿Se trabaja ese día? Lunes a viernes y que no sea festivo. */
+  const esLaborable = (day) => {
+    const d = new Date(`${day}T12:00:00`);
+    const dow = d.getDay();            // 0 domingo, 6 sábado
+    if (dow === 0 || dow === 6) return false;
+    return !(db.non_working_days ?? []).some((x) => x.day === day);
+  };
+  const sumarDias = (day, n) => {
+    const d = new Date(`${day}T12:00:00`);
+    d.setDate(d.getDate() + n);
+    return d.toISOString().slice(0, 10);
+  };
+  const siguienteLaborable = (day) => {
+    let d = day;
+    for (let i = 0; i < 400 && !esLaborable(d); i++) d = sumarDias(d, 1);
+    return d;
+  };
+  const sumarLaborables = (day, n) => {
+    let d = siguienteLaborable(day);
+    for (let i = 0; i < n; i++) d = siguienteLaborable(sumarDias(d, 1));
+    return d;
+  };
+  const finDeTramo = (desde, dias) => sumarLaborables(desde, Math.max(dias, 1) - 1);
+  const diasDeTrabajo = (horas, gente) => (Number(horas) > 0
+    ? Math.max(1, Math.ceil(Number(horas) / Math.max(Number(gente) || 2, 1) / 8))
+    : 0);
+  const margenLibre = () => Math.max(Math.floor(Number(db.settings.gap_days ?? 1)), 0);
+
+  /** Los días que ocupa un tramo (los no laborables no se pintan). */
+  const diasDelTramo = (desde, hasta, aMano) => {
+    const out = [];
+    let d = desde;
+    for (let i = 0; i < 400 && d <= hasta; i++) {
+      if (aMano || esLaborable(d)) out.push(d);
+      d = sumarDias(d, 1);
+    }
+    return out;
+  };
+
   const visible = (table, rows) => {
     const user = getUser();
     if (!user || user.role === 'admin') return rows;
     const mine = myOrderIds(user);
-    const myProjects = new Set(
-      db.work_orders.filter((o) => mine.has(o.id) && !o.archived_at).map((o) => o.project_id),
-    );
+    const myProjects = assignedProjects(user);
     if (table === 'work_orders') return rows.filter((r) => mine.has(r.id) && !r.archived_at);
     if (table === 'work_order_workers') return rows.filter((r) => r.worker_id === user.id);
     if (table === 'notifications') return rows.filter((r) => r.user_id === user.id);
-    if (table === 'projects') return rows.filter((r) => myProjects.has(r.id));
+    // BLOQUE 1: «projects» es de administración. Ahí están el importe y la
+    // paga y señal, y RLS filtra filas, no columnas: el trabajador no saca
+    // ni una. Entra por la vista «worker_projects», que no las tiene.
+    if (table === 'projects') return [];
+    if (table === 'work_reports') return rows.filter((r) => r.worker_id === user.id);
+    if (table === 'project_workers') {
+      return rows.filter((r) => assignedProjects(user).has(r.project_id));
+    }
     if (table === 'clients') {
       const ids = new Set(db.projects.filter((p) => myProjects.has(p.id)).map((p) => p.client_id));
       return rows.filter((r) => ids.has(r.id));
     }
-    if (table === 'fichas') return rows.filter((r) => r.assigned_to === user.id);
+    // BLOQUE 5: «fichas» guarda el IMPORTE y RLS filtra filas, no
+    // columnas. La tabla es de administración; el trabajador entra por
+    // «worker_fichas», que se construye sin la columna del dinero.
+    if (table === 'fichas') return [];
     if (table === 'documents' || table === 'comments') {
-      return rows.filter((r) => (r.order_id && mine.has(r.order_id))
-        || (r.project_id && myProjects.has(r.project_id)));
+      const misPartes = new Set(db.work_reports.filter((x) => x.worker_id === user.id)
+        .map((x) => x.id));
+      const suyo = (r) => (r.order_id && mine.has(r.order_id))
+        || (r.project_id && myProjects.has(r.project_id))
+        || (r.report_id && misPartes.has(r.report_id));
+      // BLOQUE 2: la documentación administrativa no se le devuelve, y
+      // el almacén tampoco le firmaría el enlace del archivo.
+      if (table === 'documents') {
+        return rows.filter((r) => suyo(r) && r.scope !== 'administrativa');
+      }
+      return rows.filter(suyo);
     }
     if (table === 'audit_log') return rows.filter((r) => r.actor_id === user.id);
     if (table === 'materials') return rows.filter((r) => myProjects.has(r.project_id));
     if (table === 'material_requests') return rows.filter((r) => r.worker_id === user.id);
     // Económico y administración: un trabajador no ve nada de esto, aunque
     // pida la tabla a mano. (En Supabase lo impiden las políticas RLS.)
-    if (table === 'payments' || table === 'backups' || table === 'code_counters') return [];
+    // BLOQUE 4: las obras, sus extras y sus cuentas, lo mismo.
+    if (table === 'payments' || table === 'backups' || table === 'code_counters'
+        || table === 'works' || table === 'work_extras') return [];
     return rows;
   };
 
@@ -654,6 +808,605 @@ export async function stubSupabase(context, {
         || (cif.length >= 3 && (c.tax_id ?? '').replace(/[^A-Za-z0-9]/g, '').toUpperCase().startsWith(cif))
       ));
       return json(hits.slice(0, 6).map((c) => ({ ...c, score: 1 })));
+    }
+
+    // ---- BLOQUE 1 · asignar trabajadores y mover partes --------------
+
+    if (path === '/rest/v1/rpc/assign_project_workers') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const { p_project: proyecto, p_workers: ids = [] } = body() ?? {};
+      const antes = new Set(db.project_workers
+        .filter((pw) => pw.project_id === proyecto).map((pw) => pw.worker_id));
+      db.project_workers = db.project_workers.filter((pw) => pw.project_id !== proyecto
+        || ids.includes(pw.worker_id));
+      ids.filter((id) => !antes.has(id)).forEach((id) => {
+        db.project_workers.push({
+          project_id: proyecto, worker_id: id,
+          assigned_at: new Date().toISOString(), assigned_by: actor().id, is_demo: false,
+        });
+        const persona = people.find((x) => x.id === id);
+        const pr = db.projects.find((x) => x.id === proyecto);
+        registrar(`${actorName()} asignó a ${persona?.full_name ?? ''} al proyecto ${pr?.code ?? ''}`,
+          pr?.code ?? null, 'project_workers');
+        avisar(id, 'proyecto_asignado', 'Proyecto asignado', `${pr?.code} · ${pr?.name}`, null);
+      });
+      return json(ids.map((id) => people.find((x) => x.id === id)).filter(Boolean));
+    }
+
+    if (path === '/rest/v1/rpc/save_work_report') {
+      const user = getUser();
+      if (!user) return fail('Hace falta tener la sesión iniciada', '42501');
+      const b = body() ?? {};
+      const horas = b.p_hours == null ? null : Math.round(Number(b.p_hours) * 100) / 100;
+      const hecho = (b.p_work_done ?? '').trim() || null;
+      const dia = b.p_work_date ?? today();
+
+      if (horas != null && (horas <= 0 || horas > 24)) {
+        return fail('Las horas deben estar entre 0 y 24');
+      }
+      if (dia > today()) {
+        return fail('No se puede rellenar un parte de un día que todavía no ha llegado');
+      }
+      if (b.p_submit && !hecho) return fail('Escribe qué trabajo has hecho antes de enviar el parte');
+      if (b.p_submit && !horas) return fail('Indica las horas que has trabajado antes de enviar el parte');
+
+      let parte = b.p_report ? db.work_reports.find((r) => r.id === b.p_report) : null;
+      if (b.p_report && !parte) return fail('No se encuentra el parte de trabajo', 'P0002');
+      if (parte && parte.worker_id !== user.id) return fail('Ese parte no es tuyo', '42501');
+      if (parte && parte.status === 'validado') {
+        return fail('El parte ya está validado: no se puede modificar');
+      }
+
+      const estado = b.p_submit ? 'enviado' : 'borrador';
+      if (!parte) {
+        db.counters.PT += 1;
+        parte = {
+          id: `pt-${Math.random().toString(36).slice(2, 10)}`,
+          code: `PT-${YEAR}-${String(db.counters.PT).padStart(3, '0')}`,
+          worker_id: user.id, project_id: b.p_project ?? null,
+          work_type: b.p_work_type ?? 'fabricacion', work_date: dia,
+          work_done: hecho, hours: horas, needs_material: Boolean(b.p_needs_material),
+          status: estado, submitted_at: b.p_submit ? new Date().toISOString() : null,
+          validated_at: null, validated_by: null, rejected_at: null, reject_reason: null,
+          assigned_at: null, assigned_by: null, is_demo: false,
+          created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+        };
+        db.work_reports.unshift(parte);
+      } else {
+        Object.assign(parte, {
+          project_id: b.p_project ?? parte.project_id,
+          work_type: b.p_work_type ?? parte.work_type, work_date: dia,
+          work_done: hecho, hours: horas, needs_material: Boolean(b.p_needs_material),
+          status: estado, submitted_at: b.p_submit ? new Date().toISOString() : null,
+          rejected_at: b.p_submit ? null : parte.rejected_at,
+          reject_reason: b.p_submit ? null : parte.reject_reason,
+          updated_at: new Date().toISOString(),
+        });
+      }
+
+      if (b.p_submit) {
+        registrar(`${actorName()} envió el parte ${parte.code} (${horas} h) a validar`,
+          parte.code, 'work_reports');
+        people.filter((x) => x.role === 'admin')
+          .forEach((a) => avisar(a.id, 'parte_enviado', 'Parte pendiente de validación',
+            `${actorName()} ha enviado el parte ${parte.code}`, null));
+      }
+      return json(parte);
+    }
+
+    if (path === '/rest/v1/rpc/validate_work_report') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const parte = db.work_reports.find((r) => r.id === body()?.p_report);
+      if (!parte) return fail('No se encuentra el parte de trabajo', 'P0002');
+      if (parte.status !== 'enviado') {
+        return fail('Solo se valida un parte que esté pendiente de validación');
+      }
+      Object.assign(parte, {
+        status: 'validado', validated_at: new Date().toISOString(), validated_by: actor().id,
+        rejected_at: null, reject_reason: null, updated_at: new Date().toISOString(),
+      });
+      registrar(`${actorName()} validó el parte ${parte.code} · ${parte.hours} h`,
+        parte.code, 'work_reports');
+      avisar(parte.worker_id, 'parte_validado', 'Parte validado', parte.code, null);
+      return json(parte);
+    }
+
+    if (path === '/rest/v1/rpc/reject_work_report') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const motivo = (body()?.p_reason ?? '').trim();
+      if (!motivo) return fail('Escribe el motivo del rechazo');
+      const parte = db.work_reports.find((r) => r.id === body()?.p_report);
+      if (!parte) return fail('No se encuentra el parte de trabajo', 'P0002');
+      if (!['enviado', 'validado'].includes(parte.status)) {
+        return fail('Solo se rechaza un parte que ya se haya enviado');
+      }
+      Object.assign(parte, {
+        status: 'rechazado', rejected_at: new Date().toISOString(), reject_reason: motivo,
+        validated_at: null, validated_by: null, updated_at: new Date().toISOString(),
+      });
+      db.comments.unshift({
+        id: `c-${Math.random().toString(36).slice(2, 8)}`, report_id: parte.id,
+        ficha_id: null, project_id: null, order_id: null,
+        author_id: actor().id, target_worker_id: parte.worker_id,
+        body: `Parte rechazado. Motivo: ${motivo}`,
+        created_at: new Date().toISOString(),
+        author: { full_name: actorName(), role: 'admin' },
+      });
+      registrar(`${actorName()} rechazó el parte ${parte.code}. Motivo: ${motivo}`,
+        parte.code, 'work_reports');
+      avisar(parte.worker_id, 'parte_rechazado', 'Parte rechazado', motivo, null);
+      return json(parte);
+    }
+
+    if (path === '/rest/v1/rpc/assign_report_to_project') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const parte = db.work_reports.find((r) => r.id === body()?.p_report);
+      if (!parte) return fail('No se encuentra el parte de trabajo', 'P0002');
+      const proyecto = body()?.p_project ?? null;
+      Object.assign(parte, {
+        project_id: proyecto,
+        assigned_at: proyecto ? new Date().toISOString() : null,
+        assigned_by: proyecto ? actor().id : null,
+        updated_at: new Date().toISOString(),
+      });
+      const pr = db.projects.find((x) => x.id === proyecto);
+      registrar(`${actorName()} asignó el parte ${parte.code} al proyecto ${pr?.code ?? ''}`,
+        parte.code, 'work_reports');
+      return json(parte);
+    }
+
+    if (path === '/rest/v1/rpc/submit_material_request_report') {
+      const parte = db.work_reports.find((r) => r.id === body()?.p_report);
+      if (!parte) return fail('No se encuentra el parte de trabajo', 'P0002');
+      const texto = (body()?.p_body ?? '').trim();
+      if (!texto) return fail('Escribe qué material falta');
+      if (!parte.project_id) {
+        return fail('Este parte todavía no tiene proyecto: el aviso de material va contra un proyecto');
+      }
+      const peticion = {
+        id: `mr-${Math.random().toString(36).slice(2, 8)}`,
+        project_id: parte.project_id, order_id: null, worker_id: actor().id,
+        body: texto, status: 'pendiente', reviewed_at: null, reviewed_by: null,
+        review_note: null, material_id: null, is_demo: false,
+        created_at: new Date().toISOString(),
+      };
+      db.material_requests.unshift(peticion);
+      parte.needs_material = true;
+      return json(peticion);
+    }
+
+    // ---- BLOQUE 2 · categorías de documentación y borrado ------------
+
+    if (path === '/rest/v1/rpc/move_document_scope') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const doc = db.documents.find((d) => d.id === body()?.p_doc);
+      if (!doc) return fail('No se encuentra el documento', 'P0002');
+      const destino = body()?.p_scope;
+      if (doc.scope === destino) return json(doc);
+      const antes = doc.scope ?? 'tecnica';
+      doc.scope = destino;
+      const nombres = { tecnica: 'documentación técnica', administrativa: 'documentación administrativa' };
+      const donde = db.projects.find((x) => x.id === doc.project_id)?.code
+        ?? db.fichas.find((x) => x.id === doc.ficha_id)?.code ?? null;
+      registrar(`${actorName()} movió «${doc.file_name}» de ${nombres[antes]} a ${nombres[destino]}`
+        + (donde ? ` en ${donde}` : ''), donde, 'documents');
+      return json(doc);
+    }
+
+    if (path === '/rest/v1/rpc/delete_worker') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const id = body()?.p_user;
+      const persona = people.find((x) => x.id === id);
+      if (!persona) return fail('No se encuentra esa persona', 'P0002');
+      if (id === actor().id) return fail('No puedes eliminarte a ti mismo');
+      const partes = db.work_reports.filter((r) => r.worker_id === id && r.status !== 'borrador').length;
+      const ordenes = db.work_order_workers.filter((w) => w.worker_id === id).length;
+      const material = db.material_requests.filter((m) => m.worker_id === id).length;
+      if (partes || ordenes || material) {
+        return fail(
+          `No se puede eliminar a ${persona.full_name} porque tiene trabajo registrado: `
+          + `${partes} partes, ${ordenes} órdenes y ${material} avisos de material. `
+          + 'Desactívalo en lugar de eliminarlo: dejará de entrar y su trabajo se conserva.',
+          '23503');
+      }
+      db.work_reports = db.work_reports.filter((r) => r.worker_id !== id);
+      db.project_workers = db.project_workers.filter((pw) => pw.worker_id !== id);
+      const i = people.findIndex((x) => x.id === id);
+      if (i >= 0) people.splice(i, 1);
+      registrar(`${actorName()} eliminó al trabajador ${persona.full_name} (${persona.username})`,
+        null, 'profiles');
+      return json({ ok: true, nombre: persona.full_name, borradores_eliminados: 0 });
+    }
+
+    if (path === '/rest/v1/rpc/delete_ficha') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const id = body()?.p_ficha;
+      const f = db.fichas.find((x) => x.id === id);
+      if (!f) return fail('No se encuentra la ficha', 'P0002');
+      const origen = db.projects.find((x) => x.source_ficha_id === id);
+      if (origen) {
+        return fail(`No se puede eliminar ${f.code} porque de aquí salió el proyecto `
+          + `${origen.code}. Archívala en lugar de eliminarla.`, '23503');
+      }
+      const docs = db.documents.filter((d) => d.ficha_id === id).length;
+      const coment = db.comments.filter((c) => c.ficha_id === id).length;
+      db.documents = db.documents.filter((d) => d.ficha_id !== id);
+      db.comments = db.comments.filter((c) => c.ficha_id !== id);
+      db.fichas = db.fichas.filter((x) => x.id !== id);
+      registrar(`${actorName()} eliminó la ficha ${f.code}`, f.code, 'fichas');
+      return json({ ok: true, code: f.code, documentos: docs, comentarios: coment });
+    }
+
+    if (path === '/rest/v1/rpc/delete_project') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const id = body()?.p_project;
+      const pr = db.projects.find((x) => x.id === id);
+      if (!pr) return fail('No se encuentra el proyecto', 'P0002');
+      const cobros = db.payments.filter((x) => x.project_id === id && !x.voided_at).length;
+      const horas = db.work_reports
+        .filter((r) => r.project_id === id && r.status === 'validado')
+        .reduce((n, r) => n + Number(r.hours ?? 0), 0)
+        + db.work_orders.filter((o) => o.project_id === id && o.status === 'validada')
+          .flatMap((o) => db.work_order_workers.filter((w) => w.order_id === o.id))
+          .reduce((n, w) => n + Number(w.hours ?? 0), 0);
+      if (cobros > 0 || horas > 0) {
+        return fail(`No se puede eliminar ${pr.code} porque tiene ${cobros} cobro(s) y `
+          + `${horas} h de trabajo ya validado. Archívalo en lugar de eliminarlo: `
+          + 'desaparece de los listados y no se pierde nada.', '23503');
+      }
+      const docs = db.documents.filter((d) => d.project_id === id).length;
+      const ordenes = db.work_orders.filter((o) => o.project_id === id).length;
+      db.documents = db.documents.filter((d) => d.project_id !== id);
+      db.comments = db.comments.filter((c) => c.project_id !== id);
+      db.materials = db.materials.filter((m) => m.project_id !== id);
+      db.material_requests = db.material_requests.filter((m) => m.project_id !== id);
+      db.payments = db.payments.filter((x) => x.project_id !== id);
+      db.work_orders = db.work_orders.filter((o) => o.project_id !== id);
+      db.project_workers = db.project_workers.filter((pw) => pw.project_id !== id);
+      db.work_reports.forEach((r) => { if (r.project_id === id) r.project_id = null; });
+      db.projects = db.projects.filter((x) => x.id !== id);
+      registrar(`${actorName()} eliminó el proyecto ${pr.code} · ${pr.name} `
+        + `(${docs} archivos, ${ordenes} órdenes, 0 materiales)`, pr.code, 'projects');
+      return json({ ok: true, code: pr.code, documentos: docs, ordenes, partes_desvinculados: 0 });
+    }
+
+    // ---- BLOQUE 3 · planificación y calendario -----------------------
+
+    if (path === '/rest/v1/rpc/plan_project') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const pr = db.projects.find((x) => x.id === body()?.p_project);
+      if (!pr) return fail('No se encuentra el proyecto', 'P0002');
+      const fase = body()?.p_phase ?? 'ambas';
+      const desde = body()?.p_from ?? today();
+
+      /** El primer hueco libre de esa agenda, esquivando lo ya colocado. */
+      const buscarHueco = (agenda, dias, from) => {
+        let inicio = siguienteLaborable(from);
+        for (let i = 0; i < 500; i++) {
+          const fin = finDeTramo(inicio, dias);
+          const choque = db.projects
+            .filter((x) => x.id !== pr.id && !x.archived_at)
+            .map((x) => (agenda === 'fabricacion'
+              ? { s: x.fab_start, e: x.fab_end } : { s: x.mont_start, e: x.mont_end }))
+            .filter((x) => x.s && x.s <= fin && x.e >= inicio)
+            .sort((a, b) => (a.e < b.e ? 1 : -1))[0];
+          if (!choque) return inicio;
+          inicio = sumarLaborables(sumarDias(choque.e, 1), margenLibre());
+        }
+        return inicio;
+      };
+
+      if ((fase === 'fabricacion' || fase === 'ambas') && !pr.fab_manual) {
+        const dias = diasDeTrabajo(pr.budget_hours_fab, pr.fab_workers ?? 2);
+        if (dias > 0) {
+          pr.fab_start = buscarHueco('fabricacion', dias, desde);
+          pr.fab_end = finDeTramo(pr.fab_start, dias);
+        }
+      }
+      if ((fase === 'montaje' || fase === 'ambas') && !pr.mont_manual && !pr.no_assembly) {
+        const dias = diasDeTrabajo(pr.budget_hours_mont, pr.mont_workers ?? 2);
+        if (dias > 0) {
+          const from = pr.fab_end
+            ? sumarLaborables(sumarDias(pr.fab_end, 1), margenLibre()) : desde;
+          pr.mont_start = buscarHueco('montaje', dias, from);
+          pr.mont_end = finDeTramo(pr.mont_start, dias);
+        }
+      }
+      registrar(`${actorName()} planificó ${pr.code}`, pr.code, 'projects');
+      return json(pr);
+    }
+
+    if (path === '/rest/v1/rpc/move_project_phase') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const pr = db.projects.find((x) => x.id === body()?.p_project);
+      if (!pr) return fail('No se encuentra el proyecto', 'P0002');
+      const fase = body()?.p_phase;
+      const inicio = body()?.p_start;
+      if (!inicio) return fail('Hace falta una fecha');
+      const esFab = fase === 'fabricacion';
+      const antes = esFab ? pr.fab_start : pr.mont_start;
+      const dias = Math.max(diasDeTrabajo(
+        esFab ? pr.budget_hours_fab : pr.budget_hours_mont,
+        esFab ? pr.fab_workers : pr.mont_workers), 1);
+      const fin = finDeTramo(inicio, dias);
+      if (esFab) { pr.fab_start = inicio; pr.fab_end = fin; pr.fab_manual = true; }
+      else { pr.mont_start = inicio; pr.mont_end = fin; pr.mont_manual = true; }
+      registrar(`${actorName()} movió a mano ${esFab ? 'la fabricación' : 'el montaje'} `
+        + `de ${pr.code}: ${antes ?? 'sin fecha'} → ${inicio}`, pr.code, 'projects');
+      return json(pr);
+    }
+
+    if (path === '/rest/v1/rpc/release_project_phase') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const pr = db.projects.find((x) => x.id === body()?.p_project);
+      if (!pr) return fail('No se encuentra el proyecto', 'P0002');
+      if (body()?.p_phase === 'fabricacion') pr.fab_manual = false; else pr.mont_manual = false;
+      return json(pr);
+    }
+
+    if (path === '/rest/v1/rpc/set_phase_workers') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const pr = db.projects.find((x) => x.id === body()?.p_project);
+      if (!pr) return fail('No se encuentra el proyecto', 'P0002');
+      const n = Number(body()?.p_workers);
+      if (!n || n < 1 || n > 20) return fail('El número de trabajadores tiene que estar entre 1 y 20');
+      if (body()?.p_phase === 'fabricacion') {
+        pr.fab_workers = n;
+        if (pr.fab_start) {
+          pr.fab_end = finDeTramo(pr.fab_start,
+            Math.max(diasDeTrabajo(pr.budget_hours_fab, n), 1));
+        }
+      } else {
+        pr.mont_workers = n;
+        if (pr.mont_start) {
+          pr.mont_end = finDeTramo(pr.mont_start,
+            Math.max(diasDeTrabajo(pr.budget_hours_mont, n), 1));
+        }
+      }
+      return json(pr);
+    }
+
+    if (path === '/rest/v1/rpc/set_non_working_day') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const day = body()?.p_day;
+      if (!day) return fail('Hace falta una fecha');
+      const ya = db.non_working_days.find((x) => x.day === day);
+      if (ya) ya.reason = body()?.p_reason ?? '';
+      else {
+        db.non_working_days.push({
+          day, reason: body()?.p_reason ?? '', created_by: actor().id,
+          is_demo: false, created_at: new Date().toISOString(),
+        });
+      }
+      return json(db.non_working_days.find((x) => x.day === day));
+    }
+
+    if (path === '/rest/v1/rpc/clear_non_working_day') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      db.non_working_days = db.non_working_days.filter((x) => x.day !== body()?.p_day);
+      return json(null);
+    }
+
+    if (path === '/rest/v1/rpc/save_calendar_note') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const titulo = (body()?.p_title ?? '').trim();
+      if (!titulo) return fail('Escribe de qué se trata');
+      if (!body()?.p_day) return fail('Hace falta una fecha');
+      let nota = body()?.p_id ? db.calendar_notes.find((x) => x.id === body().p_id) : null;
+      if (body()?.p_id && !nota) return fail('No se encuentra el evento', 'P0002');
+      if (!nota) {
+        nota = {
+          id: `cn-${Math.random().toString(36).slice(2, 8)}`,
+          day: body().p_day, title: titulo, detail: body()?.p_detail ?? null,
+          project_id: body()?.p_project ?? null, created_by: actor().id, is_demo: false,
+          created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+        };
+        db.calendar_notes.unshift(nota);
+      } else {
+        Object.assign(nota, {
+          day: body().p_day, title: titulo, detail: body()?.p_detail ?? null,
+          project_id: body()?.p_project ?? null, updated_at: new Date().toISOString(),
+        });
+      }
+      return json(nota);
+    }
+
+    if (path === '/rest/v1/rpc/delete_calendar_note') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      db.calendar_notes = db.calendar_notes.filter((x) => x.id !== body()?.p_id);
+      return json(null);
+    }
+
+    // ---- BLOQUE 4 · obras -------------------------------------------
+
+    const eur = (n) => `${Number(n ?? 0).toLocaleString('es-ES', {
+      minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
+
+    if (path === '/rest/v1/rpc/save_work') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const nombre = (body()?.p_name ?? '').trim();
+      if (!nombre) return fail('Escribe el nombre de la obra');
+      const campos = {
+        name: nombre,
+        client_id: body()?.p_client ?? null,
+        address: (body()?.p_address ?? '').trim() || null,
+        description: (body()?.p_description ?? '').trim() || null,
+        observations: (body()?.p_observations ?? '').trim() || null,
+        updated_at: new Date().toISOString(),
+      };
+      let obra = body()?.p_id ? db.works.find((x) => x.id === body().p_id) : null;
+      if (body()?.p_id && !obra) return fail('No se encuentra la obra', 'P0002');
+      if (!obra) {
+        db.counters.OBRA += 1;
+        obra = {
+          id: `works-${Math.random().toString(36).slice(2, 8)}`,
+          code: `OBRA-${YEAR}-${String(db.counters.OBRA).padStart(3, '0')}`,
+          archived_at: null, is_demo: false, created_by: actor().id,
+          created_at: new Date().toISOString(), ...campos,
+        };
+        db.works.unshift(obra);
+        registrar(`${actorName()} creó la obra ${obra.code} · ${obra.name}`, obra.code, 'works');
+      } else {
+        Object.assign(obra, campos);
+        registrar(`${actorName()} cambió la obra ${obra.code}`, obra.code, 'works');
+      }
+      return json(embed('works', obra));
+    }
+
+    if (path === '/rest/v1/rpc/set_project_work') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const pr = db.projects.find((x) => x.id === body()?.p_project);
+      if (!pr) return fail('No se encuentra el proyecto', 'P0002');
+      const destino = body()?.p_work ?? null;
+      if (destino && !db.works.find((x) => x.id === destino)) {
+        return fail('No se encuentra la obra', 'P0002');
+      }
+      if ((pr.work_id ?? null) === destino) return json(embed('projects', pr));
+      const antes = db.works.find((x) => x.id === pr.work_id);
+      const ahora = db.works.find((x) => x.id === destino);
+      pr.work_id = destino;
+      pr.updated_at = new Date().toISOString();
+      // La anotación va al historial del proyecto Y al de la obra.
+      registrar(destino
+        ? `${actorName()} metió ${pr.code} en la obra ${ahora.code} · ${ahora.name}`
+        : `${actorName()} sacó ${pr.code} de la obra ${antes?.code ?? 'anterior'}`,
+        pr.code, 'projects');
+      if (ahora) {
+        registrar(`${actorName()} metió el proyecto ${pr.code} · ${pr.name} en la obra`,
+          ahora.code, 'works');
+      }
+      if (antes) {
+        registrar(`${actorName()} sacó el proyecto ${pr.code} de la obra`, antes.code, 'works');
+      }
+      return json(embed('projects', pr));
+    }
+
+    if (path === '/rest/v1/rpc/archive_work') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const obra = db.works.find((x) => x.id === body()?.p_work);
+      if (!obra) return fail('No se encuentra la obra', 'P0002');
+      const archivar = body()?.p_archive !== false;
+      obra.archived_at = archivar ? new Date().toISOString() : null;
+      obra.updated_at = new Date().toISOString();
+      registrar(archivar
+        ? `${actorName()} archivó la obra ${obra.code}`
+        : `${actorName()} recuperó la obra archivada ${obra.code}`, obra.code, 'works');
+      return json(embed('works', obra));
+    }
+
+    if (path === '/rest/v1/rpc/delete_work') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const obra = db.works.find((x) => x.id === body()?.p_work);
+      if (!obra) return fail('No se encuentra la obra', 'P0002');
+      const proyectos = db.projects.filter((x) => x.work_id === obra.id);
+      const facturado = proyectos.reduce((t, x) => t + Number(x.invoiced_amount ?? 0), 0);
+      const extras = (db.work_extras ?? []).filter((x) => x.work_id === obra.id);
+      if (facturado > 0) {
+        return fail(`No se puede eliminar ${obra.code}: tiene ${eur(facturado)} facturados. `
+          + 'Archívala en lugar de eliminarla.', '23503');
+      }
+      // Los proyectos NO se borran: se quedan sueltos.
+      proyectos.forEach((x) => { x.work_id = null; });
+      db.work_extras = (db.work_extras ?? []).filter((x) => x.work_id !== obra.id);
+      db.comments = db.comments.filter((x) => x.work_id !== obra.id);
+      db.works = db.works.filter((x) => x.id !== obra.id);
+      registrar(`${actorName()} eliminó la obra ${obra.code} · ${obra.name} `
+        + `(${proyectos.length} proyectos quedan sueltos, ${extras.length} extras eliminados)`,
+        null, 'works');
+      return json({ ok: true, code: obra.code,
+        proyectos_sueltos: proyectos.length, extras: extras.length });
+    }
+
+    if (path === '/rest/v1/rpc/save_work_extra') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const concepto = (body()?.p_concept ?? '').trim();
+      if (!concepto) return fail('Escribe de qué es el coste extra');
+      if (body()?.p_amount === null || body()?.p_amount === undefined) {
+        return fail('Escribe el importe');
+      }
+      const importe = Math.round(Number(body().p_amount) * 100) / 100;
+      let x = body()?.p_id ? (db.work_extras ?? []).find((e) => e.id === body().p_id) : null;
+      if (body()?.p_id && !x) return fail('No se encuentra el coste extra', 'P0002');
+      if (!x) {
+        const obra = db.works.find((w) => w.id === body()?.p_work);
+        if (!obra) return fail('No se encuentra la obra', 'P0002');
+        x = {
+          id: `work_extras-${Math.random().toString(36).slice(2, 8)}`,
+          work_id: obra.id, concept: concepto, amount: importe,
+          notes: (body()?.p_notes ?? '').trim() || null,
+          created_by: actor().id, is_demo: obra.is_demo ?? false,
+          created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+        };
+        db.work_extras.push(x);
+        registrar(`${actorName()} añadió el extra «${concepto}» de ${eur(importe)} `
+          + `a la obra ${obra.code}`, obra.code, 'work_extras');
+      } else {
+        const antes = x.amount;
+        const obra = db.works.find((w) => w.id === x.work_id);
+        Object.assign(x, {
+          concept: concepto, amount: importe,
+          notes: (body()?.p_notes ?? '').trim() || null,
+          updated_at: new Date().toISOString(),
+        });
+        registrar(`${actorName()} cambió el extra «${concepto}» de ${eur(antes)} `
+          + `a ${eur(importe)} en la obra ${obra?.code ?? ''}`, obra?.code ?? null, 'work_extras');
+      }
+      return json(x);
+    }
+
+    if (path === '/rest/v1/rpc/delete_work_extra') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const x = (db.work_extras ?? []).find((e) => e.id === body()?.p_id);
+      if (!x) return fail('No se encuentra el coste extra', 'P0002');
+      const obra = db.works.find((w) => w.id === x.work_id);
+      db.work_extras = db.work_extras.filter((e) => e.id !== x.id);
+      registrar(`${actorName()} quitó el extra «${x.concept}» de ${eur(x.amount)} `
+        + `de la obra ${obra?.code ?? ''}`, obra?.code ?? null, 'work_extras');
+      return json(null);
+    }
+
+    if (path === '/rest/v1/rpc/set_project_invoiced') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const pr = db.projects.find((x) => x.id === body()?.p_project);
+      if (!pr) return fail('No se encuentra el proyecto', 'P0002');
+      const facturar = Boolean(body()?.p_invoiced);
+      let importe = null;
+      if (facturar) {
+        importe = Math.round(Number(body()?.p_amount ?? pr.budget_amount ?? 0) * 100) / 100;
+        if (importe < 0) return fail('El importe facturado no puede ser negativo');
+        pr.invoiced_amount = importe;
+        pr.invoiced_on = body()?.p_on ?? today();
+        // El estado de cobro que ya existía: no se crea otro sistema.
+        if (pr.billing_status === 'por_facturar') pr.billing_status = 'pendiente_cobro';
+      } else {
+        pr.invoiced_amount = null;
+        pr.invoiced_on = null;
+      }
+      pr.updated_at = new Date().toISOString();
+      registrar(facturar
+        ? `${actorName()} marcó ${pr.code} como facturado por ${eur(importe)}`
+        : `${actorName()} quitó la marca de facturado de ${pr.code}`, pr.code, 'projects');
+      const obra = db.works.find((w) => w.id === pr.work_id);
+      if (obra) {
+        registrar(facturar
+          ? `${actorName()} facturó ${pr.code} por ${eur(importe)}`
+          : `${actorName()} quitó la facturación de ${pr.code}`, obra.code, 'works');
+      }
+      return json(embed('projects', pr));
+    }
+
+    if (path === '/rest/v1/rpc/set_gap_days') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const n = Number(body()?.p_days);
+      if (Number.isNaN(n) || n < 0 || n > 30) {
+        return fail('El margen entre proyectos tiene que estar entre 0 y 30 días');
+      }
+      db.settings.gap_days = n;
+      return json(db.settings);
+    }
+
+    if (path === '/rest/v1/non_working_days') {
+      return json(applyFilters(db.non_working_days, url));
     }
 
     if (path === '/rest/v1/rpc/trash_document') {
@@ -765,6 +1518,26 @@ export async function stubSupabase(context, {
       db.project_substatuses = db.project_substatuses.filter(
         (s) => s.project_id !== project.id || s.phase === next,
       );
+
+      // BLOQUE 3: al ENTRAR en fabricación, el proyecto busca hueco solo,
+      // igual que hace el disparador de la base de datos.
+      if (next === 'fabricacion' && project.autoplan !== false
+          && !project.fab_start && !project.fab_manual) {
+        const dias = diasDeTrabajo(project.budget_hours_fab, project.fab_workers ?? 2);
+        if (dias > 0) {
+          project.fab_start = siguienteLaborable(today());
+          project.fab_end = finDeTramo(project.fab_start, dias);
+        }
+        const diasM = diasDeTrabajo(project.budget_hours_mont, project.mont_workers ?? 2);
+        if (diasM > 0 && !project.no_assembly && !project.mont_manual) {
+          project.mont_start = project.fab_end
+            ? sumarLaborables(sumarDias(project.fab_end, 1), margenLibre())
+            : siguienteLaborable(today());
+          project.mont_end = finDeTramo(project.mont_start, diasM);
+        }
+        registrar(`${actorName()} planificó ${project.code}`, project.code, 'projects');
+      }
+
       return json(project);
     }
 
@@ -984,6 +1757,31 @@ export async function stubSupabase(context, {
       return json(request);
     }
 
+    // BLOQUE 5 · pedir material sin esperar a una orden ni a un parte.
+    // Entra en la MISMA lista y pasa por la MISMA revisión.
+    if (path === '/rest/v1/rpc/submit_material_need') {
+      if (!getUser()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const texto = (body()?.p_body ?? '').trim();
+      if (!texto) return fail('Escribe qué material falta');
+      const proyecto = body()?.p_project ?? null;
+      if (proyecto) {
+        const pr = db.projects.find((x) => x.id === proyecto);
+        if (!pr) return fail('No se encuentra el proyecto', 'P0002');
+        if (actor().role !== 'admin' && !assignedProjects(actor()).has(proyecto)) {
+          return fail('Este proyecto no está asignado a ti', '42501');
+        }
+      }
+      const peticion = {
+        id: `mr-${Math.random().toString(36).slice(2, 8)}`,
+        project_id: proyecto, order_id: null, worker_id: actor().id,
+        body: texto, status: 'pendiente', reviewed_at: null, reviewed_by: null,
+        review_note: null, material_id: null, is_demo: false,
+        created_at: new Date().toISOString(),
+      };
+      db.material_requests.unshift(peticion);
+      return json(peticion);
+    }
+
     if (path === '/rest/v1/rpc/accept_material_request') {
       const request = db.material_requests.find((r) => r.id === body()?.p_request);
       const nombre = (body()?.p_name ?? '').trim();
@@ -991,9 +1789,17 @@ export async function stubSupabase(context, {
       if (request.status !== 'pendiente') return fail('Esta comunicación ya está revisada');
       if (!nombre) return fail('Escribe el nombre del material');
 
+      // BLOQUE 5: la petición puede venir sin proyecto; el material
+      // pendiente siempre es de uno, así que se dice al aceptarla.
+      const destino = request.project_id ?? body()?.p_project ?? null;
+      if (!destino) {
+        return fail('Esta petición no trae proyecto. Elige a qué proyecto va el material '
+          + 'antes de aceptarla');
+      }
+
       const material = {
         id: `mat-${Math.random().toString(36).slice(2, 8)}`,
-        project_id: request.project_id, order_id: request.order_id,
+        project_id: destino, order_id: request.order_id,
         name: nombre, units: body()?.p_units ?? null, supplier: body()?.p_supplier ?? null,
         ordered_on: body()?.p_ordered_on ?? null, expected_on: body()?.p_expected_on ?? null,
         received: false, notes: body()?.p_notes ?? null, late_notified_on: null,
@@ -1005,6 +1811,7 @@ export async function stubSupabase(context, {
       request.reviewed_at = new Date().toISOString();
       request.reviewed_by = actor().id;
       request.material_id = material.id;
+      request.project_id = destino;
       avisar(request.worker_id, 'material_solicitado', 'Material anotado',
         `Se ha añadido «${nombre}» al material pendiente.`, request.order_id);
       registrar(`${actorName()} anotó material pendiente: ${nombre}`, null, 'materials');
@@ -1077,6 +1884,9 @@ export async function stubSupabase(context, {
     }
 
     if (path === '/rest/v1/project_billing') {
+      // Lee «projects», que es de administración desde el BLOQUE 1: a un
+      // trabajador no le llega ni una fila.
+      if (soloAdmin()) return json([]);
       const rows = db.projects.map((p) => {
         const cobrado = db.payments.filter((x) => x.project_id === p.id && !x.voided_at)
           .reduce((t, x) => t + Number(x.amount), 0);
@@ -1102,21 +1912,87 @@ export async function stubSupabase(context, {
       return json(applyFilters(rows, url));
     }
 
+
+    /**
+     * BLOQUE 4 · las cuentas de una obra, igual que la vista
+     * «work_summary»: proyectos + extras = total estimado.
+     */
+    const cuentasDeObra = (w) => {
+      const proyectos = db.projects.filter((x) => x.work_id === w.id);
+      const suma = (f) => proyectos.reduce((t, x) => t + Number(f(x) ?? 0), 0);
+      const totalProyectos = suma((x) => x.budget_amount);
+      const extras = (db.work_extras ?? [])
+        .filter((x) => x.work_id === w.id)
+        .reduce((t, x) => t + Number(x.amount ?? 0), 0);
+      const facturado = suma((x) => x.invoiced_amount);
+      const cobrado = db.payments
+        .filter((pg) => !pg.voided_at && proyectos.some((x) => x.id === pg.project_id))
+        .reduce((t, pg) => t + Number(pg.amount ?? 0), 0);
+      const fechas = (campos) => proyectos
+        .flatMap((x) => campos.map((c) => x[c])).filter(Boolean).sort();
+      const desde = fechas(['fab_start', 'mont_start'])[0] ?? null;
+      const hastaLista = fechas(['fab_end', 'mont_end']);
+      return {
+        work_id: w.id, code: w.code, name: w.name,
+        proyectos: proyectos.length,
+        proyectos_activos: proyectos.filter((x) => x.phase !== 'finalizado' && !x.archived_at).length,
+        proyectos_finalizados: proyectos.filter((x) => x.phase === 'finalizado').length,
+        total_proyectos: totalProyectos,
+        extras,
+        total_estimado: totalProyectos + extras,
+        facturado,
+        pendiente_facturar: totalProyectos + extras - facturado,
+        cobrado,
+        material_pendiente: db.materials.filter((m) => !m.received && !m.archived_at
+          && proyectos.some((x) => x.id === m.project_id)).length,
+        desde,
+        hasta: hastaLista[hastaLista.length - 1] ?? null,
+      };
+    };
+
+    if (path === '/rest/v1/work_summary') {
+      const rows = visible('works', db.works ?? []).map(cuentasDeObra);
+      return json(applyFilters(rows, url));
+    }
+
     if (path === '/rest/v1/v_calendar') {
       const user = getUser();
       const esAdmin = !user || user.role === 'admin';
       const mine = user && !esAdmin ? myOrderIds(user) : null;
       const rows = [];
 
-      visible('work_orders', db.work_orders).filter((o) => !o.archived_at).forEach((o) => {
-        const p = db.projects.find((x) => x.id === o.project_id);
-        const c = p ? db.clients.find((x) => x.id === p.client_id) : null;
-        rows.push({
-          kind: o.type, id: o.id, code: o.code, title: p?.name ?? '', detail: o.description,
-          date: o.scheduled_date, status: ORDER_STATUS_ES[o.status],
-          project_id: o.project_id, project_code: p?.code ?? null, client_name: c?.name ?? null,
-          assigned: db.work_order_workers.filter((w) => w.order_id === o.id).map((w) => w.worker_id),
-          movable: true,
+      // BLOQUE 3: «fabricación» y «montaje» son ya la PLANIFICACIÓN del
+      // proyecto, con duración. Cada tramo se despliega en una fila por
+      // día laborable, igual que hace la vista de verdad.
+      visible('projects', db.projects.filter((x) => !x.archived_at)).forEach(() => {});
+      const proyectosVisibles = esAdmin
+        ? db.projects.filter((x) => !x.archived_at)
+        : db.projects.filter((x) => !x.archived_at && assignedProjects(user).has(x.id));
+
+      proyectosVisibles.forEach((p) => {
+        const c = db.clients.find((x) => x.id === p.client_id);
+        [['fabricacion', p.fab_start, p.fab_end, p.fab_manual],
+         ['montaje', p.mont_start, p.mont_end, p.mont_manual]].forEach(([fase, desde, hasta, aMano]) => {
+          if (!desde) return;
+          const dias = diasDelTramo(desde, hasta ?? desde, Boolean(aMano));
+          dias.forEach((day, i) => {
+            rows.push({
+              kind: fase, id: p.id, code: p.code, title: p.name,
+              detail: dias.length > 1 ? `Día ${i + 1} de ${dias.length}` : null,
+              date: day, status: aMano ? 'Colocado a mano' : 'Planificado',
+              project_id: p.id, project_code: p.code, client_name: c?.name ?? null,
+              assigned: [
+                ...new Set([
+                  ...db.project_workers.filter((pw) => pw.project_id === p.id).map((pw) => pw.worker_id),
+                  ...db.work_orders.filter((o) => o.project_id === p.id && !o.archived_at
+                      && o.type === fase)
+                    .flatMap((o) => db.work_order_workers.filter((w) => w.order_id === o.id)
+                      .map((w) => w.worker_id)),
+                ]),
+              ],
+              movable: true,
+            });
+          });
         });
       });
 
@@ -1132,7 +2008,13 @@ export async function stubSupabase(context, {
           });
         });
 
-      visible('fichas', db.fichas)
+      // BLOQUE 5: por «worker_fichas», no por la tabla: así el trabajador
+      // sigue viendo sus visitas y sus avisos, pero no el importe.
+      const fichasVisibles = esAdmin
+        ? db.fichas
+        : db.fichas.filter((f) => f.assigned_to === user.id
+            && ['visita', 'aviso'].includes(f.type) && !f.archived_at);
+      fichasVisibles
         .filter((f) => !f.archived_at && f.scheduled_date && ['visita', 'aviso'].includes(f.type))
         .forEach((f) => {
           const c = db.clients.find((x) => x.id === f.client_id);
@@ -1145,7 +2027,148 @@ export async function stubSupabase(context, {
           });
         });
 
+      (db.calendar_notes ?? []).forEach((n) => {
+        const p = db.projects.find((x) => x.id === n.project_id);
+        rows.push({
+          kind: 'otro', id: n.id, code: null, title: n.title, detail: n.detail,
+          date: n.day, status: 'Evento', project_id: n.project_id ?? null,
+          project_code: p?.code ?? null, client_name: null, assigned: [], movable: true,
+        });
+      });
+
+      // BLOQUE 4: la obra es un elemento más del calendario. No tiene
+      // fechas propias: van de la primera a la última de sus proyectos.
+      // Solo administración: «works» no se le devuelve al trabajador.
+      visible('works', (db.works ?? []).filter((w) => !w.archived_at)).forEach((w) => {
+        const c = cuentasDeObra(w);
+        if (!c.desde || !c.hasta) return;
+        const cliente = db.clients.find((x) => x.id === w.client_id);
+        let d = c.desde;
+        for (let i = 0; i < 400 && d <= c.hasta; i++) {
+          if (esLaborable(d)) {
+            rows.push({
+              kind: 'obra', id: w.id, code: w.code, title: w.name,
+              detail: `${c.proyectos} proyecto(s)`, date: d, status: 'Obra',
+              project_id: null, project_code: w.code,
+              client_name: cliente?.name ?? null, assigned: [], movable: false,
+            });
+          }
+          d = sumarDias(d, 1);
+        }
+      });
+
       if (mine) { /* ya filtrado por visible() */ }
+      return json(applyFilters(rows, url));
+    }
+
+    // ------------- BLOQUE 1 · proyectos, equipo y partes -------------
+
+    /**
+     * «worker_projects»: el proyecto tal como lo ve el trabajador.
+     * Se construye a propósito SIN las columnas de dinero, igual que la
+     * vista de verdad: así la prueba comprueba lo mismo que la base de
+     * datos, y no que la pantalla lo esconda.
+     */
+    /**
+     * «worker_fichas»: la visita o el aviso tal como los ve un
+     * trabajador. Se construye a propósito SIN «amount», igual que la
+     * vista de verdad.
+     */
+    if (path === '/rest/v1/worker_fichas') {
+      const user = getUser() ?? ADMIN;
+      const suyas = user.role === 'admin'
+        ? db.fichas
+        : db.fichas.filter((f) => f.assigned_to === user.id
+            && ['visita', 'aviso'].includes(f.type) && !f.archived_at);
+      const rows = suyas.map((f) => ({
+        id: f.id, code: f.code, type: f.type, status: f.status,
+        title: f.title ?? null, description: f.description ?? null,
+        address: f.address ?? null, phone: f.phone ?? null,
+        email: f.email ?? null, hours: f.hours ?? null,
+        scheduled_date: f.scheduled_date ?? null, scheduled_time: f.scheduled_time ?? null,
+        assigned_to: f.assigned_to ?? null, client_id: f.client_id ?? null,
+        client_name: db.clients.find((c) => c.id === f.client_id)?.name ?? null,
+        archived_at: f.archived_at ?? null,
+        created_at: f.created_at ?? null, updated_at: f.updated_at ?? null,
+      }));
+      return json(applyOrder(applyFilters(rows, url), url));
+    }
+
+    if (path === '/rest/v1/worker_projects') {
+      const user = getUser() ?? ADMIN;
+      const ids = user.role === 'admin'
+        ? new Set(db.projects.map((x) => x.id))
+        : assignedProjects(user);
+      const rows = db.projects.filter((x) => ids.has(x.id)).map((x) => ({
+        id: x.id, code: x.code, name: x.name, description: x.description ?? null,
+        measures: x.measures ?? null, finish: x.finish ?? null, location: x.location ?? null,
+        address: x.address ?? null, observations: x.observations ?? null,
+        phase: x.phase, no_assembly: Boolean(x.no_assembly),
+        budget_hours_fab: Number(x.budget_hours_fab ?? 0),
+        budget_hours_mont: Number(x.budget_hours_mont ?? 0),
+        client_id: x.client_id ?? null,
+        client_name: db.clients.find((c) => c.id === x.client_id)?.name ?? null,
+        archived_at: x.archived_at ?? null, finished_at: x.finished_at ?? null,
+        created_at: x.created_at ?? null, updated_at: x.updated_at ?? null,
+        // BLOQUE 5: las fechas planificadas. Son fechas, no dinero.
+        fab_start: x.fab_start ?? null, fab_end: x.fab_end ?? null,
+        mont_start: x.mont_start ?? null, mont_end: x.mont_end ?? null,
+        fab_workers: x.fab_workers ?? 2, mont_workers: x.mont_workers ?? 2,
+        proximo: [x.fab_start, x.mont_start].filter(Boolean).sort()[0] ?? null,
+      }));
+      return json(applyOrder(applyFilters(rows, url), url));
+    }
+
+    if (path === '/rest/v1/project_team') {
+      const user = getUser() ?? ADMIN;
+      const ids = user.role === 'admin'
+        ? new Set(db.projects.map((x) => x.id))
+        : assignedProjects(user);
+      const rows = db.project_workers
+        .filter((pw) => ids.has(pw.project_id))
+        .map((pw) => {
+          const persona = people.find((x) => x.id === pw.worker_id);
+          return {
+            project_id: pw.project_id, worker_id: pw.worker_id,
+            full_name: persona?.full_name ?? '', role: persona?.role ?? 'worker',
+          };
+        });
+      return json(applyFilters(rows, url));
+    }
+
+    /** Horas previstas contra realizadas. SOLO cuentan las validadas. */
+    if (path === '/rest/v1/project_hours') {
+      const rows = db.projects.map((x) => {
+        const validados = db.work_reports
+          .filter((r) => r.project_id === x.id && r.status === 'validado');
+        const suma = (tipo) => validados
+          .filter((r) => r.work_type === tipo)
+          .reduce((n, r) => n + Number(r.hours ?? 0), 0);
+        const fab = suma('fabricacion');
+        const mont = suma('montaje');
+        return {
+          project_id: x.id,
+          previstas_fab: Number(x.budget_hours_fab ?? 0),
+          previstas_mont: Number(x.budget_hours_mont ?? 0),
+          previstas_total: Number(x.budget_hours_fab ?? 0) + Number(x.budget_hours_mont ?? 0),
+          realizadas_fab: fab, realizadas_mont: mont, realizadas_total: fab + mont,
+        };
+      });
+      return json(applyFilters(rows, url));
+    }
+
+    if (path === '/rest/v1/project_reports') {
+      const rows = db.projects.map((x) => {
+        const list = db.work_reports.filter((r) => r.project_id === x.id);
+        return {
+          project_id: x.id, total: list.length,
+          por_validar: list.filter((r) => r.status === 'enviado').length,
+          validados: list.filter((r) => r.status === 'validado').length,
+          rechazados: list.filter((r) => r.status === 'rechazado').length,
+          horas_validadas: list.filter((r) => r.status === 'validado')
+            .reduce((n, r) => n + Number(r.hours ?? 0), 0),
+        };
+      });
       return json(applyFilters(rows, url));
     }
 
@@ -1577,6 +2600,29 @@ export async function stubSupabase(context, {
       return json([...porTipo.values()].sort((a, b) => a.tipo.localeCompare(b.tipo)));
     }
 
+    // ---------------- Conexión con Google Drive ----------------
+    if (path === '/rest/v1/rpc/drive_status') {
+      if (soloAdmin()) return fail('No tienes permisos para ver esto.', '42501');
+      const d = db.drive;
+      return json({
+        estado: d.last_error ? 'error' : d.connected ? 'conectado' : 'sin_conectar',
+        conectado: d.connected,
+        cuenta: d.account_email,
+        carpeta: d.folder_name,
+        carpeta_id: d.folder_id,
+        conectado_el: d.connected_at,
+        ultima_copia: d.last_ok_at,
+        error: d.last_error,
+      });
+    }
+
+    // El permiso de Google NO se puede alcanzar desde el navegador: estas
+    // funciones solo las puede ejecutar el servidor.
+    if (['drive_get_token', 'drive_put_token', 'drive_forget_token',
+         'drive_mark_connected', 'drive_disconnect'].some((f) => path.endsWith(`/rpc/${f}`))) {
+      return fail('No tienes permisos para realizar esta acción.', '42501');
+    }
+
     // ---------------- Funciones del servidor ----------------
     // Aquí no hay ninguna credencial: se imita lo que responde Supabase.
     if (path.startsWith('/functions/v1/')) {
@@ -1589,6 +2635,16 @@ export async function stubSupabase(context, {
       }
 
       if (fn === 'backup-drive') {
+        if (!db.drive.connected) {
+          return route.fulfill({
+            status: 400, headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              ok: false,
+              message: 'Google Drive todavía no está conectado. Entra en Configuración → '
+                + 'Copias de seguridad y pulsa «Conectar Google Drive».',
+            }),
+          });
+        }
         if (!driveConfigured) {
           return route.fulfill({
             status: 400, headers: { 'content-type': 'application/json' },
@@ -1606,10 +2662,37 @@ export async function stubSupabase(context, {
           started_at: new Date().toISOString(), finished_at: new Date().toISOString(),
           created_by: actor().id,
         });
+        db.drive.last_ok_at = new Date().toISOString();
+        db.drive.last_error = null;
         registrar(`${actorName()} subió una copia a Google Drive`, null, 'backups');
         return json({
           ok: true, file_name: nombre,
           link: 'https://drive.google.com/file/d/drive-1/view', size: 24_576, removed: 0,
+        });
+      }
+
+      if (fn === 'google-oauth') {
+        const b = body() ?? {};
+        if (b.action === 'disconnect') {
+          Object.assign(db.drive, {
+            connected: false, account_email: null, folder_id: null, folder_name: null,
+            connected_at: null, last_error: null,
+          });
+          registrar(`${actorName()} desconectó Google Drive`, null, 'backups');
+          return json({ ok: true });
+        }
+        if (!driveConfigured) {
+          return route.fulfill({
+            status: 400, headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ ok: false, message: 'Falta configurar la conexión con Google.' }),
+          });
+        }
+        // La autorización ocurre en Google; aquí solo se devuelve a dónde ir.
+        return json({
+          ok: true,
+          url: 'https://accounts.google.com/o/oauth2/v2/auth?client_id=prueba'
+             + '&scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fdrive.file'
+             + '&access_type=offline&prompt=consent&state=prueba',
         });
       }
 
@@ -1674,7 +2757,28 @@ export async function stubSupabase(context, {
       }
 
       if (url.searchParams.get('select') === 'id') return count(applyFilters(rows, url).length);
-      const filtered = applyFilters(rows, url);
+      // REVISIÓN: el teléfono, el correo, el usuario de acceso y las
+      // preferencias NO se conceden sobre esta tabla (son permisos por
+      // columna). La tabla devuelve el resto; esos cuatro se leen por
+      // «profiles_full», y aquí se quitan igual que allí.
+      const filtered = applyFilters(rows, url).map((p) => {
+        const { email, phone, preferences, username, ...resto } = p;
+        return resto;
+      });
+      return json(wantsObject ? filtered[0] ?? null : filtered);
+    }
+
+    /**
+     * «profiles_full»: la ficha completa, con los datos personales.
+     * Cada persona la suya; administración, todas.
+     */
+    if (path === '/rest/v1/profiles_full') {
+      const actual = getUser();
+      const todas = people.map((p) => (actual && p.id === actual.id ? actual : p));
+      const rows = soloAdmin()
+        ? todas.filter((p) => actual && p.id === actual.id)
+        : todas;
+      const filtered = applyOrder(applyFilters(rows, url), url);
       return json(wantsObject ? filtered[0] ?? null : filtered);
     }
 
@@ -1762,6 +2866,21 @@ export async function stubSupabase(context, {
           row.finished_at = null;
           row.budget_hours_fab = row.budget_hours_fab ?? 0;
           row.budget_hours_mont = row.budget_hours_mont ?? 0;
+          // Los valores por defecto de la tabla de verdad («not null
+          // default 2» y demás). Sin esto, la pantalla recibía undefined
+          // y pintaba «NaN día(s)», que en producción no puede pasar.
+          row.fab_workers = row.fab_workers ?? 2;
+          row.mont_workers = row.mont_workers ?? 2;
+          row.fab_manual = row.fab_manual ?? false;
+          row.mont_manual = row.mont_manual ?? false;
+          row.autoplan = row.autoplan ?? true;
+          row.fab_start = row.fab_start ?? null;
+          row.fab_end = row.fab_end ?? null;
+          row.mont_start = row.mont_start ?? null;
+          row.mont_end = row.mont_end ?? null;
+          row.work_id = row.work_id ?? null;
+          row.invoiced_amount = row.invoiced_amount ?? null;
+          row.invoiced_on = row.invoiced_on ?? null;
           registrar(`Salvi Plaza creó el proyecto ${row.code} · ${row.name}`, row.code, 'projects');
         }
 

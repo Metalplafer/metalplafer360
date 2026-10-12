@@ -7,7 +7,8 @@ const SELECT =
 
 export type FichaInput = Partial<Pick<Ficha,
   'type' | 'client_id' | 'contact_id' | 'title' | 'description' | 'address' | 'phone' |
-  'scheduled_date' | 'scheduled_time' | 'assigned_to' | 'amount' | 'status'>>;
+  'email' | 'hours' | 'scheduled_date' | 'scheduled_time' | 'assigned_to' |
+  'amount' | 'status'>>;
 
 function clean(o: FichaInput) {
   return Object.fromEntries(
@@ -97,4 +98,15 @@ export async function unassignedCount() {
     .eq('status', 'por_asignar').is('archived_at', null);
   if (error) throw error;
   return count ?? 0;
+}
+
+/**
+ * ELIMINAR una ficha (presupuesto, visita o aviso) con todo lo suyo.
+ * Los archivos del almacén se retiran antes, desde quien llama.
+ * La base de datos se niega si de esta ficha salió un proyecto.
+ */
+export async function deleteFicha(id: string) {
+  return unwrap(await supabase.rpc('delete_ficha', { p_ficha: id })) as unknown as {
+    ok: boolean; code: string; documentos: number; comentarios: number;
+  };
 }

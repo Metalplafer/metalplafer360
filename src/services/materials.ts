@@ -128,6 +128,8 @@ export async function submitRequest(orderId: string, body: string) {
 export async function acceptRequest(requestId: string, material: {
   name: string; units?: number | null; supplier?: string | null;
   orderedOn?: string | null; expectedOn?: string | null; notes?: string | null;
+  /** Obligatorio solo si la petición llegó sin proyecto. */
+  projectId?: string | null;
 }) {
   if (!material.name.trim()) throw new Aviso('Escribe el nombre del material.');
   return unwrap(await supabase.rpc('accept_material_request', {
@@ -138,6 +140,7 @@ export async function acceptRequest(requestId: string, material: {
     p_ordered_on: material.orderedOn ?? null,
     p_expected_on: material.expectedOn ?? null,
     p_notes: material.notes ?? null,
+    p_project: material.projectId ?? null,
   })) as unknown as Material;
 }
 
@@ -145,4 +148,36 @@ export async function discardRequest(requestId: string, note: string) {
   unwrap(await supabase.rpc('discard_material_request', {
     p_request: requestId, p_note: note.trim() || null,
   }));
+}
+
+/**
+ * «Falta material» desde un PARTE de trabajo.
+ *
+ * Entra por el mismo sitio que el aviso de una orden y aparece en la
+ * misma pantalla de Material pendiente: no hay un segundo sistema de
+ * avisos. El parte tiene que tener proyecto, porque el aviso va siempre
+ * contra un proyecto.
+ */
+/**
+ * SOLICITAR MATERIAL, sin esperar a nada.
+ *
+ * No hace falta una orden ni un parte: cualquiera (trabajador o
+ * administración) puede abrir la petición en cuanto ve que falta algo.
+ * El proyecto es opcional, porque no siempre se sabe de qué proyecto es.
+ *
+ * Entra en la MISMA lista y pasa por la MISMA revisión que las que
+ * llegan desde una orden o un parte. No hay un segundo sistema.
+ */
+export async function submitMaterialNeed(projectId: string | null, body: string) {
+  const text = body.trim();
+  if (!text) throw new Aviso('Escribe qué material falta.');
+  return unwrap(await supabase.rpc('submit_material_need', {
+    p_project: projectId, p_body: text,
+  })) as unknown as MaterialRequest;
+}
+
+export async function submitRequestFromReport(reportId: string, body: string) {
+  return unwrap(await supabase.rpc('submit_material_request_report', {
+    p_report: reportId, p_body: body,
+  })) as unknown as MaterialRequest;
 }

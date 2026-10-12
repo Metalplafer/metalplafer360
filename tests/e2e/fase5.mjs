@@ -12,12 +12,13 @@
  * en tests/sql/50_tests_fase5.sql.
  */
 import {
-  ADMIN, WORKER, YEAR, addDays, buildApp, createChecker, createDb, launchBrowser,
-  mondayOf, serveApp, signIn, startOfMonth, stubSupabase, today,
+  ADMIN, WORKER, YEAR, addDays, buildApp, createChecker, createDb, diaLaborable,
+  launchBrowser, mondayOf, serveApp, signIn, startOfMonth, stubSupabase, today,
 } from './fake-supabase.mjs';
 
 const PORT = 4183;
 const HOY = today();
+const LABORABLE = diaLaborable(HOY);
 const AYER = addDays(HOY, -3);
 const PROXIMO = addDays(HOY, 4);
 const MANANA = addDays(HOY, 1);
@@ -40,6 +41,11 @@ const db = createDb({
       measures: '4 tramos · 3,20 m', finish: 'Negro forja', location: 'Escalera principal',
       address: 'Rambla, 45 · Sabadell', observations: null,
       budget_amount: 5000, advance_amount: null, budget_hours_fab: 40, budget_hours_mont: 16,
+      // BLOQUE 3: el calendario pinta la PLANIFICACIÓN del proyecto.
+      // En día laborable: un tramo en fin de semana no se dibuja, y la
+      // prueba no debe depender del día en que se ejecute.
+      fab_start: LABORABLE, fab_end: LABORABLE, mont_start: null, mont_end: null,
+      fab_workers: 2, mont_workers: 2, fab_manual: false, mont_manual: false, autoplan: true,
       phase: 'fabricacion', no_assembly: false, billing_status: 'pendiente_cobro',
       finished_at: null, archived_at: null, is_demo: false,
       created_at: '2026-05-02T09:00:00Z', updated_at: '2026-05-02T09:00:00Z' },
@@ -186,7 +192,8 @@ try {
   await m.waitForTimeout(1000);
   const calTrabajador = await m.locator('.w-content').innerText();
   check('El trabajador tiene su calendario', calTrabajador.includes('Calendario'));
-  check('Con su orden de hoy', calTrabajador.includes(`OT-${YEAR}-001`));
+  // BLOQUE 3: el trabajador ve la PLANIFICACIÓN de su proyecto, no la orden.
+  check('Con la fabricación de su proyecto', calTrabajador.includes(`PROY-${YEAR}-001`));
   check('No puede arrastrar nada',
     await m.locator('.cal-event[draggable="true"]').count() === 0);
   check('No ve el filtro por trabajador', await m.locator('#cal-worker').count() === 0);
@@ -242,18 +249,24 @@ try {
     && (await a.locator('.cal-toolbar').innerText()).includes('Semana')
     && (await a.locator('.cal-toolbar').innerText()).includes('Día')
     && (await a.locator('.cal-toolbar').innerText()).includes('Agenda'));
-  check('La leyenda tiene los cinco tipos de evento',
-    await a.locator('.cal-legend-item').count() === 5);
+  // BLOQUE 3: se añade «Otros», los eventos sueltos del calendario.
+  // BLOQUE 4: y «Obras», que son un elemento más del calendario.
+  check('La leyenda tiene los siete tipos de evento',
+    await a.locator('.cal-legend-item').count() === 7);
+  check('Y uno de ellos es «Otros»',
+    (await a.locator('.cal-legend').innerText()).includes('Otros'));
+  check('Y otro es «Obras»',
+    (await a.locator('.cal-legend').innerText()).includes('Obras'));
   check('Y ninguna leyenda por trabajador',
     !(await a.locator('.cal-legend').innerText()).includes('Juan Ortega'));
   check('Hay filtro por trabajador', await a.locator('#cal-worker').count() === 1);
 
-  check('La orden de hoy aparece en el calendario',
-    (await a.locator('.cal-grid').innerText()).includes(`OT-${YEAR}-001`));
+  check('La fabricación planificada aparece en el calendario',
+    (await a.locator('.cal-grid').innerText()).includes(`PROY-${YEAR}-001`));
   check('Y el material en su fecha prevista',
     (await a.locator('.cal-grid').innerText()).includes('Bisagras inox 40 mm'));
 
-  check('Solo las órdenes se pueden arrastrar',
+  check('Se puede arrastrar la planificación, pero no el material',
     await a.locator('.cal-event[draggable="true"]').count() === 1);
 
   // Apagar un tipo de evento
@@ -280,8 +293,10 @@ try {
   await destino.dispatchEvent('drop');
   await a.waitForTimeout(1200);
 
-  check('Arrastrar una orden le cambia la fecha',
-    db.work_orders[0].scheduled_date === MANANA, db.work_orders[0].scheduled_date);
+  check('Arrastrar la fabricación le cambia la fecha',
+    db.projects[0].fab_start === MANANA, db.projects[0].fab_start);
+  check('Y queda fijada a mano, para que el cálculo automático no la mueva',
+    db.projects[0].fab_manual === true);
   check('El cambio de fecha NO avisa al trabajador',
     db.notifications.length === antesAvisos);
   check('Lo confirma en pantalla',

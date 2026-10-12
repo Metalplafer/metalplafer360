@@ -8,12 +8,17 @@
  * LAS CREDENCIALES DE GOOGLE Y LA CLAVE DE SERVIDOR NO ESTÁN EN EL
  * REPOSITORIO: se leen de las variables de entorno de Supabase.
  *
- * Publicar:  supabase functions deploy backup-drive
+ * Publicar:  supabase functions deploy backup-drive --no-verify-jwt
+ *
+ * Va sin comprobación de sesión A PROPÓSITO: la llamada de las 02:00 la
+ * hace la base de datos y no lleva ninguna. Quién puede usarla lo decide
+ * este código: o una sesión de administración, o el secreto del cron.
  */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { buildBackupZip, BACKUP_TABLES, type FileReference }
   from '../../../src/lib/export/backup.ts';
-import { deleteFromDrive, uploadToDrive, type DriveConfig } from '../_shared/drive.ts';
+import { DriveNoAutorizado, deleteFromDrive, uploadToDrive, type DriveConfig }
+  from '../_shared/drive.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -37,19 +42,16 @@ Deno.serve(async (request: Request) => {
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
   const cronSecret = Deno.env.get('BACKUP_CRON_SECRET');
-  const drive: DriveConfig = {
-    email: Deno.env.get('GOOGLE_SERVICE_ACCOUNT_EMAIL') ?? '',
-    privateKey: Deno.env.get('GOOGLE_PRIVATE_KEY') ?? '',
-    folderId: Deno.env.get('GOOGLE_DRIVE_FOLDER_ID') ?? undefined,
-  };
+  const clientId = Deno.env.get('GOOGLE_OAUTH_CLIENT_ID') ?? '';
+  const clientSecret = Deno.env.get('GOOGLE_OAUTH_CLIENT_SECRET') ?? '';
 
   if (!url || !serviceKey || !anonKey) {
     return fail('Faltan las variables de entorno de Supabase en la función.', 500);
   }
-  if (!drive.email || !drive.privateKey) {
+  if (!clientId || !clientSecret) {
     return fail(
-      'Falta configurar Google Drive. Añade GOOGLE_SERVICE_ACCOUNT_EMAIL y GOOGLE_PRIVATE_KEY '
-      + 'a los secretos de Supabase (está explicado en la guía de puesta en marcha).', 400,
+      'Falta configurar la conexión con Google. Añade GOOGLE_OAUTH_CLIENT_ID y '
+      + 'GOOGLE_OAUTH_CLIENT_SECRET a los secretos de Supabase (está explicado en la guía).', 400,
     );
   }
 
@@ -96,6 +98,28 @@ Deno.serve(async (request: Request) => {
 
   const company = (settings?.company as Record<string, string> | null)?.name ?? 'Metalplafer';
   const retention = Number(settings?.backup_retention_days ?? 30);
+
+  // ---------- ¿Está Google Drive conectado? ----------
+  // El permiso duradero vive en la bóveda y solo lo puede leer el
+  // servidor. Si no hay ninguno, la empresa todavía no ha autorizado su
+  // cuenta de Google desde Configuración.
+  const { data: conexion } = await admin
+    .from('google_drive_connection').select('folder_id, folder_name').eq('id', 1).maybeSingle();
+
+  const { data: refreshToken } = await admin.rpc('drive_get_token');
+
+  if (!refreshToken || !conexion?.folder_id) {
+    return fail(
+      'Google Drive todavía no está conectado. Entra en Configuración → Copias de '
+      + 'seguridad y pulsa «Conectar Google Drive».', 400,
+    );
+  }
+
+  const drive: DriveConfig = {
+    clientId, clientSecret,
+    refreshToken: refreshToken as unknown as string,
+    folderId: conexion.folder_id as string,
+  };
 
   // ---------- Se deja constancia de que empieza ----------
   const { data: record, error: startError } = await admin
@@ -179,6 +203,8 @@ Deno.serve(async (request: Request) => {
       p_actor: actor,
     });
 
+    await admin.rpc('drive_mark_ok');
+
     return json({
       ok: true,
       file_name: uploaded.name,
@@ -188,9 +214,16 @@ Deno.serve(async (request: Request) => {
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
+
     await admin.from('backups').update({
       status: 'error', error: message.slice(0, 500), finished_at: new Date().toISOString(),
     }).eq('id', record.id);
+
+    // Se guarda el motivo para que la pantalla pueda enseñarlo y, si hay
+    // que volver a autorizar, lo diga con todas las letras.
+    await admin.rpc('drive_mark_error', { p_error: message });
+
+    if (e instanceof DriveNoAutorizado) return fail(message, 401);
     return fail(`No se ha podido completar la copia: ${message}`, 500);
   }
 });

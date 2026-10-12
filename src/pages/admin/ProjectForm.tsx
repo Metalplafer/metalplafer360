@@ -8,6 +8,7 @@ import { Alert, ErrorBox, Loading } from '@/components/ui/Feedback';
 import { ClientPicker, emptyClient, type ClientDraft } from '@/components/shared/ClientPicker';
 import { createClient, getClient, listContacts } from '@/services/clients';
 import { createProject, getProject, updateProject } from '@/services/projects';
+import { setProjectWork, worksForPicker } from '@/services/works';
 import { parseDecimal } from '@/lib/format';
 import { toUserMessage } from '@/lib/errors';
 
@@ -37,6 +38,16 @@ export default function ProjectForm() {
     [client.id],
   );
 
+  // BLOQUE 4: la obra que agrupa este proyecto. Opcional.
+  const obras = useAsync(() => worksForPicker(), []);
+  const [workId, setWorkId] = useState('');
+
+  // Obra indicada en la dirección (al crear un proyecto desde su obra)
+  useEffect(() => {
+    const obra = params.get('obra');
+    if (obra && !editing) setWorkId(obra);
+  }, [params, editing]);
+
   // Cliente indicado en la dirección (al crear desde su ficha)
   useEffect(() => {
     const clientId = params.get('cliente');
@@ -61,6 +72,7 @@ export default function ProjectForm() {
       budget_hours_mont: p.budget_hours_mont ? String(p.budget_hours_mont).replace('.', ',') : '',
       contact_id: p.contact_id ?? '',
     });
+    setWorkId(p.work_id ?? '');
     if (p.client) {
       setClient({
         id: p.client.id, kind: p.client.kind, name: p.client.name, tax_id: '',
@@ -135,6 +147,12 @@ export default function ProjectForm() {
         ? await updateProject(id, payload)
         : await createProject(payload);
 
+      // La obra se cambia con su propia función: así queda escrito en el
+      // historial del proyecto Y en el de la obra.
+      if ((project.data?.work_id ?? '') !== workId) {
+        await setProjectWork(saved.id, workId || null);
+      }
+
       toast.success(editing ? 'Proyecto actualizado' : `Proyecto ${saved.code} creado`);
       navigate(`/admin/proyectos/${saved.id}`);
     } catch (err) {
@@ -182,6 +200,23 @@ export default function ProjectForm() {
               </select>
             </div>
           )}
+        </Panel>
+
+        <Panel title="Obra" >
+          <div className="field" style={{ maxWidth: 420 }}>
+            <label htmlFor="p-work">Obra a la que pertenece</label>
+            <select id="p-work" className="select" value={workId}
+                    onChange={(e) => setWorkId(e.target.value)}>
+              <option value="">Proyecto suelto, sin obra</option>
+              {(obras.data ?? []).map((o) => (
+                <option key={o.id} value={o.id}>{o.code} · {o.name}</option>
+              ))}
+            </select>
+            <p className="hint" style={{ marginBottom: 0 }}>
+              Opcional. Una obra agrupa los proyectos de un mismo sitio. El proyecto
+              sigue funcionando igual: se planifica, se factura y se trabaja como siempre.
+            </p>
+          </div>
         </Panel>
 
         <Panel title="El trabajo">

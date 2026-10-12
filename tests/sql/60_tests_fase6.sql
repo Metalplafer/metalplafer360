@@ -140,7 +140,7 @@ select test.err('config', 'Una numeración negativa se rechaza',
 select public.set_preferences('{"dashboard": ["produccion", "ordenes"]}'::jsonb);
 select test.ok('config', 'Cada persona guarda sus preferencias de pantalla',
   (select preferences -> 'dashboard' ->> 0 = 'produccion'
-     from public.profiles where id = test.id('salvi')));
+     from public.profiles_full where id = test.id('salvi')));
 
 select test.ok('config', 'El uso del almacenamiento se puede consultar',
   (select count(*) >= 0 from public.storage_usage));
@@ -378,11 +378,13 @@ select test.err('permisos_f6', 'Ni el tamaño máximo de archivo',
 
 select public.set_preferences('{"dashboard": ["mias"]}'::jsonb);
 select test.ok('permisos_f6', 'Pero sí guarda sus propias preferencias',
-  (select preferences -> 'dashboard' ->> 0 = 'mias' from public.profiles where id = test.id('juan')));
+  (select preferences -> 'dashboard' ->> 0 = 'mias'
+     from public.profiles_full where id = test.id('juan')));
 
-select test.ok('permisos_f6', 'Y no toca las de nadie más',
-  (select preferences -> 'dashboard' ->> 0 = 'produccion'
-     from public.profiles where id = test.id('salvi')) is not false);
+-- REVISIÓN: ahora ni las lee. Antes se comprobaba que no las hubiera
+-- cambiado; ahora se comprueba algo más fuerte: que no le llegan.
+select test.ok('permisos_f6', 'Y no toca ni ve las de nadie más',
+  not exists (select 1 from public.profiles_full where id = test.id('salvi')));
 
 select test.ok('permisos_f6', 'Las piezas internas de la restauración no son accesibles',
   not has_function_privilege('authenticated', 'public.restore_table(text, jsonb)', 'execute')

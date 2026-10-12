@@ -222,9 +222,15 @@ try {
     await page.locator('button:has-text("Reabrir")').isVisible());
 
   // ================= DOCUMENTOS Y COMENTARIOS =================
-  check('El proyecto tiene su lista única de documentos',
-    (await page.locator('.panel:has-text("Documentos, fotografías y vídeos")').innerText())
-      .includes('todo en la misma lista'));
+  // CAMBIADO EN EL BLOQUE 2: la lista única pasa a tener exactamente DOS
+  // categorías, técnica y administrativa. Ni una más: no es un sistema
+  // configurable de carpetas.
+  const panelDocs = page.locator('.panel:has-text("Documentos, fotografías y vídeos")');
+  check('El proyecto separa la documentación en dos categorías',
+    (await panelDocs.locator('.tabs button').count()) === 2);
+  check('Y son exactamente técnica y administrativa',
+    (await panelDocs.locator('.tabs').innerText()).includes('Técnica')
+    && (await panelDocs.locator('.tabs').innerText()).includes('Administrativa'));
   check('No hay carpetas de documentos',
     (await page.locator('body').innerText()).toLowerCase().includes('carpeta') === false);
 
