@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  AlertTriangle, Boxes, ChevronDown, ChevronUp, ClipboardList, Euro, FolderKanban,
+  AlertTriangle, Boxes, ChevronDown, ChevronUp, Euro, FolderKanban,
   Hammer, Settings2, TriangleAlert,
 } from 'lucide-react';
 import { useAsync } from '@/hooks/useAsync';
@@ -18,18 +18,28 @@ import {
 } from '@/lib/format';
 import type { ProjectPhase } from '@/types/db';
 
-type CardKey = 'alertas' | 'produccion' | 'ordenes' | 'proyectos' | 'material' | 'economico';
+// FASE 4 · Ya no hay tarjeta de «Órdenes de trabajo»: el trabajo se
+// organiza con los partes. Las horas siguen saliendo en «Producción».
+type CardKey = 'alertas' | 'produccion' | 'proyectos' | 'material' | 'economico';
 
 const CARDS: { key: CardKey; label: string; hint: string }[] = [
-  { key: 'alertas',    label: 'Lo que requiere atención', hint: 'Órdenes atrasadas, material retrasado y avisos' },
+  { key: 'alertas',    label: 'Lo que requiere atención', hint: 'Material retrasado, avisos y fichas por asignar' },
   { key: 'produccion', label: 'Producción',               hint: 'Horas de fabricación y montaje del periodo' },
-  { key: 'ordenes',    label: 'Órdenes de trabajo',       hint: 'Cómo están las órdenes ahora mismo' },
   { key: 'proyectos',  label: 'Proyectos',                hint: 'Activos, creados, finalizados y reparto por fase' },
   { key: 'material',   label: 'Material',                 hint: 'Pendiente, retrasado y recibido' },
   { key: 'economico',  label: 'Economía',                 hint: 'Presupuestado, cobrado y pendiente de cobro' },
 ];
 
-const DEFAULT_CARDS: CardKey[] = ['alertas', 'produccion', 'ordenes', 'proyectos', 'material', 'economico'];
+const DEFAULT_CARDS: CardKey[] = ['alertas', 'produccion', 'proyectos', 'material', 'economico'];
+
+/**
+ * Las tarjetas que existen HOY. Quien tenga guardada en sus
+ * preferencias una que ya no existe —«ordenes», por ejemplo— no debe
+ * encontrarse el panel medio vacío ni roto: se descartan al leerlas.
+ */
+const CARD_KEYS = new Set<string>(CARDS.map((c) => c.key));
+const soloLasQueExisten = (lista?: CardKey[]) =>
+  (lista ?? []).filter((k): k is CardKey => CARD_KEYS.has(k));
 const PERIODS: PeriodKey[] = ['semana', 'mes', 'trimestre', 'ano', 'personalizado'];
 
 /**
@@ -53,7 +63,8 @@ export default function Dashboard() {
 
   const [period, setPeriod] = useState<PeriodKey>(saved.dashboardPeriod ?? 'mes');
   const [custom, setCustom] = useState(() => periodRange('mes', today));
-  const [cards, setCards] = useState<CardKey[]>(saved.dashboard?.length ? saved.dashboard : DEFAULT_CARDS);
+  const guardadas = soloLasQueExisten(saved.dashboard);
+  const [cards, setCards] = useState<CardKey[]>(guardadas.length ? guardadas : DEFAULT_CARDS);
   const [configuring, setConfiguring] = useState(false);
 
   // Si el perfil llega más tarde, se adoptan sus preferencias guardadas.
@@ -104,8 +115,9 @@ export default function Dashboard() {
 
   const d = data.data;
   const alerts = [
-    { n: d.alertas.ordenes_por_revisar, label: 'órdenes pendientes de revisión', to: '/admin/ordenes' },
-    { n: d.alertas.ordenes_atrasadas, label: 'órdenes atrasadas sin enviar', to: '/admin/ordenes' },
+    // FASE 4 · Las dos alertas de órdenes se retiran con la sección.
+    // Lo que hay que revisar ahora son los PARTES, y eso ya se ve en su
+    // propia pantalla y en «Producción».
     { n: d.alertas.material_retrasado, label: 'materiales que no han llegado a tiempo', to: '/admin/material' },
     { n: d.alertas.avisos_taller, label: 'avisos de material del taller por revisar', to: '/admin/material' },
     { n: d.alertas.fichas_por_asignar, label: 'fichas por asignar', to: '/admin/fichas' },
@@ -147,20 +159,6 @@ export default function Dashboard() {
           <span className="figure"><b>{fmtHours(d.produccion.horas_totales)}</b><span>Total del periodo</span></span>
           <span className="figure"><b>{fmtNumber(d.produccion.ordenes_validadas)}</b><span>Órdenes validadas</span></span>
           <span className="figure"><b>{fmtNumber(d.produccion.trabajadores)}</b><span>Personas con horas</span></span>
-        </div>
-      </Panel>
-    ),
-
-    ordenes: (
-      <Panel key="ordenes" title={<span className="row" style={{ gap: 7 }}>
-        <ClipboardList size={17} />Órdenes de trabajo</span>}
-        actions={<Link className="btn btn-sm" to="/admin/ordenes">Ver todas</Link>}>
-        <div className="figure-row">
-          <span className="figure"><b>{fmtNumber(d.ordenes.hoy)}</b><span>Hoy</span></span>
-          <span className="figure"><b>{fmtNumber(d.ordenes.pendientes)}</b><span>Pendientes</span></span>
-          <span className="figure"><b>{fmtNumber(d.ordenes.en_curso)}</b><span>En curso</span></span>
-          <span className="figure"><b>{fmtNumber(d.ordenes.por_revisar)}</b><span>Por revisar</span></span>
-          <span className="figure"><b>{fmtNumber(d.ordenes.devueltas)}</b><span>Devueltas</span></span>
         </div>
       </Panel>
     ),

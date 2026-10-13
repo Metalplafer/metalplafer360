@@ -109,6 +109,40 @@ export interface ClientActivity {
   last_activity: string | null;
 }
 
+/**
+ * FASE 3.2 · EL CLIENTE CON SU ACTIVIDAD Y SUS CUENTAS.
+ *
+ * Es la vista «client_overview», que lo trae todo junto para que la
+ * pantalla no tenga que incrustar nada ni hacer cuentas.
+ *
+ * Qué es cada importe (lo define la vista, no la pantalla):
+ *   · presupuestado      presupuestos de sus proyectos + costes extra
+ *                        de sus obras. NO incluye los importes de los
+ *                        presupuestos sin convertir, para no contar lo
+ *                        mismo dos veces.
+ *   · facturado          lo facturado de verdad, marcado a mano.
+ *   · cobrado            los cobros no anulados.
+ *   · pendiente_facturar presupuestado − facturado.
+ *   · pendiente_cobrar   facturado − cobrado (lo facturado que aún no
+ *                        ha entrado).
+ *
+ * Lo ARCHIVADO no cuenta en ninguno de los cinco.
+ */
+export interface ClientOverview extends Omit<Client, 'created_by'> {
+  budgets: number;
+  visits: number;
+  notices: number;
+  open_notices: number;
+  last_activity: string | null;
+  presupuestado: number;
+  facturado: number;
+  cobrado: number;
+  pendiente_facturar: number;
+  pendiente_cobrar: number;
+  proyectos: number;
+  proyectos_activos: number;
+}
+
 export interface Ficha {
   id: string;
   code: string;
@@ -158,10 +192,38 @@ export interface DocumentRow {
   /** Quién puede verlo. Ver DocScope. */
   scope: DocScope;
   report_id?: string | null;
+  /** FASE 3.5 · La obra también puede ser dueña de un archivo. */
+  work_id?: string | null;
   uploaded_by: string | null;
   deleted_at: string | null;
   created_at: string;
   uploader?: { full_name: string } | null;
+}
+
+/**
+ * FASE 3.5 · UN ARCHIVO VISTO DESDE UNA OBRA.
+ *
+ * Es la vista «work_documents»: los archivos propios de la obra y los de
+ * sus proyectos, sin duplicar ninguno. «origen_code» y «origen_name»
+ * dicen de qué proyecto viene; van en blanco si el archivo es de la obra.
+ */
+export interface WorkDocument {
+  id: string;
+  work_id: string;
+  project_id: string | null;
+  origen_code: string | null;
+  origen_name: string | null;
+  bucket: string;
+  storage_path: string;
+  file_name: string;
+  mime_type: string | null;
+  size_bytes: number;
+  category: DocCategory;
+  scope: DocScope;
+  uploaded_by: string | null;
+  uploader_name: string | null;
+  deleted_at: string | null;
+  created_at: string;
 }
 
 export interface CommentRow {
@@ -548,6 +610,13 @@ export interface Work {
   address: string | null;
   description: string | null;
   observations: string | null;
+  /**
+   * FASE 1.3 · El periodo propio de la obra en el calendario.
+   * En blanco, la obra ocupa del primer día al último de sus proyectos,
+   * que es como funcionaba antes de tener estas dos fechas.
+   */
+  cal_start: string | null;
+  cal_end: string | null;
   archived_at: string | null;
   is_demo: boolean;
   created_by: string | null;
@@ -563,12 +632,22 @@ export interface WorkExtra {
   concept: string;
   amount: number;
   notes: string | null;
+  /**
+   * FASE 3.4 · Si ya está facturado. Se marca a mano: guardar el coste
+   * NO lo factura. Solo los marcados entran en el facturado de la obra.
+   */
+  invoiced: boolean;
+  invoiced_on: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
 }
 
-/** Las cuentas de la obra: proyectos + extras, facturado y pendiente. */
+/**
+ * Las cuentas de la obra: proyectos + extras, facturado y pendiente.
+ * «facturado» incluye los costes extra marcados como facturados, y solo
+ * esos; «extras_facturados» y «extras_pendientes» los desglosan.
+ */
 export interface WorkSummary {
   work_id: string;
   code: string;
@@ -585,4 +664,6 @@ export interface WorkSummary {
   material_pendiente: number;
   desde: string | null;
   hasta: string | null;
+  extras_facturados: number;
+  extras_pendientes: number;
 }

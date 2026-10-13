@@ -1,5 +1,5 @@
 import { supabase, unwrap } from '@/lib/supabase';
-import type { Client, ClientActivity, ClientContact, ClientSuggestion, Ficha } from '@/types/db';
+import type { Client, ClientContact, ClientOverview, ClientSuggestion, Ficha } from '@/types/db';
 
 export type ClientInput = Pick<Client,
   'kind' | 'name' | 'tax_id' | 'phone' | 'email' | 'address' | 'city' | 'postal_code' | 'notes'>;
@@ -19,11 +19,26 @@ export interface ClientFilters {
   pageSize?: number;
 }
 
+/**
+ * LA LISTA DE CLIENTES, DE UNA SOLA VISTA.
+ *
+ * Antes esto pedía «clients» e INCRUSTABA «client_activity» para traer
+ * los contadores. Entre la tabla y esa vista no hay ninguna clave ajena
+ * que PostgREST pueda seguir —la vista expone «clients.id» con otro
+ * nombre, no la columna de una clave—, así que la consulta no se podía
+ * resolver y la pantalla enseñaba «Ha ocurrido un error inesperado».
+ *
+ * Ahora se lee «client_overview», que ya trae el cliente, su actividad y
+ * sus cuatro magnitudes económicas. Sin relaciones que adivinar no hay
+ * nada que pueda fallar por ahí.
+ *
+ * Esa vista es SOLO de administración: filtra ella misma, así que un
+ * trabajador no recibe ni una fila aunque pida la dirección.
+ */
 export async function listClients(f: ClientFilters = {}) {
   const { page = 0, pageSize = 25 } = f;
-  let q = supabase.from('clients')
-    .select('*, activity:client_activity(budgets, visits, notices, open_notices, last_activity)',
-            { count: 'exact' })
+  let q = supabase.from('client_overview')
+    .select('*', { count: 'exact' })
     .order('name')
     .range(page * pageSize, page * pageSize + pageSize - 1);
 
@@ -41,9 +56,16 @@ export async function listClients(f: ClientFilters = {}) {
   const { data, error, count } = await q;
   if (error) throw error;
   return {
-    rows: (data ?? []) as unknown as (Client & { activity: ClientActivity[] | ClientActivity | null })[],
+    rows: (data ?? []) as unknown as ClientOverview[],
     count: count ?? 0,
   };
+}
+
+/** Las cuentas de UN cliente, para su ficha. */
+export async function clientOverview(id: string) {
+  return unwrap(
+    await supabase.from('client_overview').select('*').eq('id', id).maybeSingle(),
+  ) as unknown as ClientOverview | null;
 }
 
 export async function getClient(id: string) {

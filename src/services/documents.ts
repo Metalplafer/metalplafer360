@@ -1,7 +1,7 @@
 import { supabase, unwrap } from '@/lib/supabase';
 import { STORAGE_BUCKET } from '@/config/env';
 import { categoryFor, safeStorageName, validateFileSize } from '@/lib/files';
-import type { DocScope, DocumentRow } from '@/types/db';
+import type { DocScope, DocumentRow, WorkDocument } from '@/types/db';
 
 const SELECT = '*, uploader:profiles!documents_uploaded_by_fkey(full_name)';
 
@@ -10,12 +10,15 @@ const SELECT = '*, uploader:profiles!documents_uploaded_by_fkey(full_name)';
  * un parte de trabajo. Siempre de uno solo: la base de datos lo impone.
  */
 export type DocOwner =
-  { fichaId: string } | { projectId: string } | { orderId: string } | { reportId: string };
+  { fichaId: string } | { projectId: string } | { orderId: string } | { reportId: string }
+  | { workId: string };
 
 function ownerColumn(owner: DocOwner) {
   if ('fichaId' in owner) return { column: 'ficha_id', id: owner.fichaId, folder: `fichas/${owner.fichaId}` };
   if ('projectId' in owner) return { column: 'project_id', id: owner.projectId, folder: `projects/${owner.projectId}` };
   if ('reportId' in owner) return { column: 'report_id', id: owner.reportId, folder: `reports/${owner.reportId}` };
+  // FASE 3.5 · La obra tiene documentación propia, en su propia carpeta.
+  if ('workId' in owner) return { column: 'work_id', id: owner.workId, folder: `works/${owner.workId}` };
   return { column: 'order_id', id: owner.orderId, folder: `orders/${owner.orderId}` };
 }
 
@@ -117,6 +120,21 @@ export async function moveDocumentScope(id: string, scope: DocScope) {
   return unwrap(await supabase.rpc('move_document_scope', {
     p_doc: id, p_scope: scope,
   })) as unknown as DocumentRow;
+}
+
+/**
+ * FASE 3.5 · LOS ARCHIVOS QUE SE VEN DESDE UNA OBRA.
+ *
+ * Los suyos Y los de sus proyectos, SIN DUPLICAR NINGUNO: el archivo
+ * sigue estando una sola vez en el almacén y en la tabla. La vista los
+ * junta y dice de qué proyecto viene cada uno.
+ */
+export async function listWorkDocuments(workId: string) {
+  return unwrap(
+    await supabase.from('work_documents').select('*')
+      .eq('work_id', workId).is('deleted_at', null)
+      .order('created_at', { ascending: false }),
+  ) as WorkDocument[];
 }
 
 /** Las rutas de todos los archivos de una ficha o un proyecto. */

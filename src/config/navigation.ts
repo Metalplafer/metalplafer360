@@ -24,7 +24,11 @@ export const ADMIN_NAV: NavItem[] = [
   { path: '/admin/obras', label: 'Obras', icon: HardHat },
   { path: '/admin/proyectos', label: 'Proyectos', icon: FolderKanban },
   { path: '/admin/partes', label: 'Partes de trabajo', icon: FileText },
-  { path: '/admin/ordenes', label: 'Órdenes de trabajo', icon: ClipboardList },
+  // FASE 4 · Aquí estaban las «Órdenes de trabajo». El trabajo se
+  // organiza con los PARTES, así que la sección antigua se retira de la
+  // navegación y sus rutas de administración dejan de existir (ver
+  // App.tsx). Las órdenes que haya en la base de datos NO se borran:
+  // siguen saliendo, como histórico, en la ficha de su proyecto.
   { path: '/admin/material', label: 'Material pendiente', icon: Boxes },
   { path: '/admin/calendario', label: 'Calendario', icon: CalendarDays },
   { path: '/admin/avisos', label: 'Avisos', icon: Siren },

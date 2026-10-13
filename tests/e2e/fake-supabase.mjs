@@ -1,15 +1,16 @@
-/**
- * METALPLAFER360 · Supabase de mentira para las pruebas de navegador.
+﻿/**
+ * METALPLAFER360 Â· Supabase de mentira para las pruebas de navegador.
  *
  * Imita lo justo de la API de Supabase (acceso, consultas, altas y
- * cambios) para poder recorrer la aplicación con datos en memoria.
- * Reproduce a propósito algunas reglas de la base de datos —los códigos
- * y los estados iniciales— para que las pantallas se comporten igual.
+ * cambios) para poder recorrer la aplicaciÃ³n con datos en memoria.
+ * Reproduce a propÃ³sito algunas reglas de la base de datos â€”los cÃ³digos
+ * y los estados inicialesâ€” para que las pantallas se comporten igual.
  *
  * Las reglas de verdad se prueban contra PostgreSQL en tests/sql.
  */
 import { chromium } from 'playwright';
 import { execFileSync } from 'node:child_process';
+
 import { existsSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
@@ -34,11 +35,11 @@ export const WORKER = {
 };
 
 // ---------------------------------------------------------------------
-// Construir y servir la aplicación
+// Construir y servir la aplicaciÃ³n
 // ---------------------------------------------------------------------
 export function buildApp() {
-  console.log('   Construyendo la aplicación para la prueba…');
-  execFileSync('npx', ['vite', 'build', '--logLevel', 'error'], {
+  console.log('   Construyendo la aplicaciÃ³n para la pruebaâ€¦');
+  execFileSync(process.execPath, [join(ROOT, 'node_modules', 'vite', 'bin', 'vite.js'), 'build', '--logLevel', 'error'], {
     cwd: ROOT, stdio: 'inherit',
     env: {
       ...process.env,
@@ -88,11 +89,11 @@ export function createChecker() {
   const results = [];
   const check = (name, ok, detail = '') => {
     results.push({ name, ok });
-    console.log(`   ${ok ? '✓' : '✗'} ${name}${ok || !detail ? '' : ` → ${detail}`}`);
+    console.log(`   ${ok ? 'âœ“' : 'âœ—'} ${name}${ok || !detail ? '' : ` â†’ ${detail}`}`);
   };
   const report = () => {
     const failed = results.filter((r) => !r.ok);
-    console.log('   ──────────────────────────────');
+    console.log('   â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€');
     console.log(`   TOTAL: ${results.length - failed.length} de ${results.length} comprobaciones correctas`);
     return failed.length;
   };
@@ -103,7 +104,7 @@ export function createChecker() {
 // Base de datos en memoria
 // ---------------------------------------------------------------------
 export const norm = (s) =>
-  (s ?? '').toString().normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  (s ?? '').toString().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
 export function createDb(seed = {}) {
   return {
@@ -136,7 +137,7 @@ export function createDb(seed = {}) {
       max_file_mb: 100,
       gap_days: 1,
       backup_retention_days: 30,
-      backup: { enabled: true, hour: 2, folder: 'METALPLAFER360 · Copias de seguridad' },
+      backup: { enabled: true, hour: 2, folder: 'METALPLAFER360 Â· Copias de seguridad' },
       updated_at: '2026-01-15T09:00:00Z',
     },
     ...seed,
@@ -157,17 +158,17 @@ export function addDays(iso, days) {
 export const startOfMonth = (iso) => `${iso.slice(0, 7)}-01`;
 
 /**
- * El día laborable más cercano, mirando hacia atrás (hoy, si se trabaja).
+ * El dÃ­a laborable mÃ¡s cercano, mirando hacia atrÃ¡s (hoy, si se trabaja).
  *
  * Las pruebas de calendario necesitan una fecha que se PINTE: un tramo
- * planificado que cae en sábado o domingo no se dibuja (así se decidió en
- * el BLOQUE 3), y la prueba fallaría solo por ejecutarse en fin de
- * semana. Se mira hacia atrás para no salirse de la semana visible.
+ * planificado que cae en sÃ¡bado o domingo no se dibuja (asÃ­ se decidiÃ³ en
+ * el BLOQUE 3), y la prueba fallarÃ­a solo por ejecutarse en fin de
+ * semana. Se mira hacia atrÃ¡s para no salirse de la semana visible.
  */
 export function diaLaborable(iso = today()) {
   let d = iso;
   for (let i = 0; i < 7; i++) {
-    const dow = new Date(`${d}T00:00:00Z`).getUTCDay();   // 0 domingo, 6 sábado
+    const dow = new Date(`${d}T00:00:00Z`).getUTCDay();   // 0 domingo, 6 sÃ¡bado
     if (dow !== 0 && dow !== 6) return d;
     d = addDays(d, -1);
   }
@@ -180,8 +181,8 @@ export function mondayOf(iso) {
 }
 
 /**
- * El «order» de PostgREST. La base de datos de verdad ordena, así que las
- * vistas de mentira también: si no, una prueba de orden pasaría sola.
+ * El Â«orderÂ» de PostgREST. La base de datos de verdad ordena, asÃ­ que las
+ * vistas de mentira tambiÃ©n: si no, una prueba de orden pasarÃ­a sola.
  */
 function applyOrder(rows, url) {
   const order = url.searchParams.get('order');
@@ -209,7 +210,7 @@ function applyOrder(rows, url) {
   });
 }
 
-/** Filtros de PostgREST que usa la aplicación. */
+/** Filtros de PostgREST que usa la aplicaciÃ³n. */
 function applyFilters(rows, url) {
   let out = rows;
   for (const [key, raw] of url.searchParams) {
@@ -258,13 +259,13 @@ function applyFilters(rows, url) {
   return out;
 }
 
-/** Imagen mínima para imitar las fotografías guardadas. */
+/** Imagen mÃ­nima para imitar las fotografÃ­as guardadas. */
 const PIXEL_PNG =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 
 const ORDER_STATUS_ES = {
   pendiente: 'Pendiente', en_curso: 'En curso',
-  realizada: 'Realizada · pendiente de revisión', validada: 'Validada', devuelta: 'Devuelta',
+  realizada: 'Realizada Â· pendiente de revisiÃ³n', validada: 'Validada', devuelta: 'Devuelta',
 };
 
 const FICHA_STATUS_ES = {
@@ -275,7 +276,7 @@ const FICHA_STATUS_ES = {
   asignado: 'Asignado', en_curso: 'En curso', realizado: 'Realizado', cerrado: 'Cerrado',
 };
 
-/** Apartados que se pueden restaurar por separado (igual que en la aplicación). */
+/** Apartados que se pueden restaurar por separado (igual que en la aplicaciÃ³n). */
 const RESTORE_SCOPES = {
   clientes: ['clients', 'client_contacts'],
   fichas: ['fichas'],
@@ -291,8 +292,8 @@ const RESTORE_SCOPES = {
 
 /**
  * Al restaurar, los valores llegan como texto (vienen de un CSV). La base
- * de datos los convierte al tipo de cada columna; aquí se imita mirando
- * qué tipo tiene ese mismo dato en una fila que ya existe.
+ * de datos los convierte al tipo de cada columna; aquÃ­ se imita mirando
+ * quÃ© tipo tiene ese mismo dato en una fila que ya existe.
  */
 function convertirFila(fila, referencia) {
   const salida = {};
@@ -321,15 +322,15 @@ const BACKUP_ORDER = [
   'materials', 'material_requests', 'payments', 'documents', 'comments', 'audit_log',
 ];
 
-/** Los informes enseñan los estados en castellano, como label_es() en la base. */
+/** Los informes enseÃ±an los estados en castellano, como label_es() en la base. */
 const BILLING_LABEL = {
   por_facturar: 'Por facturar', pendiente_cobro: 'Pendiente de cobro',
   cobrado_parcial: 'Cobrado parcialmente', cobrado: 'Cobrado',
 };
 
-/** Tablas que se vacían al limpiar los datos de ejemplo, en orden. */
-// La misma lista que «clear_demo» en 31_obras.sql, en el mismo orden:
-// de la tabla más dependiente a la menos.
+/** Tablas que se vacÃ­an al limpiar los datos de ejemplo, en orden. */
+// La misma lista que Â«clear_demoÂ» en 31_obras.sql, en el mismo orden:
+// de la tabla mÃ¡s dependiente a la menos.
 const DEMO_TABLES = [
   'comments', 'documents', 'payments', 'material_requests', 'materials',
   'work_reports', 'project_workers',
@@ -356,9 +357,9 @@ function demoResumen(db, people = []) {
 }
 
 /**
- * Un ejemplo reducido: aquí solo hace falta comprobar que se pone, que
+ * Un ejemplo reducido: aquÃ­ solo hace falta comprobar que se pone, que
  * se ve y que al limpiarlo NO se lleva por delante lo de verdad. Los
- * volúmenes exactos (10 clientes, 15 fichas…) se prueban contra
+ * volÃºmenes exactos (10 clientes, 15 fichasâ€¦) se prueban contra
  * PostgreSQL en tests/sql/70_tests_fase7.sql.
  */
 function sembrarDemo(db, people) {
@@ -408,13 +409,13 @@ const PREFIX = { presupuesto: 'PRES', visita: 'VIS', aviso: 'AVI' };
 const NEXT_WHEN_ASSIGNED = { presupuesto: 'pendiente', visita: 'asignada', aviso: 'asignado' };
 const PHASES = ['preparacion', 'fabricacion', 'montaje', 'facturacion', 'finalizado'];
 const PHASE_LABEL = {
-  preparacion: 'En preparación', fabricacion: 'Fabricación', montaje: 'Montaje',
-  facturacion: 'Facturación', finalizado: 'Finalizado',
+  preparacion: 'En preparaciÃ³n', fabricacion: 'FabricaciÃ³n', montaje: 'Montaje',
+  facturacion: 'FacturaciÃ³n', finalizado: 'Finalizado',
 };
 
 /**
  * Instala el Supabase de mentira en un contexto del navegador.
- * `getUser` decide quién ha iniciado sesión (o null para fallar el acceso).
+ * `getUser` decide quiÃ©n ha iniciado sesiÃ³n (o null para fallar el acceso).
  */
 export async function stubSupabase(context, {
   db, getUser = () => ADMIN, people = [ADMIN, WORKER], driveConfigured = true,
@@ -441,12 +442,12 @@ export async function stubSupabase(context, {
 
   const orderCaption = (order) => {
     const project = db.projects.find((p) => p.id === order.project_id);
-    return `${order.code} · ${order.type === 'montaje' ? 'Montaje' : 'Fabricación'} · `
+    return `${order.code} Â· ${order.type === 'montaje' ? 'Montaje' : 'FabricaciÃ³n'} Â· `
       + `${order.scheduled_date.split('-').reverse().join('/')}`
-      + (project ? ` · ${project.name}` : '');
+      + (project ? ` Â· ${project.name}` : '');
   };
 
-  /** Mismo recálculo del estado de cobro que hace la base de datos. */
+  /** Mismo recÃ¡lculo del estado de cobro que hace la base de datos. */
   const recomputeBilling = (project) => {
     const total = Number(project.budget_amount ?? 0);
     const cobrado = db.payments.filter((p) => p.project_id === project.id && !p.voided_at)
@@ -458,7 +459,7 @@ export async function stubSupabase(context, {
     project.updated_at = new Date().toISOString();
   };
 
-  /** Mismo recálculo que hace la base de datos con los partes. */
+  /** Mismo recÃ¡lculo que hace la base de datos con los partes. */
   const recompute = (order) => {
     if (order.status === 'validada') return;
     const parts = db.work_order_workers.filter((w) => w.order_id === order.id);
@@ -596,7 +597,7 @@ export async function stubSupabase(context, {
 
   // -------------------------------------------------------------------
   // Se imitan los permisos de la base de datos: un trabajador solo ve sus
-  // órdenes, sus partes, sus avisos y los proyectos de esas órdenes.
+  // Ã³rdenes, sus partes, sus avisos y los proyectos de esas Ã³rdenes.
   // (Las reglas de verdad se prueban contra PostgreSQL en tests/sql.)
   // -------------------------------------------------------------------
   const myOrderIds = (user) => new Set(
@@ -604,8 +605,8 @@ export async function stubSupabase(context, {
   );
 
   /**
-   * A qué proyectos entra una persona: por estar asignada (BLOQUE 1) o,
-   * mientras las órdenes sigan existiendo, por tener una orden viva.
+   * A quÃ© proyectos entra una persona: por estar asignada (BLOQUE 1) o,
+   * mientras las Ã³rdenes sigan existiendo, por tener una orden viva.
    */
   const assignedProjects = (user) => {
     const mine = myOrderIds(user);
@@ -618,10 +619,10 @@ export async function stubSupabase(context, {
     return ids;
   };
 
-  /** ¿Se trabaja ese día? Lunes a viernes y que no sea festivo. */
+  /** Â¿Se trabaja ese dÃ­a? Lunes a viernes y que no sea festivo. */
   const esLaborable = (day) => {
     const d = new Date(`${day}T12:00:00`);
-    const dow = d.getDay();            // 0 domingo, 6 sábado
+    const dow = d.getDay();            // 0 domingo, 6 sÃ¡bado
     if (dow === 0 || dow === 6) return false;
     return !(db.non_working_days ?? []).some((x) => x.day === day);
   };
@@ -646,7 +647,7 @@ export async function stubSupabase(context, {
     : 0);
   const margenLibre = () => Math.max(Math.floor(Number(db.settings.gap_days ?? 1)), 0);
 
-  /** Los días que ocupa un tramo (los no laborables no se pintan). */
+  /** Los dÃ­as que ocupa un tramo (los no laborables no se pintan). */
   const diasDelTramo = (desde, hasta, aMano) => {
     const out = [];
     let d = desde;
@@ -665,9 +666,9 @@ export async function stubSupabase(context, {
     if (table === 'work_orders') return rows.filter((r) => mine.has(r.id) && !r.archived_at);
     if (table === 'work_order_workers') return rows.filter((r) => r.worker_id === user.id);
     if (table === 'notifications') return rows.filter((r) => r.user_id === user.id);
-    // BLOQUE 1: «projects» es de administración. Ahí están el importe y la
-    // paga y señal, y RLS filtra filas, no columnas: el trabajador no saca
-    // ni una. Entra por la vista «worker_projects», que no las tiene.
+    // BLOQUE 1: Â«projectsÂ» es de administraciÃ³n. AhÃ­ estÃ¡n el importe y la
+    // paga y seÃ±al, y RLS filtra filas, no columnas: el trabajador no saca
+    // ni una. Entra por la vista Â«worker_projectsÂ», que no las tiene.
     if (table === 'projects') return [];
     if (table === 'work_reports') return rows.filter((r) => r.worker_id === user.id);
     if (table === 'project_workers') {
@@ -677,9 +678,9 @@ export async function stubSupabase(context, {
       const ids = new Set(db.projects.filter((p) => myProjects.has(p.id)).map((p) => p.client_id));
       return rows.filter((r) => ids.has(r.id));
     }
-    // BLOQUE 5: «fichas» guarda el IMPORTE y RLS filtra filas, no
-    // columnas. La tabla es de administración; el trabajador entra por
-    // «worker_fichas», que se construye sin la columna del dinero.
+    // BLOQUE 5: Â«fichasÂ» guarda el IMPORTE y RLS filtra filas, no
+    // columnas. La tabla es de administraciÃ³n; el trabajador entra por
+    // Â«worker_fichasÂ», que se construye sin la columna del dinero.
     if (table === 'fichas') return [];
     if (table === 'documents' || table === 'comments') {
       const misPartes = new Set(db.work_reports.filter((x) => x.worker_id === user.id)
@@ -687,8 +688,8 @@ export async function stubSupabase(context, {
       const suyo = (r) => (r.order_id && mine.has(r.order_id))
         || (r.project_id && myProjects.has(r.project_id))
         || (r.report_id && misPartes.has(r.report_id));
-      // BLOQUE 2: la documentación administrativa no se le devuelve, y
-      // el almacén tampoco le firmaría el enlace del archivo.
+      // BLOQUE 2: la documentaciÃ³n administrativa no se le devuelve, y
+      // el almacÃ©n tampoco le firmarÃ­a el enlace del archivo.
       if (table === 'documents') {
         return rows.filter((r) => suyo(r) && r.scope !== 'administrativa');
       }
@@ -697,8 +698,8 @@ export async function stubSupabase(context, {
     if (table === 'audit_log') return rows.filter((r) => r.actor_id === user.id);
     if (table === 'materials') return rows.filter((r) => myProjects.has(r.project_id));
     if (table === 'material_requests') return rows.filter((r) => r.worker_id === user.id);
-    // Económico y administración: un trabajador no ve nada de esto, aunque
-    // pida la tabla a mano. (En Supabase lo impiden las políticas RLS.)
+    // EconÃ³mico y administraciÃ³n: un trabajador no ve nada de esto, aunque
+    // pida la tabla a mano. (En Supabase lo impiden las polÃ­ticas RLS.)
     // BLOQUE 4: las obras, sus extras y sus cuentas, lo mismo.
     if (table === 'payments' || table === 'backups' || table === 'code_counters'
         || table === 'works' || table === 'work_extras') return [];
@@ -714,7 +715,7 @@ export async function stubSupabase(context, {
     const wantsCount = (request.headers()['prefer'] ?? '').includes('count=exact');
     const body = () => { try { return request.postDataJSON(); } catch { return null; } };
 
-    /** Casi todo lo de administración se comprueba así. */
+    /** Casi todo lo de administraciÃ³n se comprueba asÃ­. */
     const soloAdmin = () => (getUser()?.role !== 'admin');
 
     const json = (data, extraHeaders = {}) => route.fulfill({
@@ -748,7 +749,7 @@ export async function stubSupabase(context, {
       const rest = path.replace('/storage/v1/', '');
 
       // Miniaturas y enlaces temporales: se devuelve una imagen real para
-      // que el navegador pueda pintarla igual que lo haría Supabase.
+      // que el navegador pueda pintarla igual que lo harÃ­a Supabase.
       if (method === 'GET') {
         return route.fulfill({
           status: 200, headers: { 'content-type': 'image/png' },
@@ -810,10 +811,10 @@ export async function stubSupabase(context, {
       return json(hits.slice(0, 6).map((c) => ({ ...c, score: 1 })));
     }
 
-    // ---- BLOQUE 1 · asignar trabajadores y mover partes --------------
+    // ---- BLOQUE 1 Â· asignar trabajadores y mover partes --------------
 
     if (path === '/rest/v1/rpc/assign_project_workers') {
-      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
       const { p_project: proyecto, p_workers: ids = [] } = body() ?? {};
       const antes = new Set(db.project_workers
         .filter((pw) => pw.project_id === proyecto).map((pw) => pw.worker_id));
@@ -826,16 +827,16 @@ export async function stubSupabase(context, {
         });
         const persona = people.find((x) => x.id === id);
         const pr = db.projects.find((x) => x.id === proyecto);
-        registrar(`${actorName()} asignó a ${persona?.full_name ?? ''} al proyecto ${pr?.code ?? ''}`,
+        registrar(`${actorName()} asignÃ³ a ${persona?.full_name ?? ''} al proyecto ${pr?.code ?? ''}`,
           pr?.code ?? null, 'project_workers');
-        avisar(id, 'proyecto_asignado', 'Proyecto asignado', `${pr?.code} · ${pr?.name}`, null);
+        avisar(id, 'proyecto_asignado', 'Proyecto asignado', `${pr?.code} Â· ${pr?.name}`, null);
       });
       return json(ids.map((id) => people.find((x) => x.id === id)).filter(Boolean));
     }
 
     if (path === '/rest/v1/rpc/save_work_report') {
       const user = getUser();
-      if (!user) return fail('Hace falta tener la sesión iniciada', '42501');
+      if (!user) return fail('Hace falta tener la sesiÃ³n iniciada', '42501');
       const b = body() ?? {};
       const horas = b.p_hours == null ? null : Math.round(Number(b.p_hours) * 100) / 100;
       const hecho = (b.p_work_done ?? '').trim() || null;
@@ -845,16 +846,16 @@ export async function stubSupabase(context, {
         return fail('Las horas deben estar entre 0 y 24');
       }
       if (dia > today()) {
-        return fail('No se puede rellenar un parte de un día que todavía no ha llegado');
+        return fail('No se puede rellenar un parte de un dÃ­a que todavÃ­a no ha llegado');
       }
-      if (b.p_submit && !hecho) return fail('Escribe qué trabajo has hecho antes de enviar el parte');
+      if (b.p_submit && !hecho) return fail('Escribe quÃ© trabajo has hecho antes de enviar el parte');
       if (b.p_submit && !horas) return fail('Indica las horas que has trabajado antes de enviar el parte');
 
       let parte = b.p_report ? db.work_reports.find((r) => r.id === b.p_report) : null;
       if (b.p_report && !parte) return fail('No se encuentra el parte de trabajo', 'P0002');
       if (parte && parte.worker_id !== user.id) return fail('Ese parte no es tuyo', '42501');
       if (parte && parte.status === 'validado') {
-        return fail('El parte ya está validado: no se puede modificar');
+        return fail('El parte ya estÃ¡ validado: no se puede modificar');
       }
 
       const estado = b.p_submit ? 'enviado' : 'borrador';
@@ -885,34 +886,34 @@ export async function stubSupabase(context, {
       }
 
       if (b.p_submit) {
-        registrar(`${actorName()} envió el parte ${parte.code} (${horas} h) a validar`,
+        registrar(`${actorName()} enviÃ³ el parte ${parte.code} (${horas} h) a validar`,
           parte.code, 'work_reports');
         people.filter((x) => x.role === 'admin')
-          .forEach((a) => avisar(a.id, 'parte_enviado', 'Parte pendiente de validación',
+          .forEach((a) => avisar(a.id, 'parte_enviado', 'Parte pendiente de validaciÃ³n',
             `${actorName()} ha enviado el parte ${parte.code}`, null));
       }
       return json(parte);
     }
 
     if (path === '/rest/v1/rpc/validate_work_report') {
-      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
       const parte = db.work_reports.find((r) => r.id === body()?.p_report);
       if (!parte) return fail('No se encuentra el parte de trabajo', 'P0002');
       if (parte.status !== 'enviado') {
-        return fail('Solo se valida un parte que esté pendiente de validación');
+        return fail('Solo se valida un parte que estÃ© pendiente de validaciÃ³n');
       }
       Object.assign(parte, {
         status: 'validado', validated_at: new Date().toISOString(), validated_by: actor().id,
         rejected_at: null, reject_reason: null, updated_at: new Date().toISOString(),
       });
-      registrar(`${actorName()} validó el parte ${parte.code} · ${parte.hours} h`,
+      registrar(`${actorName()} validÃ³ el parte ${parte.code} Â· ${parte.hours} h`,
         parte.code, 'work_reports');
       avisar(parte.worker_id, 'parte_validado', 'Parte validado', parte.code, null);
       return json(parte);
     }
 
     if (path === '/rest/v1/rpc/reject_work_report') {
-      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
       const motivo = (body()?.p_reason ?? '').trim();
       if (!motivo) return fail('Escribe el motivo del rechazo');
       const parte = db.work_reports.find((r) => r.id === body()?.p_report);
@@ -932,14 +933,14 @@ export async function stubSupabase(context, {
         created_at: new Date().toISOString(),
         author: { full_name: actorName(), role: 'admin' },
       });
-      registrar(`${actorName()} rechazó el parte ${parte.code}. Motivo: ${motivo}`,
+      registrar(`${actorName()} rechazÃ³ el parte ${parte.code}. Motivo: ${motivo}`,
         parte.code, 'work_reports');
       avisar(parte.worker_id, 'parte_rechazado', 'Parte rechazado', motivo, null);
       return json(parte);
     }
 
     if (path === '/rest/v1/rpc/assign_report_to_project') {
-      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
       const parte = db.work_reports.find((r) => r.id === body()?.p_report);
       if (!parte) return fail('No se encuentra el parte de trabajo', 'P0002');
       const proyecto = body()?.p_project ?? null;
@@ -950,7 +951,7 @@ export async function stubSupabase(context, {
         updated_at: new Date().toISOString(),
       });
       const pr = db.projects.find((x) => x.id === proyecto);
-      registrar(`${actorName()} asignó el parte ${parte.code} al proyecto ${pr?.code ?? ''}`,
+      registrar(`${actorName()} asignÃ³ el parte ${parte.code} al proyecto ${pr?.code ?? ''}`,
         parte.code, 'work_reports');
       return json(parte);
     }
@@ -959,9 +960,9 @@ export async function stubSupabase(context, {
       const parte = db.work_reports.find((r) => r.id === body()?.p_report);
       if (!parte) return fail('No se encuentra el parte de trabajo', 'P0002');
       const texto = (body()?.p_body ?? '').trim();
-      if (!texto) return fail('Escribe qué material falta');
+      if (!texto) return fail('Escribe quÃ© material falta');
       if (!parte.project_id) {
-        return fail('Este parte todavía no tiene proyecto: el aviso de material va contra un proyecto');
+        return fail('Este parte todavÃ­a no tiene proyecto: el aviso de material va contra un proyecto');
       }
       const peticion = {
         id: `mr-${Math.random().toString(36).slice(2, 8)}`,
@@ -975,26 +976,26 @@ export async function stubSupabase(context, {
       return json(peticion);
     }
 
-    // ---- BLOQUE 2 · categorías de documentación y borrado ------------
+    // ---- BLOQUE 2 Â· categorÃ­as de documentaciÃ³n y borrado ------------
 
     if (path === '/rest/v1/rpc/move_document_scope') {
-      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
       const doc = db.documents.find((d) => d.id === body()?.p_doc);
       if (!doc) return fail('No se encuentra el documento', 'P0002');
       const destino = body()?.p_scope;
       if (doc.scope === destino) return json(doc);
       const antes = doc.scope ?? 'tecnica';
       doc.scope = destino;
-      const nombres = { tecnica: 'documentación técnica', administrativa: 'documentación administrativa' };
+      const nombres = { tecnica: 'documentaciÃ³n tÃ©cnica', administrativa: 'documentaciÃ³n administrativa' };
       const donde = db.projects.find((x) => x.id === doc.project_id)?.code
         ?? db.fichas.find((x) => x.id === doc.ficha_id)?.code ?? null;
-      registrar(`${actorName()} movió «${doc.file_name}» de ${nombres[antes]} a ${nombres[destino]}`
+      registrar(`${actorName()} moviÃ³ Â«${doc.file_name}Â» de ${nombres[antes]} a ${nombres[destino]}`
         + (donde ? ` en ${donde}` : ''), donde, 'documents');
       return json(doc);
     }
 
     if (path === '/rest/v1/rpc/delete_worker') {
-      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
       const id = body()?.p_user;
       const persona = people.find((x) => x.id === id);
       if (!persona) return fail('No se encuentra esa persona', 'P0002');
@@ -1005,40 +1006,40 @@ export async function stubSupabase(context, {
       if (partes || ordenes || material) {
         return fail(
           `No se puede eliminar a ${persona.full_name} porque tiene trabajo registrado: `
-          + `${partes} partes, ${ordenes} órdenes y ${material} avisos de material. `
-          + 'Desactívalo en lugar de eliminarlo: dejará de entrar y su trabajo se conserva.',
+          + `${partes} partes, ${ordenes} Ã³rdenes y ${material} avisos de material. `
+          + 'DesactÃ­valo en lugar de eliminarlo: dejarÃ¡ de entrar y su trabajo se conserva.',
           '23503');
       }
       db.work_reports = db.work_reports.filter((r) => r.worker_id !== id);
       db.project_workers = db.project_workers.filter((pw) => pw.worker_id !== id);
       const i = people.findIndex((x) => x.id === id);
       if (i >= 0) people.splice(i, 1);
-      registrar(`${actorName()} eliminó al trabajador ${persona.full_name} (${persona.username})`,
+      registrar(`${actorName()} eliminÃ³ al trabajador ${persona.full_name} (${persona.username})`,
         null, 'profiles');
       return json({ ok: true, nombre: persona.full_name, borradores_eliminados: 0 });
     }
 
     if (path === '/rest/v1/rpc/delete_ficha') {
-      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
       const id = body()?.p_ficha;
       const f = db.fichas.find((x) => x.id === id);
       if (!f) return fail('No se encuentra la ficha', 'P0002');
       const origen = db.projects.find((x) => x.source_ficha_id === id);
       if (origen) {
-        return fail(`No se puede eliminar ${f.code} porque de aquí salió el proyecto `
-          + `${origen.code}. Archívala en lugar de eliminarla.`, '23503');
+        return fail(`No se puede eliminar ${f.code} porque de aquÃ­ saliÃ³ el proyecto `
+          + `${origen.code}. ArchÃ­vala en lugar de eliminarla.`, '23503');
       }
       const docs = db.documents.filter((d) => d.ficha_id === id).length;
       const coment = db.comments.filter((c) => c.ficha_id === id).length;
       db.documents = db.documents.filter((d) => d.ficha_id !== id);
       db.comments = db.comments.filter((c) => c.ficha_id !== id);
       db.fichas = db.fichas.filter((x) => x.id !== id);
-      registrar(`${actorName()} eliminó la ficha ${f.code}`, f.code, 'fichas');
+      registrar(`${actorName()} eliminÃ³ la ficha ${f.code}`, f.code, 'fichas');
       return json({ ok: true, code: f.code, documentos: docs, comentarios: coment });
     }
 
     if (path === '/rest/v1/rpc/delete_project') {
-      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
       const id = body()?.p_project;
       const pr = db.projects.find((x) => x.id === id);
       if (!pr) return fail('No se encuentra el proyecto', 'P0002');
@@ -1051,7 +1052,7 @@ export async function stubSupabase(context, {
           .reduce((n, w) => n + Number(w.hours ?? 0), 0);
       if (cobros > 0 || horas > 0) {
         return fail(`No se puede eliminar ${pr.code} porque tiene ${cobros} cobro(s) y `
-          + `${horas} h de trabajo ya validado. Archívalo en lugar de eliminarlo: `
+          + `${horas} h de trabajo ya validado. ArchÃ­valo en lugar de eliminarlo: `
           + 'desaparece de los listados y no se pierde nada.', '23503');
       }
       const docs = db.documents.filter((d) => d.project_id === id).length;
@@ -1065,15 +1066,15 @@ export async function stubSupabase(context, {
       db.project_workers = db.project_workers.filter((pw) => pw.project_id !== id);
       db.work_reports.forEach((r) => { if (r.project_id === id) r.project_id = null; });
       db.projects = db.projects.filter((x) => x.id !== id);
-      registrar(`${actorName()} eliminó el proyecto ${pr.code} · ${pr.name} `
-        + `(${docs} archivos, ${ordenes} órdenes, 0 materiales)`, pr.code, 'projects');
+      registrar(`${actorName()} eliminÃ³ el proyecto ${pr.code} Â· ${pr.name} `
+        + `(${docs} archivos, ${ordenes} Ã³rdenes, 0 materiales)`, pr.code, 'projects');
       return json({ ok: true, code: pr.code, documentos: docs, ordenes, partes_desvinculados: 0 });
     }
 
-    // ---- BLOQUE 3 · planificación y calendario -----------------------
+    // ---- BLOQUE 3 Â· planificaciÃ³n y calendario -----------------------
 
     if (path === '/rest/v1/rpc/plan_project') {
-      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
       const pr = db.projects.find((x) => x.id === body()?.p_project);
       if (!pr) return fail('No se encuentra el proyecto', 'P0002');
       const fase = body()?.p_phase ?? 'ambas';
@@ -1112,12 +1113,12 @@ export async function stubSupabase(context, {
           pr.mont_end = finDeTramo(pr.mont_start, dias);
         }
       }
-      registrar(`${actorName()} planificó ${pr.code}`, pr.code, 'projects');
+      registrar(`${actorName()} planificÃ³ ${pr.code}`, pr.code, 'projects');
       return json(pr);
     }
 
     if (path === '/rest/v1/rpc/move_project_phase') {
-      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
       const pr = db.projects.find((x) => x.id === body()?.p_project);
       if (!pr) return fail('No se encuentra el proyecto', 'P0002');
       const fase = body()?.p_phase;
@@ -1131,13 +1132,77 @@ export async function stubSupabase(context, {
       const fin = finDeTramo(inicio, dias);
       if (esFab) { pr.fab_start = inicio; pr.fab_end = fin; pr.fab_manual = true; }
       else { pr.mont_start = inicio; pr.mont_end = fin; pr.mont_manual = true; }
-      registrar(`${actorName()} movió a mano ${esFab ? 'la fabricación' : 'el montaje'} `
-        + `de ${pr.code}: ${antes ?? 'sin fecha'} → ${inicio}`, pr.code, 'projects');
+      registrar(`${actorName()} moviÃ³ a mano ${esFab ? 'la fabricaciÃ³n' : 'el montaje'} `
+        + `de ${pr.code}: ${antes ?? 'sin fecha'} â†’ ${inicio}`, pr.code, 'projects');
       return json(pr);
     }
 
+    // FASE 1.1 Â· Las fechas de una fase, escritas a mano. Hace lo mismo
+    // que Â«set_phase_datesÂ» en la base de datos: guarda lo que le den,
+    // SIN comprobar disponibilidad, y toca SOLO la fase que le dicen.
+    if (path === '/rest/v1/rpc/set_phase_dates') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
+      const fase = body()?.p_phase;
+      if (fase !== 'fabricacion' && fase !== 'montaje') {
+        return fail(`Fase desconocida: ${fase}`);
+      }
+      const pr = db.projects.find((x) => x.id === body()?.p_project);
+      if (!pr) return fail('No se encuentra el proyecto', 'P0002');
+
+      const inicio = body()?.p_start ?? null;
+      const fin = body()?.p_end ?? null;
+      if (inicio && fin && fin < inicio) {
+        return fail('El final no puede ser anterior al inicio');
+      }
+      const esFab = fase === 'fabricacion';
+      const antes = esFab ? pr.fab_start : pr.mont_start;
+
+      if (!inicio) {
+        // Sin fecha: la fase vuelve al cÃ¡lculo automÃ¡tico.
+        if (esFab) { pr.fab_start = null; pr.fab_end = null; pr.fab_manual = false; }
+        else { pr.mont_start = null; pr.mont_end = null; pr.mont_manual = false; }
+      } else {
+        const dias = Math.max(diasDeTrabajo(
+          esFab ? pr.budget_hours_fab : pr.budget_hours_mont,
+          esFab ? pr.fab_workers : pr.mont_workers), 1);
+        const hasta = fin ?? finDeTramo(inicio, dias);
+        if (esFab) { pr.fab_start = inicio; pr.fab_end = hasta; pr.fab_manual = true; }
+        else { pr.mont_start = inicio; pr.mont_end = hasta; pr.mont_manual = true; }
+      }
+      pr.updated_at = new Date().toISOString();
+      registrar(`${actorName()} cambiÃ³ a mano las fechas de `
+        + `${esFab ? 'la fabricaciÃ³n' : 'el montaje'} de ${pr.code}: `
+        + `${antes ?? 'sin fecha'} âŸ¶ ${inicio ?? 'sin fecha'}`, pr.code, 'projects');
+      return json(pr);
+    }
+
+    // FASE 1.3 Â· El periodo propio de la obra en el calendario.
+    if (path === '/rest/v1/rpc/set_work_dates') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
+      const obra = db.works.find((x) => x.id === body()?.p_work);
+      if (!obra) return fail('No se encuentra la obra', 'P0002');
+
+      const inicio = body()?.p_start ?? null;
+      const fin = body()?.p_end ?? null;
+      if (inicio && fin && fin < inicio) {
+        return fail('El final no puede ser anterior al inicio');
+      }
+      if ((inicio === null) !== (fin === null)) {
+        return fail('Escribe las dos fechas, o deja las dos en blanco para que la obra '
+          + 'siga a sus proyectos');
+      }
+      obra.cal_start = inicio;
+      obra.cal_end = fin;
+      obra.updated_at = new Date().toISOString();
+      registrar(inicio
+        ? `${actorName()} puso el periodo de ${obra.code}: ${inicio} â†’ ${fin}`
+        : `${actorName()} quitÃ³ las fechas propias de ${obra.code}: vuelve a seguir a sus proyectos`,
+        obra.code, 'works');
+      return json(embed('works', obra));
+    }
+
     if (path === '/rest/v1/rpc/release_project_phase') {
-      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
       const pr = db.projects.find((x) => x.id === body()?.p_project);
       if (!pr) return fail('No se encuentra el proyecto', 'P0002');
       if (body()?.p_phase === 'fabricacion') pr.fab_manual = false; else pr.mont_manual = false;
@@ -1145,11 +1210,11 @@ export async function stubSupabase(context, {
     }
 
     if (path === '/rest/v1/rpc/set_phase_workers') {
-      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
       const pr = db.projects.find((x) => x.id === body()?.p_project);
       if (!pr) return fail('No se encuentra el proyecto', 'P0002');
       const n = Number(body()?.p_workers);
-      if (!n || n < 1 || n > 20) return fail('El número de trabajadores tiene que estar entre 1 y 20');
+      if (!n || n < 1 || n > 20) return fail('El nÃºmero de trabajadores tiene que estar entre 1 y 20');
       if (body()?.p_phase === 'fabricacion') {
         pr.fab_workers = n;
         if (pr.fab_start) {
@@ -1167,7 +1232,7 @@ export async function stubSupabase(context, {
     }
 
     if (path === '/rest/v1/rpc/set_non_working_day') {
-      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
       const day = body()?.p_day;
       if (!day) return fail('Hace falta una fecha');
       const ya = db.non_working_days.find((x) => x.day === day);
@@ -1182,15 +1247,15 @@ export async function stubSupabase(context, {
     }
 
     if (path === '/rest/v1/rpc/clear_non_working_day') {
-      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
       db.non_working_days = db.non_working_days.filter((x) => x.day !== body()?.p_day);
       return json(null);
     }
 
     if (path === '/rest/v1/rpc/save_calendar_note') {
-      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
       const titulo = (body()?.p_title ?? '').trim();
-      if (!titulo) return fail('Escribe de qué se trata');
+      if (!titulo) return fail('Escribe de quÃ© se trata');
       if (!body()?.p_day) return fail('Hace falta una fecha');
       let nota = body()?.p_id ? db.calendar_notes.find((x) => x.id === body().p_id) : null;
       if (body()?.p_id && !nota) return fail('No se encuentra el evento', 'P0002');
@@ -1212,18 +1277,18 @@ export async function stubSupabase(context, {
     }
 
     if (path === '/rest/v1/rpc/delete_calendar_note') {
-      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
       db.calendar_notes = db.calendar_notes.filter((x) => x.id !== body()?.p_id);
       return json(null);
     }
 
-    // ---- BLOQUE 4 · obras -------------------------------------------
+    // ---- BLOQUE 4 Â· obras -------------------------------------------
 
     const eur = (n) => `${Number(n ?? 0).toLocaleString('es-ES', {
-      minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
+      minimumFractionDigits: 2, maximumFractionDigits: 2 })} â‚¬`;
 
     if (path === '/rest/v1/rpc/save_work') {
-      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
       const nombre = (body()?.p_name ?? '').trim();
       if (!nombre) return fail('Escribe el nombre de la obra');
       const campos = {
@@ -1241,20 +1306,23 @@ export async function stubSupabase(context, {
         obra = {
           id: `works-${Math.random().toString(36).slice(2, 8)}`,
           code: `OBRA-${YEAR}-${String(db.counters.OBRA).padStart(3, '0')}`,
+          // Igual que en la tabla: nacen sin periodo propio, asÃ­ la obra
+          // sigue a sus proyectos hasta que alguien escriba las fechas.
+          cal_start: null, cal_end: null,
           archived_at: null, is_demo: false, created_by: actor().id,
           created_at: new Date().toISOString(), ...campos,
         };
         db.works.unshift(obra);
-        registrar(`${actorName()} creó la obra ${obra.code} · ${obra.name}`, obra.code, 'works');
+        registrar(`${actorName()} creÃ³ la obra ${obra.code} Â· ${obra.name}`, obra.code, 'works');
       } else {
         Object.assign(obra, campos);
-        registrar(`${actorName()} cambió la obra ${obra.code}`, obra.code, 'works');
+        registrar(`${actorName()} cambiÃ³ la obra ${obra.code}`, obra.code, 'works');
       }
       return json(embed('works', obra));
     }
 
     if (path === '/rest/v1/rpc/set_project_work') {
-      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
       const pr = db.projects.find((x) => x.id === body()?.p_project);
       if (!pr) return fail('No se encuentra el proyecto', 'P0002');
       const destino = body()?.p_work ?? null;
@@ -1266,36 +1334,36 @@ export async function stubSupabase(context, {
       const ahora = db.works.find((x) => x.id === destino);
       pr.work_id = destino;
       pr.updated_at = new Date().toISOString();
-      // La anotación va al historial del proyecto Y al de la obra.
+      // La anotaciÃ³n va al historial del proyecto Y al de la obra.
       registrar(destino
-        ? `${actorName()} metió ${pr.code} en la obra ${ahora.code} · ${ahora.name}`
-        : `${actorName()} sacó ${pr.code} de la obra ${antes?.code ?? 'anterior'}`,
+        ? `${actorName()} metiÃ³ ${pr.code} en la obra ${ahora.code} Â· ${ahora.name}`
+        : `${actorName()} sacÃ³ ${pr.code} de la obra ${antes?.code ?? 'anterior'}`,
         pr.code, 'projects');
       if (ahora) {
-        registrar(`${actorName()} metió el proyecto ${pr.code} · ${pr.name} en la obra`,
+        registrar(`${actorName()} metiÃ³ el proyecto ${pr.code} Â· ${pr.name} en la obra`,
           ahora.code, 'works');
       }
       if (antes) {
-        registrar(`${actorName()} sacó el proyecto ${pr.code} de la obra`, antes.code, 'works');
+        registrar(`${actorName()} sacÃ³ el proyecto ${pr.code} de la obra`, antes.code, 'works');
       }
       return json(embed('projects', pr));
     }
 
     if (path === '/rest/v1/rpc/archive_work') {
-      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
       const obra = db.works.find((x) => x.id === body()?.p_work);
       if (!obra) return fail('No se encuentra la obra', 'P0002');
       const archivar = body()?.p_archive !== false;
       obra.archived_at = archivar ? new Date().toISOString() : null;
       obra.updated_at = new Date().toISOString();
       registrar(archivar
-        ? `${actorName()} archivó la obra ${obra.code}`
-        : `${actorName()} recuperó la obra archivada ${obra.code}`, obra.code, 'works');
+        ? `${actorName()} archivÃ³ la obra ${obra.code}`
+        : `${actorName()} recuperÃ³ la obra archivada ${obra.code}`, obra.code, 'works');
       return json(embed('works', obra));
     }
 
     if (path === '/rest/v1/rpc/delete_work') {
-      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
       const obra = db.works.find((x) => x.id === body()?.p_work);
       if (!obra) return fail('No se encuentra la obra', 'P0002');
       const proyectos = db.projects.filter((x) => x.work_id === obra.id);
@@ -1303,14 +1371,14 @@ export async function stubSupabase(context, {
       const extras = (db.work_extras ?? []).filter((x) => x.work_id === obra.id);
       if (facturado > 0) {
         return fail(`No se puede eliminar ${obra.code}: tiene ${eur(facturado)} facturados. `
-          + 'Archívala en lugar de eliminarla.', '23503');
+          + 'ArchÃ­vala en lugar de eliminarla.', '23503');
       }
       // Los proyectos NO se borran: se quedan sueltos.
       proyectos.forEach((x) => { x.work_id = null; });
       db.work_extras = (db.work_extras ?? []).filter((x) => x.work_id !== obra.id);
       db.comments = db.comments.filter((x) => x.work_id !== obra.id);
       db.works = db.works.filter((x) => x.id !== obra.id);
-      registrar(`${actorName()} eliminó la obra ${obra.code} · ${obra.name} `
+      registrar(`${actorName()} eliminÃ³ la obra ${obra.code} Â· ${obra.name} `
         + `(${proyectos.length} proyectos quedan sueltos, ${extras.length} extras eliminados)`,
         null, 'works');
       return json({ ok: true, code: obra.code,
@@ -1318,9 +1386,9 @@ export async function stubSupabase(context, {
     }
 
     if (path === '/rest/v1/rpc/save_work_extra') {
-      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
       const concepto = (body()?.p_concept ?? '').trim();
-      if (!concepto) return fail('Escribe de qué es el coste extra');
+      if (!concepto) return fail('Escribe de quÃ© es el coste extra');
       if (body()?.p_amount === null || body()?.p_amount === undefined) {
         return fail('Escribe el importe');
       }
@@ -1334,11 +1402,13 @@ export async function stubSupabase(context, {
           id: `work_extras-${Math.random().toString(36).slice(2, 8)}`,
           work_id: obra.id, concept: concepto, amount: importe,
           notes: (body()?.p_notes ?? '').trim() || null,
+          // FASE 3.4 Â· nacen sin facturar: guardar NO factura.
+          invoiced: false, invoiced_on: null,
           created_by: actor().id, is_demo: obra.is_demo ?? false,
           created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
         };
         db.work_extras.push(x);
-        registrar(`${actorName()} añadió el extra «${concepto}» de ${eur(importe)} `
+        registrar(`${actorName()} aÃ±adiÃ³ el extra Â«${concepto}Â» de ${eur(importe)} `
           + `a la obra ${obra.code}`, obra.code, 'work_extras');
       } else {
         const antes = x.amount;
@@ -1348,25 +1418,43 @@ export async function stubSupabase(context, {
           notes: (body()?.p_notes ?? '').trim() || null,
           updated_at: new Date().toISOString(),
         });
-        registrar(`${actorName()} cambió el extra «${concepto}» de ${eur(antes)} `
+        registrar(`${actorName()} cambiÃ³ el extra Â«${concepto}Â» de ${eur(antes)} `
           + `a ${eur(importe)} en la obra ${obra?.code ?? ''}`, obra?.code ?? null, 'work_extras');
       }
       return json(x);
     }
 
+    // FASE 3.4 Â· marcar o desmarcar un coste extra como facturado.
+    if (path === '/rest/v1/rpc/set_work_extra_invoiced') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
+      const x = (db.work_extras ?? []).find((e) => e.id === body()?.p_extra);
+      if (!x) return fail('No se encuentra el coste extra', 'P0002');
+      const obra = db.works.find((w) => w.id === x.work_id);
+      x.invoiced = Boolean(body()?.p_invoiced);
+      x.invoiced_on = x.invoiced ? (body()?.p_on ?? today()) : null;
+      x.updated_at = new Date().toISOString();
+      registrar(x.invoiced
+        ? `${actorName()} marcÃ³ como facturado el coste extra Â«${x.concept}Â» `
+          + `(${eur(x.amount)}) de ${obra?.code ?? 'una obra'}`
+        : `${actorName()} quitÃ³ la marca de facturado del coste extra Â«${x.concept}Â» `
+          + `de ${obra?.code ?? 'una obra'}`,
+        obra?.code ?? null, 'work_extras');
+      return json(x);
+    }
+
     if (path === '/rest/v1/rpc/delete_work_extra') {
-      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
       const x = (db.work_extras ?? []).find((e) => e.id === body()?.p_id);
       if (!x) return fail('No se encuentra el coste extra', 'P0002');
       const obra = db.works.find((w) => w.id === x.work_id);
       db.work_extras = db.work_extras.filter((e) => e.id !== x.id);
-      registrar(`${actorName()} quitó el extra «${x.concept}» de ${eur(x.amount)} `
+      registrar(`${actorName()} quitÃ³ el extra Â«${x.concept}Â» de ${eur(x.amount)} `
         + `de la obra ${obra?.code ?? ''}`, obra?.code ?? null, 'work_extras');
       return json(null);
     }
 
     if (path === '/rest/v1/rpc/set_project_invoiced') {
-      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
       const pr = db.projects.find((x) => x.id === body()?.p_project);
       if (!pr) return fail('No se encuentra el proyecto', 'P0002');
       const facturar = Boolean(body()?.p_invoiced);
@@ -1376,7 +1464,7 @@ export async function stubSupabase(context, {
         if (importe < 0) return fail('El importe facturado no puede ser negativo');
         pr.invoiced_amount = importe;
         pr.invoiced_on = body()?.p_on ?? today();
-        // El estado de cobro que ya existía: no se crea otro sistema.
+        // El estado de cobro que ya existÃ­a: no se crea otro sistema.
         if (pr.billing_status === 'por_facturar') pr.billing_status = 'pendiente_cobro';
       } else {
         pr.invoiced_amount = null;
@@ -1384,22 +1472,22 @@ export async function stubSupabase(context, {
       }
       pr.updated_at = new Date().toISOString();
       registrar(facturar
-        ? `${actorName()} marcó ${pr.code} como facturado por ${eur(importe)}`
-        : `${actorName()} quitó la marca de facturado de ${pr.code}`, pr.code, 'projects');
+        ? `${actorName()} marcÃ³ ${pr.code} como facturado por ${eur(importe)}`
+        : `${actorName()} quitÃ³ la marca de facturado de ${pr.code}`, pr.code, 'projects');
       const obra = db.works.find((w) => w.id === pr.work_id);
       if (obra) {
         registrar(facturar
-          ? `${actorName()} facturó ${pr.code} por ${eur(importe)}`
-          : `${actorName()} quitó la facturación de ${pr.code}`, obra.code, 'works');
+          ? `${actorName()} facturÃ³ ${pr.code} por ${eur(importe)}`
+          : `${actorName()} quitÃ³ la facturaciÃ³n de ${pr.code}`, obra.code, 'works');
       }
       return json(embed('projects', pr));
     }
 
     if (path === '/rest/v1/rpc/set_gap_days') {
-      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
       const n = Number(body()?.p_days);
       if (Number.isNaN(n) || n < 0 || n > 30) {
-        return fail('El margen entre proyectos tiene que estar entre 0 y 30 días');
+        return fail('El margen entre proyectos tiene que estar entre 0 y 30 dÃ­as');
       }
       db.settings.gap_days = n;
       return json(db.settings);
@@ -1413,7 +1501,7 @@ export async function stubSupabase(context, {
       if (soloAdmin()) return fail('No se encuentra el documento', 'P0002');
       const doc = db.documents.find((d) => d.id === body()?.p_doc);
       if (doc) doc.deleted_at = new Date().toISOString();
-      registrar(`${actorName()} envió a la papelera «${doc?.file_name}»`, null, 'documents');
+      registrar(`${actorName()} enviÃ³ a la papelera Â«${doc?.file_name}Â»`, null, 'documents');
       return json(null);
     }
 
@@ -1421,18 +1509,18 @@ export async function stubSupabase(context, {
       if (soloAdmin()) return fail('No se encuentra el documento', 'P0002');
       const doc = db.documents.find((d) => d.id === body()?.p_doc);
       if (doc) doc.deleted_at = null;
-      registrar(`${actorName()} restauró de la papelera «${doc?.file_name}»`, null, 'documents');
+      registrar(`${actorName()} restaurÃ³ de la papelera Â«${doc?.file_name}Â»`, null, 'documents');
       return json(null);
     }
 
     // Los contactos se archivan: si se borrasen, los presupuestos antiguos
-    // perderían con quién se habló.
+    // perderÃ­an con quiÃ©n se hablÃ³.
     if (path === '/rest/v1/rpc/archive_contact') {
-      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
       const c = db.client_contacts.find((k) => k.id === body()?.p_contact);
       if (!c) return fail('No se encuentra ese contacto.', '22023');
       c.archived_at = body()?.p_archive === false ? null : new Date().toISOString();
-      registrar(`${actorName()} archivó el contacto ${c.name}`, null, 'client_contacts');
+      registrar(`${actorName()} archivÃ³ el contacto ${c.name}`, null, 'client_contacts');
       return json(null);
     }
 
@@ -1443,10 +1531,10 @@ export async function stubSupabase(context, {
     }
 
     if (path === '/rest/v1/rpc/seed_demo') {
-      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
       if (db.clients.some((c) => c.is_demo)) {
-        return fail('Los datos de ejemplo ya están puestos. Si quieres volver a '
-          + 'empezar, usa antes «Limpiar datos demo».', '22023');
+        return fail('Los datos de ejemplo ya estÃ¡n puestos. Si quieres volver a '
+          + 'empezar, usa antes Â«Limpiar datos demoÂ».', '22023');
       }
       sembrarDemo(db, people);
       registrar(`${actorName()} puso los datos de ejemplo`, null, 'app_settings');
@@ -1455,7 +1543,7 @@ export async function stubSupabase(context, {
     }
 
     if (path === '/rest/v1/rpc/clear_demo') {
-      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
       let total = 0;
       const borradas = {};
       for (const tabla of DEMO_TABLES) {
@@ -1468,7 +1556,7 @@ export async function stubSupabase(context, {
       const fuera = people.filter((p) => p.is_demo).length;
       for (let i = people.length - 1; i >= 0; i--) if (people[i].is_demo) people.splice(i, 1);
       if (fuera) { borradas.profiles = fuera; total += fuera; }
-      registrar(`${actorName()} limpió los datos de ejemplo (${total} registros)`, null, 'app_settings');
+      registrar(`${actorName()} limpiÃ³ los datos de ejemplo (${total} registros)`, null, 'app_settings');
       return json({ total, borradas });
     }
 
@@ -1478,7 +1566,7 @@ export async function stubSupabase(context, {
         return fail('Solo los presupuestos aceptados pueden convertirse en proyecto');
       }
       if (db.projects.some((p) => p.source_ficha_id === ficha.id)) {
-        return fail('Este presupuesto ya se convirtió en un proyecto', '23505');
+        return fail('Este presupuesto ya se convirtiÃ³ en un proyecto', '23505');
       }
       db.counters.PROY += 1;
       const project = {
@@ -1495,7 +1583,7 @@ export async function stubSupabase(context, {
         created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
       };
       db.projects.push(project);
-      registrar(`Salvi Plaza creó el proyecto ${project.code} · ${project.name} (desde el presupuesto ${ficha.code})`, project.code, 'projects');
+      registrar(`Salvi Plaza creÃ³ el proyecto ${project.code} Â· ${project.name} (desde el presupuesto ${ficha.code})`, project.code, 'projects');
       return json(project.id);
     }
 
@@ -1503,15 +1591,15 @@ export async function stubSupabase(context, {
       const project = db.projects.find((p) => p.id === body()?.p_project);
       const next = body()?.p_phase;
       if (!project) return fail('No se encuentra el proyecto', 'P0002');
-      if (project.archived_at) return fail('El proyecto está archivado');
-      if (next === 'finalizado') return fail('Para cerrar el proyecto usa el botón «Finalizar proyecto»');
+      if (project.archived_at) return fail('El proyecto estÃ¡ archivado');
+      if (next === 'finalizado') return fail('Para cerrar el proyecto usa el botÃ³n Â«Finalizar proyectoÂ»');
       if (next === 'montaje' && project.no_assembly) {
-        return fail('El proyecto está marcado como «Sin montaje». Quita esa marca para pasar a Montaje');
+        return fail('El proyecto estÃ¡ marcado como Â«Sin montajeÂ». Quita esa marca para pasar a Montaje');
       }
       if (project.phase === 'fabricacion' && next === 'facturacion' && !project.no_assembly) {
-        return fail('De Fabricación se pasa a Montaje. Si este proyecto no lleva montaje, márcalo como «Sin montaje»');
+        return fail('De FabricaciÃ³n se pasa a Montaje. Si este proyecto no lleva montaje, mÃ¡rcalo como Â«Sin montajeÂ»');
       }
-      registrar(`Salvi Plaza cambió el proyecto ${project.code} de ${PHASE_LABEL[project.phase]} → ${PHASE_LABEL[next]}`, project.code, 'projects');
+      registrar(`Salvi Plaza cambiÃ³ el proyecto ${project.code} de ${PHASE_LABEL[project.phase]} â†’ ${PHASE_LABEL[next]}`, project.code, 'projects');
       project.phase = next;
       project.finished_at = null;
       project.updated_at = new Date().toISOString();
@@ -1519,7 +1607,7 @@ export async function stubSupabase(context, {
         (s) => s.project_id !== project.id || s.phase === next,
       );
 
-      // BLOQUE 3: al ENTRAR en fabricación, el proyecto busca hueco solo,
+      // BLOQUE 3: al ENTRAR en fabricaciÃ³n, el proyecto busca hueco solo,
       // igual que hace el disparador de la base de datos.
       if (next === 'fabricacion' && project.autoplan !== false
           && !project.fab_start && !project.fab_manual) {
@@ -1535,7 +1623,7 @@ export async function stubSupabase(context, {
             : siguienteLaborable(today());
           project.mont_end = finDeTramo(project.mont_start, diasM);
         }
-        registrar(`${actorName()} planificó ${project.code}`, project.code, 'projects');
+        registrar(`${actorName()} planificÃ³ ${project.code}`, project.code, 'projects');
       }
 
       return json(project);
@@ -1548,7 +1636,7 @@ export async function stubSupabase(context, {
       db.project_substatuses = db.project_substatuses.filter((s) => s.project_id !== project.id);
       list.forEach((substatus) => {
         db.project_substatuses.push({ project_id: project.id, phase: project.phase, substatus });
-        registrar(`Salvi Plaza añadió el subestado «${substatus}» en ${project.code}`, project.code, 'project_substatuses');
+        registrar(`Salvi Plaza aÃ±adiÃ³ el subestado Â«${substatus}Â» en ${project.code}`, project.code, 'project_substatuses');
       });
       return json(null);
     }
@@ -1558,7 +1646,7 @@ export async function stubSupabase(context, {
       if (!project) return fail('No se encuentra el proyecto', 'P0002');
       project.billing_status = body()?.p_status;
       project.updated_at = new Date().toISOString();
-      registrar(`Salvi Plaza cambió la facturación de ${project.code}`, project.code, 'projects');
+      registrar(`Salvi Plaza cambiÃ³ la facturaciÃ³n de ${project.code}`, project.code, 'projects');
       return json(null);
     }
 
@@ -1566,26 +1654,26 @@ export async function stubSupabase(context, {
       const project = db.projects.find((p) => p.id === body()?.p_project);
       if (!project) return fail('No se encuentra el proyecto', 'P0002');
       if (project.phase !== 'facturacion' || project.billing_status !== 'cobrado') {
-        return fail('Solo se puede finalizar un proyecto que esté en Facturación y cobrado');
+        return fail('Solo se puede finalizar un proyecto que estÃ© en FacturaciÃ³n y cobrado');
       }
       project.phase = 'finalizado';
       project.finished_at = new Date().toISOString();
       project.updated_at = project.finished_at;
       db.project_substatuses = db.project_substatuses.filter((s) => s.project_id !== project.id);
-      registrar(`Salvi Plaza finalizó el proyecto ${project.code}`, project.code, 'projects');
+      registrar(`Salvi Plaza finalizÃ³ el proyecto ${project.code}`, project.code, 'projects');
       return json(project);
     }
 
     if (path === '/rest/v1/rpc/reopen_project') {
       const project = db.projects.find((p) => p.id === body()?.p_project);
-      if (!project || project.phase !== 'finalizado') return fail('El proyecto no está finalizado');
+      if (!project || project.phase !== 'finalizado') return fail('El proyecto no estÃ¡ finalizado');
       project.phase = 'facturacion';
       project.finished_at = null;
-      registrar(`Salvi Plaza reabrió el proyecto ${project.code}`, project.code, 'projects');
+      registrar(`Salvi Plaza reabriÃ³ el proyecto ${project.code}`, project.code, 'projects');
       return json(null);
     }
 
-    // ---------------- Órdenes de trabajo (fase 4) ----------------
+    // ---------------- Ã“rdenes de trabajo (fase 4) ----------------
     if (path === '/rest/v1/rpc/assign_order_workers') {
       const order = db.work_orders.find((o) => o.id === body()?.p_order);
       const list = body()?.p_workers ?? [];
@@ -1611,7 +1699,7 @@ export async function stubSupabase(context, {
         });
         avisar(workerId, 'orden_asignada', 'Nueva orden asignada', orderCaption(order), order.id);
         registrar(
-          `${actorName()} asignó la orden ${order.code} a ${people.find((p) => p.id === workerId)?.full_name ?? ''}`,
+          `${actorName()} asignÃ³ la orden ${order.code} a ${people.find((p) => p.id === workerId)?.full_name ?? ''}`,
           order.code, 'work_order_workers',
         );
       });
@@ -1625,13 +1713,13 @@ export async function stubSupabase(context, {
       const part = db.work_order_workers.find(
         (w) => w.order_id === order.id && w.worker_id === actor().id,
       );
-      if (!part) return fail('Esta orden no está asignada a ti', '42501');
-      if (order.archived_at) return fail('La orden está archivada');
+      if (!part) return fail('Esta orden no estÃ¡ asignada a ti', '42501');
+      if (order.archived_at) return fail('La orden estÃ¡ archivada');
       if (order.scheduled_date > today()) {
-        return fail(`Esta orden es del ${order.scheduled_date.split('-').reverse().join('/')} : todavía no se puede rellenar`);
+        return fail(`Esta orden es del ${order.scheduled_date.split('-').reverse().join('/')} : todavÃ­a no se puede rellenar`);
       }
-      if (order.status === 'validada') return fail('La orden ya está validada: no se puede modificar');
-      if (order.status === 'realizada') return fail('La orden ya está enviada y pendiente de revisión');
+      if (order.status === 'validada') return fail('La orden ya estÃ¡ validada: no se puede modificar');
+      if (order.status === 'realizada') return fail('La orden ya estÃ¡ enviada y pendiente de revisiÃ³n');
 
       const hours = Number(body()?.p_hours ?? 0);
       const done = (body()?.p_work_done ?? '').trim();
@@ -1647,18 +1735,18 @@ export async function stubSupabase(context, {
 
       registrar(
         submit
-          ? `${actorName()} envió su parte de la orden ${order.code}`
-          : `${actorName()} guardó su parte de la orden ${order.code}`,
+          ? `${actorName()} enviÃ³ su parte de la orden ${order.code}`
+          : `${actorName()} guardÃ³ su parte de la orden ${order.code}`,
         order.code, 'work_order_workers',
       );
 
       recompute(order);
       if (submit && order.status === 'realizada') {
         people.filter((p) => p.role === 'admin').forEach((adm) => avisar(
-          adm.id, 'orden_enviada', 'Orden pendiente de revisión',
+          adm.id, 'orden_enviada', 'Orden pendiente de revisiÃ³n',
           `${actorName()} ha enviado ${orderCaption(order)}`, order.id,
         ));
-        registrar(`${actorName()} envió la orden ${order.code} a revisión`, order.code, 'work_orders');
+        registrar(`${actorName()} enviÃ³ la orden ${order.code} a revisiÃ³n`, order.code, 'work_orders');
       }
       return json(order);
     }
@@ -1666,7 +1754,7 @@ export async function stubSupabase(context, {
     if (path === '/rest/v1/rpc/validate_order') {
       const order = db.work_orders.find((o) => o.id === body()?.p_order);
       if (!order) return fail('No se encuentra la orden de trabajo', 'P0002');
-      if (order.status !== 'realizada') return fail('Solo se valida una orden que esté pendiente de revisión');
+      if (order.status !== 'realizada') return fail('Solo se valida una orden que estÃ© pendiente de revisiÃ³n');
       order.status = 'validada';
       order.validated_at = new Date().toISOString();
       order.validated_by = actor().id;
@@ -1674,7 +1762,7 @@ export async function stubSupabase(context, {
       db.work_order_workers.filter((w) => w.order_id === order.id).forEach(
         (w) => avisar(w.worker_id, 'validacion', 'Orden validada', orderCaption(order), order.id),
       );
-      registrar(`${actorName()} validó la orden ${order.code}`, order.code, 'work_orders');
+      registrar(`${actorName()} validÃ³ la orden ${order.code}`, order.code, 'work_orders');
       return json(order);
     }
 
@@ -1682,7 +1770,7 @@ export async function stubSupabase(context, {
       const order = db.work_orders.find((o) => o.id === body()?.p_order);
       const reason = (body()?.p_reason ?? '').trim();
       if (!order) return fail('No se encuentra la orden de trabajo', 'P0002');
-      if (!reason) return fail('Escribe el motivo de la devolución');
+      if (!reason) return fail('Escribe el motivo de la devoluciÃ³n');
       if (!['realizada', 'validada'].includes(order.status)) {
         return fail('Solo se devuelve una orden que ya se haya enviado');
       }
@@ -1702,7 +1790,7 @@ export async function stubSupabase(context, {
         ficha_id: null, project_id: null, order_id: order.id, author_id: actor().id,
         body: `Orden devuelta. Motivo: ${reason}`, created_at: new Date().toISOString(),
       });
-      registrar(`${actorName()} devolvió la orden ${order.code}. Motivo: ${reason}`, order.code, 'work_orders');
+      registrar(`${actorName()} devolviÃ³ la orden ${order.code}. Motivo: ${reason}`, order.code, 'work_orders');
       return json(order);
     }
 
@@ -1733,12 +1821,12 @@ export async function stubSupabase(context, {
     if (path === '/rest/v1/rpc/submit_material_request') {
       const order = db.work_orders.find((o) => o.id === body()?.p_order);
       const texto = (body()?.p_body ?? '').trim();
-      if (!texto) return fail('Escribe qué material falta');
+      if (!texto) return fail('Escribe quÃ© material falta');
       if (!order) return fail('No se encuentra la orden de trabajo', 'P0002');
       const mine = db.work_order_workers.some(
         (w) => w.order_id === order.id && w.worker_id === actor().id,
       );
-      if (!mine && actor().role !== 'admin') return fail('Esta orden no está asignada a ti', '42501');
+      if (!mine && actor().role !== 'admin') return fail('Esta orden no estÃ¡ asignada a ti', '42501');
 
       const request = {
         id: `req-${Math.random().toString(36).slice(2, 8)}`,
@@ -1750,25 +1838,25 @@ export async function stubSupabase(context, {
       db.material_requests.unshift(request);
       people.filter((p) => p.role === 'admin').forEach((adm) => avisar(
         adm.id, 'material_solicitado', 'Falta material',
-        `${actorName()} · ${order.code}: ${texto}`, order.id,
+        `${actorName()} Â· ${order.code}: ${texto}`, order.id,
       ));
-      registrar(`${actorName()} comunicó falta de material en ${order.code}: ${texto}`,
+      registrar(`${actorName()} comunicÃ³ falta de material en ${order.code}: ${texto}`,
         order.code, 'material_requests');
       return json(request);
     }
 
-    // BLOQUE 5 · pedir material sin esperar a una orden ni a un parte.
-    // Entra en la MISMA lista y pasa por la MISMA revisión.
+    // BLOQUE 5 Â· pedir material sin esperar a una orden ni a un parte.
+    // Entra en la MISMA lista y pasa por la MISMA revisiÃ³n.
     if (path === '/rest/v1/rpc/submit_material_need') {
-      if (!getUser()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      if (!getUser()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
       const texto = (body()?.p_body ?? '').trim();
-      if (!texto) return fail('Escribe qué material falta');
+      if (!texto) return fail('Escribe quÃ© material falta');
       const proyecto = body()?.p_project ?? null;
       if (proyecto) {
         const pr = db.projects.find((x) => x.id === proyecto);
         if (!pr) return fail('No se encuentra el proyecto', 'P0002');
         if (actor().role !== 'admin' && !assignedProjects(actor()).has(proyecto)) {
-          return fail('Este proyecto no está asignado a ti', '42501');
+          return fail('Este proyecto no estÃ¡ asignado a ti', '42501');
         }
       }
       const peticion = {
@@ -1785,15 +1873,15 @@ export async function stubSupabase(context, {
     if (path === '/rest/v1/rpc/accept_material_request') {
       const request = db.material_requests.find((r) => r.id === body()?.p_request);
       const nombre = (body()?.p_name ?? '').trim();
-      if (!request) return fail('No se encuentra la comunicación', 'P0002');
-      if (request.status !== 'pendiente') return fail('Esta comunicación ya está revisada');
+      if (!request) return fail('No se encuentra la comunicaciÃ³n', 'P0002');
+      if (request.status !== 'pendiente') return fail('Esta comunicaciÃ³n ya estÃ¡ revisada');
       if (!nombre) return fail('Escribe el nombre del material');
 
-      // BLOQUE 5: la petición puede venir sin proyecto; el material
-      // pendiente siempre es de uno, así que se dice al aceptarla.
+      // BLOQUE 5: la peticiÃ³n puede venir sin proyecto; el material
+      // pendiente siempre es de uno, asÃ­ que se dice al aceptarla.
       const destino = request.project_id ?? body()?.p_project ?? null;
       if (!destino) {
-        return fail('Esta petición no trae proyecto. Elige a qué proyecto va el material '
+        return fail('Esta peticiÃ³n no trae proyecto. Elige a quÃ© proyecto va el material '
           + 'antes de aceptarla');
       }
 
@@ -1813,21 +1901,21 @@ export async function stubSupabase(context, {
       request.material_id = material.id;
       request.project_id = destino;
       avisar(request.worker_id, 'material_solicitado', 'Material anotado',
-        `Se ha añadido «${nombre}» al material pendiente.`, request.order_id);
-      registrar(`${actorName()} anotó material pendiente: ${nombre}`, null, 'materials');
+        `Se ha aÃ±adido Â«${nombre}Â» al material pendiente.`, request.order_id);
+      registrar(`${actorName()} anotÃ³ material pendiente: ${nombre}`, null, 'materials');
       return json(material);
     }
 
     if (path === '/rest/v1/rpc/discard_material_request') {
       const request = db.material_requests.find((r) => r.id === body()?.p_request);
-      if (!request) return fail('No se encuentra la comunicación', 'P0002');
-      if (request.status !== 'pendiente') return fail('Esta comunicación ya está revisada');
+      if (!request) return fail('No se encuentra la comunicaciÃ³n', 'P0002');
+      if (request.status !== 'pendiente') return fail('Esta comunicaciÃ³n ya estÃ¡ revisada');
       request.status = 'descartada';
       request.reviewed_at = new Date().toISOString();
       request.reviewed_by = actor().id;
       request.review_note = (body()?.p_note ?? '') || null;
       avisar(request.worker_id, 'material_solicitado', 'Material revisado',
-        request.review_note ?? 'Administración ha revisado tu aviso de material.', request.order_id);
+        request.review_note ?? 'AdministraciÃ³n ha revisado tu aviso de material.', request.order_id);
       return json(null);
     }
 
@@ -1843,7 +1931,7 @@ export async function stubSupabase(context, {
             db.notifications.unshift({
               id: `noti-${Math.random().toString(36).slice(2, 8)}`,
               user_id: adm.id, kind: 'material_retrasado', title: 'Material retrasado',
-              body: `${m.name} · ${project?.code ?? ''} · estaba previsto para el `
+              body: `${m.name} Â· ${project?.code ?? ''} Â· estaba previsto para el `
                 + `${m.expected_on.split('-').reverse().join('/')}`,
               order_id: null, read_at: null, is_demo: false,
               created_at: new Date().toISOString(),
@@ -1867,7 +1955,7 @@ export async function stubSupabase(context, {
       };
       db.payments.push(pay);
       recomputeBilling(project);
-      registrar(`${actorName()} apuntó un cobro en ${project.code}`, project.code, 'payments');
+      registrar(`${actorName()} apuntÃ³ un cobro en ${project.code}`, project.code, 'payments');
       return json(pay);
     }
 
@@ -1879,12 +1967,12 @@ export async function stubSupabase(context, {
       pay.voided_by = actor().id;
       const project = db.projects.find((p) => p.id === pay.project_id);
       if (project) recomputeBilling(project);
-      registrar(`${actorName()} anuló un cobro de ${pay.amount} €`, null, 'payments');
+      registrar(`${actorName()} anulÃ³ un cobro de ${pay.amount} â‚¬`, null, 'payments');
       return json(null);
     }
 
     if (path === '/rest/v1/project_billing') {
-      // Lee «projects», que es de administración desde el BLOQUE 1: a un
+      // Lee Â«projectsÂ», que es de administraciÃ³n desde el BLOQUE 1: a un
       // trabajador no le llega ni una fila.
       if (soloAdmin()) return json([]);
       const rows = db.projects.map((p) => {
@@ -1914,17 +2002,20 @@ export async function stubSupabase(context, {
 
 
     /**
-     * BLOQUE 4 · las cuentas de una obra, igual que la vista
-     * «work_summary»: proyectos + extras = total estimado.
+     * BLOQUE 4 Â· las cuentas de una obra, igual que la vista
+     * Â«work_summaryÂ»: proyectos + extras = total estimado.
      */
     const cuentasDeObra = (w) => {
       const proyectos = db.projects.filter((x) => x.work_id === w.id);
       const suma = (f) => proyectos.reduce((t, x) => t + Number(f(x) ?? 0), 0);
       const totalProyectos = suma((x) => x.budget_amount);
-      const extras = (db.work_extras ?? [])
-        .filter((x) => x.work_id === w.id)
+      const extrasDeLaObra = (db.work_extras ?? []).filter((x) => x.work_id === w.id);
+      const extras = extrasDeLaObra.reduce((t, x) => t + Number(x.amount ?? 0), 0);
+      // FASE 3.4 Â· solo los extras MARCADOS como facturados cuentan.
+      const extrasFacturados = extrasDeLaObra
+        .filter((x) => x.invoiced)
         .reduce((t, x) => t + Number(x.amount ?? 0), 0);
-      const facturado = suma((x) => x.invoiced_amount);
+      const facturado = suma((x) => x.invoiced_amount) + extrasFacturados;
       const cobrado = db.payments
         .filter((pg) => !pg.voided_at && proyectos.some((x) => x.id === pg.project_id))
         .reduce((t, pg) => t + Number(pg.amount ?? 0), 0);
@@ -1945,10 +2036,85 @@ export async function stubSupabase(context, {
         cobrado,
         material_pendiente: db.materials.filter((m) => !m.received && !m.archived_at
           && proyectos.some((x) => x.id === m.project_id)).length,
-        desde,
-        hasta: hastaLista[hastaLista.length - 1] ?? null,
+        extras_facturados: extrasFacturados,
+        extras_pendientes: extras - extrasFacturados,
+        // FASE 1.3 Â· Lo que la obra tenga escrito manda; si no, sus
+        // proyectos. Es el mismo Â«coalesceÂ» que hace la vista de verdad.
+        desde: w.cal_start ?? desde,
+        hasta: w.cal_end ?? (hastaLista[hastaLista.length - 1] ?? null),
       };
     };
+
+    // FASE 3.2 Â· Â«client_overviewÂ»: el cliente con su actividad y sus
+    // cuatro magnitudes. Mismas definiciones que la vista de verdad.
+    if (path === '/rest/v1/client_overview') {
+      const user = getUser();
+      // Solo administraciÃ³n: la vista filtra ella misma.
+      if (user && user.role !== 'admin') return json(applyFilters([], url));
+
+      const rows = (db.clients ?? []).map((c) => {
+        const fichas = db.fichas.filter((f) => f.client_id === c.id);
+        const viva = (f) => !f.archived_at;
+        const proyectos = db.projects.filter((p) => p.client_id === c.id && !p.archived_at);
+        const sum = (lista, f) => lista.reduce((t, x) => t + Number(f(x) ?? 0), 0);
+
+        const obras = (db.works ?? []).filter((w) => w.client_id === c.id && !w.archived_at);
+        const extras = (db.work_extras ?? []).filter((x) => obras.some((w) => w.id === x.work_id));
+
+        const presupuestado = sum(proyectos, (p) => p.budget_amount) + sum(extras, (x) => x.amount);
+        const facturado = sum(proyectos, (p) => p.invoiced_amount)
+          + sum(extras.filter((x) => x.invoiced), (x) => x.amount);
+        const cobrado = db.payments
+          .filter((pg) => !pg.voided_at && proyectos.some((p) => p.id === pg.project_id))
+          .reduce((t, pg) => t + Number(pg.amount ?? 0), 0);
+
+        return {
+          ...c,
+          budgets: fichas.filter((f) => f.type === 'presupuesto' && viva(f)).length,
+          visits: fichas.filter((f) => f.type === 'visita' && viva(f)).length,
+          notices: fichas.filter((f) => f.type === 'aviso' && viva(f)).length,
+          open_notices: fichas.filter((f) => f.type === 'aviso' && viva(f)
+            && !['realizado', 'cerrado'].includes(f.status)).length,
+          last_activity: fichas.map((f) => f.created_at).sort().pop() ?? null,
+          presupuestado,
+          facturado,
+          cobrado,
+          pendiente_facturar: presupuestado - facturado,
+          pendiente_cobrar: facturado - cobrado,
+          proyectos: proyectos.length,
+          proyectos_activos: proyectos.filter((p) => p.phase !== 'finalizado').length,
+        };
+      });
+      return json(applyFilters(rows, url));
+    }
+
+    // FASE 3.5 Â· Â«work_documentsÂ»: los archivos de la obra Y los de sus
+    // proyectos, sin duplicar ninguno, con el proyecto de origen.
+    if (path === '/rest/v1/work_documents') {
+      const user = getUser();
+      if (user && user.role !== 'admin') return json(applyFilters([], url));
+
+      const rows = [];
+      (db.works ?? []).forEach((w) => {
+        const suyos = db.documents.filter((d) => d.work_id === w.id);
+        const deProyectos = db.documents.filter((d) => d.project_id
+          && db.projects.some((p) => p.id === d.project_id && p.work_id === w.id));
+        [...suyos, ...deProyectos].forEach((d) => {
+          const pr = db.projects.find((p) => p.id === d.project_id) ?? null;
+          const quien = people.find((x) => x.id === d.uploaded_by) ?? null;
+          rows.push({
+            id: d.id, work_id: w.id, project_id: d.project_id ?? null,
+            origen_code: pr?.code ?? null, origen_name: pr?.name ?? null,
+            bucket: d.bucket, storage_path: d.storage_path, file_name: d.file_name,
+            mime_type: d.mime_type, size_bytes: d.size_bytes, category: d.category,
+            scope: d.scope, uploaded_by: d.uploaded_by ?? null,
+            uploader_name: quien?.full_name ?? null,
+            deleted_at: d.deleted_at ?? null, created_at: d.created_at,
+          });
+        });
+      });
+      return json(applyFilters(rows, url));
+    }
 
     if (path === '/rest/v1/work_summary') {
       const rows = visible('works', db.works ?? []).map(cuentasDeObra);
@@ -1961,9 +2127,9 @@ export async function stubSupabase(context, {
       const mine = user && !esAdmin ? myOrderIds(user) : null;
       const rows = [];
 
-      // BLOQUE 3: «fabricación» y «montaje» son ya la PLANIFICACIÓN del
-      // proyecto, con duración. Cada tramo se despliega en una fila por
-      // día laborable, igual que hace la vista de verdad.
+      // BLOQUE 3: Â«fabricaciÃ³nÂ» y Â«montajeÂ» son ya la PLANIFICACIÃ“N del
+      // proyecto, con duraciÃ³n. Cada tramo se despliega en una fila por
+      // dÃ­a laborable, igual que hace la vista de verdad.
       visible('projects', db.projects.filter((x) => !x.archived_at)).forEach(() => {});
       const proyectosVisibles = esAdmin
         ? db.projects.filter((x) => !x.archived_at)
@@ -1978,7 +2144,7 @@ export async function stubSupabase(context, {
           dias.forEach((day, i) => {
             rows.push({
               kind: fase, id: p.id, code: p.code, title: p.name,
-              detail: dias.length > 1 ? `Día ${i + 1} de ${dias.length}` : null,
+              detail: dias.length > 1 ? `DÃ­a ${i + 1} de ${dias.length}` : null,
               date: day, status: aMano ? 'Colocado a mano' : 'Planificado',
               project_id: p.id, project_code: p.code, client_name: c?.name ?? null,
               assigned: [
@@ -2008,7 +2174,7 @@ export async function stubSupabase(context, {
           });
         });
 
-      // BLOQUE 5: por «worker_fichas», no por la tabla: así el trabajador
+      // BLOQUE 5: por Â«worker_fichasÂ», no por la tabla: asÃ­ el trabajador
       // sigue viendo sus visitas y sus avisos, pero no el importe.
       const fichasVisibles = esAdmin
         ? db.fichas
@@ -2036,9 +2202,9 @@ export async function stubSupabase(context, {
         });
       });
 
-      // BLOQUE 4: la obra es un elemento más del calendario. No tiene
-      // fechas propias: van de la primera a la última de sus proyectos.
-      // Solo administración: «works» no se le devuelve al trabajador.
+      // BLOQUE 4: la obra es un elemento mÃ¡s del calendario. No tiene
+      // fechas propias: van de la primera a la Ãºltima de sus proyectos.
+      // Solo administraciÃ³n: Â«worksÂ» no se le devuelve al trabajador.
       visible('works', (db.works ?? []).filter((w) => !w.archived_at)).forEach((w) => {
         const c = cuentasDeObra(w);
         if (!c.desde || !c.hasta) return;
@@ -2061,17 +2227,17 @@ export async function stubSupabase(context, {
       return json(applyFilters(rows, url));
     }
 
-    // ------------- BLOQUE 1 · proyectos, equipo y partes -------------
+    // ------------- BLOQUE 1 Â· proyectos, equipo y partes -------------
 
     /**
-     * «worker_projects»: el proyecto tal como lo ve el trabajador.
-     * Se construye a propósito SIN las columnas de dinero, igual que la
-     * vista de verdad: así la prueba comprueba lo mismo que la base de
+     * Â«worker_projectsÂ»: el proyecto tal como lo ve el trabajador.
+     * Se construye a propÃ³sito SIN las columnas de dinero, igual que la
+     * vista de verdad: asÃ­ la prueba comprueba lo mismo que la base de
      * datos, y no que la pantalla lo esconda.
      */
     /**
-     * «worker_fichas»: la visita o el aviso tal como los ve un
-     * trabajador. Se construye a propósito SIN «amount», igual que la
+     * Â«worker_fichasÂ»: la visita o el aviso tal como los ve un
+     * trabajador. Se construye a propÃ³sito SIN Â«amountÂ», igual que la
      * vista de verdad.
      */
     if (path === '/rest/v1/worker_fichas') {
@@ -2218,7 +2384,7 @@ export async function stubSupabase(context, {
           rows.push({
             project_id: p.id, code: p.code, name: p.name, phase: p.phase,
             suggested_phase: 'finalizado',
-            message: 'El proyecto está cobrado. Ya puedes finalizarlo.',
+            message: 'El proyecto estÃ¡ cobrado. Ya puedes finalizarlo.',
           });
           return;
         }
@@ -2232,16 +2398,16 @@ export async function stubSupabase(context, {
         rows.push({
           project_id: p.id, code: p.code, name: p.name, phase: p.phase,
           suggested_phase: next,
-          message: `Todas las órdenes de ${tipo === 'montaje' ? 'montaje' : 'fabricación'} están validadas. `
-            + `Ya puedes pasar a ${next === 'montaje' ? 'Montaje' : 'Facturación'}.`,
+          message: `Todas las Ã³rdenes de ${tipo === 'montaje' ? 'montaje' : 'fabricaciÃ³n'} estÃ¡n validadas. `
+            + `Ya puedes pasar a ${next === 'montaje' ? 'Montaje' : 'FacturaciÃ³n'}.`,
         });
       });
       return json(applyFilters(rows, url));
     }
 
-    // ================= FASE 6 · PANEL, INFORMES Y COPIAS =================
-    // Los números los calcula la base de datos; aquí se repite el mismo
-    // cálculo para que las pantallas enseñen algo coherente. Las fórmulas
+    // ================= FASE 6 Â· PANEL, INFORMES Y COPIAS =================
+    // Los nÃºmeros los calcula la base de datos; aquÃ­ se repite el mismo
+    // cÃ¡lculo para que las pantallas enseÃ±en algo coherente. Las fÃ³rmulas
     // de verdad se comprueban en tests/sql/60_tests_fase6.sql.
 
     const rango = () => {
@@ -2319,7 +2485,7 @@ export async function stubSupabase(context, {
           retrasados: db.materials.filter((m) => !m.archived_at && retrasoDe(m) > 0).length,
           recibidos: db.materials.filter((m) => !m.archived_at && m.received).length,
         },
-        // A propósito NO hay alerta de exceso de horas.
+        // A propÃ³sito NO hay alerta de exceso de horas.
         alertas: {
           ordenes_atrasadas: vivas.filter((o) => o.scheduled_date < today()
             && ['pendiente', 'en_curso'].includes(o.status)).length,
@@ -2378,7 +2544,7 @@ export async function stubSupabase(context, {
           horas_reales: grupo.reduce(
             (t, p) => t + horasDe((o, w) => o.project_id === p.id && w.submitted_at), 0),
         };
-      }));  // salen las cinco fases, aunque alguna esté a cero
+      }));  // salen las cinco fases, aunque alguna estÃ© a cero
     }
 
     if (path === '/rest/v1/rpc/report_hours_by_worker') {
@@ -2450,7 +2616,7 @@ export async function stubSupabase(context, {
 
     // ---------------- Copias de seguridad ----------------
     if (path === '/rest/v1/rpc/start_backup') {
-      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
       const fila = {
         id: `bk-${Math.random().toString(36).slice(2, 8)}`,
         kind: body()?.p_kind ?? 'manual', status: 'en_curso',
@@ -2464,7 +2630,7 @@ export async function stubSupabase(context, {
     }
 
     if (path === '/rest/v1/rpc/finish_backup') {
-      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
       const b = body() ?? {};
       const fila = db.backups.find((x) => x.id === b.p_backup);
       if (!fila) return fail('No se encuentra esa copia.');
@@ -2475,12 +2641,12 @@ export async function stubSupabase(context, {
         drive_file_id: b.p_drive_file_id ?? null, drive_link: b.p_drive_link ?? null,
         error: b.p_error ?? null, finished_at: new Date().toISOString(),
       });
-      registrar(`${actorName()} generó una copia de seguridad`, null, 'backups');
+      registrar(`${actorName()} generÃ³ una copia de seguridad`, null, 'backups');
       return json(fila);
     }
 
     if (path === '/rest/v1/rpc/restore_data') {
-      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
       const { p_payload: payload = {}, p_scope: scope = [] } = body() ?? {};
       if (!scope.length) return fail('Elige al menos un apartado para restaurar.');
 
@@ -2514,64 +2680,64 @@ export async function stubSupabase(context, {
           const existente = db[tabla].find(
             (r) => (r.id ?? `${r.order_id}|${r.worker_id}`) === clave);
           // Al leer un CSV todo vuelve como texto. La base de datos lo
-          // convierte al tipo de cada columna; aquí se hace lo mismo
-          // mirando cómo es ese dato en la fila que ya hay.
+          // convierte al tipo de cada columna; aquÃ­ se hace lo mismo
+          // mirando cÃ³mo es ese dato en la fila que ya hay.
           const limpia = convertirFila(fila, existente ?? db[tabla][0]);
           if (existente) Object.assign(existente, limpia);  // se actualiza
-          else db[tabla].push({ ...limpia });               // se añade, nunca se borra
+          else db[tabla].push({ ...limpia });               // se aÃ±ade, nunca se borra
         }
         filas[tabla] = entrantes.length;
         total += entrantes.length;
       }
 
       registrar(
-        `${actorName()} restauró una copia de seguridad (${total} registros)`, null, 'backups');
+        `${actorName()} restaurÃ³ una copia de seguridad (${total} registros)`, null, 'backups');
       return json({ filas, total, apartados: scope });
     }
 
     // ---------------- Ajustes ----------------
     if (path === '/rest/v1/rpc/set_company') {
-      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
       db.settings.company = { ...db.settings.company, ...(body()?.p_company ?? {}) };
       db.settings.updated_at = new Date().toISOString();
-      registrar(`${actorName()} cambió los datos de la empresa`, null, 'app_settings');
+      registrar(`${actorName()} cambiÃ³ los datos de la empresa`, null, 'app_settings');
       return json(db.settings);
     }
 
     if (path === '/rest/v1/rpc/set_backup_settings') {
-      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
       const b = body() ?? {};
       db.settings.backup = { ...db.settings.backup, ...(b.p_backup ?? {}) };
       if (b.p_retention_days != null) {
         const dias = Number(b.p_retention_days);
         if (!Number.isFinite(dias) || dias < 1 || dias > 365) {
-          return fail('Los días que se guardan las copias deben estar entre 1 y 365.');
+          return fail('Los dÃ­as que se guardan las copias deben estar entre 1 y 365.');
         }
         db.settings.backup_retention_days = dias;
       }
-      registrar(`${actorName()} cambió los ajustes de las copias`, null, 'app_settings');
+      registrar(`${actorName()} cambiÃ³ los ajustes de las copias`, null, 'app_settings');
       return json(db.settings);
     }
 
     if (path === '/rest/v1/rpc/set_max_file_mb') {
-      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
       const mb = Number(body()?.p_mb);
       if (!Number.isFinite(mb) || mb < 1 || mb > 500) {
-        return fail('El tamaño máximo debe estar entre 1 y 500 MB.');
+        return fail('El tamaÃ±o mÃ¡ximo debe estar entre 1 y 500 MB.');
       }
       db.settings.max_file_mb = mb;
       return json(db.settings);
     }
 
     if (path === '/rest/v1/rpc/set_counter') {
-      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
       const b = body() ?? {};
       const valor = Number(b.p_value);
-      if (!Number.isFinite(valor) || valor < 0) return fail('El número debe ser cero o mayor.');
+      if (!Number.isFinite(valor) || valor < 0) return fail('El nÃºmero debe ser cero o mayor.');
       const fila = db.code_counters.find((c) => c.prefix === b.p_prefix && c.year === b.p_year);
       if (fila) fila.last_value = valor;
       else db.code_counters.push({ prefix: b.p_prefix, year: b.p_year, last_value: valor });
-      registrar(`${actorName()} ajustó la numeración de ${b.p_prefix}`, null, 'code_counters');
+      registrar(`${actorName()} ajustÃ³ la numeraciÃ³n de ${b.p_prefix}`, null, 'code_counters');
       return json(null);
     }
 
@@ -2584,7 +2750,7 @@ export async function stubSupabase(context, {
 
     if (path === '/rest/v1/storage_usage') {
       if (soloAdmin()) return json([]);
-      const NOMBRE = { foto: 'Fotografías', video: 'Vídeos', firma: 'Firmas' };
+      const NOMBRE = { foto: 'FotografÃ­as', video: 'VÃ­deos', firma: 'Firmas' };
       const porTipo = new Map();
       for (const d of db.documents) {
         const tipo = NOMBRE[d.category] ?? 'Documentos';
@@ -2600,7 +2766,7 @@ export async function stubSupabase(context, {
       return json([...porTipo.values()].sort((a, b) => a.tipo.localeCompare(b.tipo)));
     }
 
-    // ---------------- Conexión con Google Drive ----------------
+    // ---------------- ConexiÃ³n con Google Drive ----------------
     if (path === '/rest/v1/rpc/drive_status') {
       if (soloAdmin()) return fail('No tienes permisos para ver esto.', '42501');
       const d = db.drive;
@@ -2620,17 +2786,17 @@ export async function stubSupabase(context, {
     // funciones solo las puede ejecutar el servidor.
     if (['drive_get_token', 'drive_put_token', 'drive_forget_token',
          'drive_mark_connected', 'drive_disconnect'].some((f) => path.endsWith(`/rpc/${f}`))) {
-      return fail('No tienes permisos para realizar esta acción.', '42501');
+      return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
     }
 
     // ---------------- Funciones del servidor ----------------
-    // Aquí no hay ninguna credencial: se imita lo que responde Supabase.
+    // AquÃ­ no hay ninguna credencial: se imita lo que responde Supabase.
     if (path.startsWith('/functions/v1/')) {
       const fn = path.replace('/functions/v1/', '');
       if (soloAdmin()) {
         return route.fulfill({
           status: 403, headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ ok: false, message: 'No tienes permisos para realizar esta acción.' }),
+          body: JSON.stringify({ ok: false, message: 'No tienes permisos para realizar esta acciÃ³n.' }),
         });
       }
 
@@ -2640,8 +2806,8 @@ export async function stubSupabase(context, {
             status: 400, headers: { 'content-type': 'application/json' },
             body: JSON.stringify({
               ok: false,
-              message: 'Google Drive todavía no está conectado. Entra en Configuración → '
-                + 'Copias de seguridad y pulsa «Conectar Google Drive».',
+              message: 'Google Drive todavÃ­a no estÃ¡ conectado. Entra en ConfiguraciÃ³n â†’ '
+                + 'Copias de seguridad y pulsa Â«Conectar Google DriveÂ».',
             }),
           });
         }
@@ -2664,7 +2830,7 @@ export async function stubSupabase(context, {
         });
         db.drive.last_ok_at = new Date().toISOString();
         db.drive.last_error = null;
-        registrar(`${actorName()} subió una copia a Google Drive`, null, 'backups');
+        registrar(`${actorName()} subiÃ³ una copia a Google Drive`, null, 'backups');
         return json({
           ok: true, file_name: nombre,
           link: 'https://drive.google.com/file/d/drive-1/view', size: 24_576, removed: 0,
@@ -2678,16 +2844,16 @@ export async function stubSupabase(context, {
             connected: false, account_email: null, folder_id: null, folder_name: null,
             connected_at: null, last_error: null,
           });
-          registrar(`${actorName()} desconectó Google Drive`, null, 'backups');
+          registrar(`${actorName()} desconectÃ³ Google Drive`, null, 'backups');
           return json({ ok: true });
         }
         if (!driveConfigured) {
           return route.fulfill({
             status: 400, headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ ok: false, message: 'Falta configurar la conexión con Google.' }),
+            body: JSON.stringify({ ok: false, message: 'Falta configurar la conexiÃ³n con Google.' }),
           });
         }
-        // La autorización ocurre en Google; aquí solo se devuelve a dónde ir.
+        // La autorizaciÃ³n ocurre en Google; aquÃ­ solo se devuelve a dÃ³nde ir.
         return json({
           ok: true,
           url: 'https://accounts.google.com/o/oauth2/v2/auth?client_id=prueba'
@@ -2702,7 +2868,7 @@ export async function stubSupabase(context, {
           if (people.some((p) => p.username === b.username)) {
             return route.fulfill({
               status: 400, headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({ ok: false, message: `Ya existe un usuario llamado «${b.username}».` }),
+              body: JSON.stringify({ ok: false, message: `Ya existe un usuario llamado Â«${b.username}Â».` }),
             });
           }
           const nuevo = {
@@ -2717,12 +2883,12 @@ export async function stubSupabase(context, {
           return json({ ok: true, id: nuevo.id, username: b.username });
         }
         if (b.action === 'password') {
-          registrar(`${actorName()} cambió una contraseña`, null, 'profiles');
+          registrar(`${actorName()} cambiÃ³ una contraseÃ±a`, null, 'profiles');
           return json({ ok: true });
         }
         return route.fulfill({
           status: 400, headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ ok: false, message: 'Acción desconocida.' }),
+          body: JSON.stringify({ ok: false, message: 'AcciÃ³n desconocida.' }),
         });
       }
       return json({ ok: true });
@@ -2730,14 +2896,14 @@ export async function stubSupabase(context, {
 
     // ---------------- Personas y ajustes ----------------
     if (path === '/rest/v1/profiles') {
-      // La ficha de quien ha iniciado sesión refleja lo que devuelva
+      // La ficha de quien ha iniciado sesiÃ³n refleja lo que devuelva
       // getUser (por ejemplo, un usuario desactivado).
       const actual = getUser();
       const rows = people.map((p) => (actual && p.id === actual.id ? actual : p));
 
       if (method === 'PATCH') {
-        // Cambiar el papel o desactivar a alguien es cosa de administración.
-        if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+        // Cambiar el papel o desactivar a alguien es cosa de administraciÃ³n.
+        if (soloAdmin()) return fail('No tienes permisos para realizar esta acciÃ³n.', '42501');
         const afectadas = applyFilters(people, url);
         const patch = body() ?? {};
         afectadas.forEach((persona) => {
@@ -2745,11 +2911,11 @@ export async function stubSupabase(context, {
           if ('role' in patch) {
             registrar(
               `${actorName()} puso a ${persona.full_name} como `
-              + `${patch.role === 'admin' ? 'administración' : 'trabajador'}`, null, 'profiles');
+              + `${patch.role === 'admin' ? 'administraciÃ³n' : 'trabajador'}`, null, 'profiles');
           }
           if ('active' in patch) {
             registrar(
-              `${actorName()} ${patch.active ? 'reactivó' : 'desactivó'} a ${persona.full_name}`,
+              `${actorName()} ${patch.active ? 'reactivÃ³' : 'desactivÃ³'} a ${persona.full_name}`,
               null, 'profiles');
           }
         });
@@ -2757,10 +2923,10 @@ export async function stubSupabase(context, {
       }
 
       if (url.searchParams.get('select') === 'id') return count(applyFilters(rows, url).length);
-      // REVISIÓN: el teléfono, el correo, el usuario de acceso y las
+      // REVISIÃ“N: el telÃ©fono, el correo, el usuario de acceso y las
       // preferencias NO se conceden sobre esta tabla (son permisos por
       // columna). La tabla devuelve el resto; esos cuatro se leen por
-      // «profiles_full», y aquí se quitan igual que allí.
+      // Â«profiles_fullÂ», y aquÃ­ se quitan igual que allÃ­.
       const filtered = applyFilters(rows, url).map((p) => {
         const { email, phone, preferences, username, ...resto } = p;
         return resto;
@@ -2769,8 +2935,8 @@ export async function stubSupabase(context, {
     }
 
     /**
-     * «profiles_full»: la ficha completa, con los datos personales.
-     * Cada persona la suya; administración, todas.
+     * Â«profiles_fullÂ»: la ficha completa, con los datos personales.
+     * Cada persona la suya; administraciÃ³n, todas.
      */
     if (path === '/rest/v1/profiles_full') {
       const actual = getUser();
@@ -2783,8 +2949,8 @@ export async function stubSupabase(context, {
     }
 
     if (path === '/rest/v1/app_settings') {
-      // Todo el mundo necesita saber el tamaño máximo de archivo; el resto
-      // de los ajustes solo los ve administración.
+      // Todo el mundo necesita saber el tamaÃ±o mÃ¡ximo de archivo; el resto
+      // de los ajustes solo los ve administraciÃ³n.
       const row = soloAdmin()
         ? { id: 1, max_file_mb: db.settings.max_file_mb }
         : db.settings;
@@ -2854,7 +3020,7 @@ export async function stubSupabase(context, {
           db.counters[prefix] += 1;
           row.code = `${prefix}-${YEAR}-${String(db.counters[prefix]).padStart(3, '0')}`;
           row.status = row.assigned_to ? NEXT_WHEN_ASSIGNED[row.type] : 'por_asignar';
-          registrar(`Salvi Plaza creó la ficha de ${row.type} ${row.code}`, row.code, 'fichas');
+          registrar(`Salvi Plaza creÃ³ la ficha de ${row.type} ${row.code}`, row.code, 'fichas');
         }
 
         if (table === 'projects') {
@@ -2866,9 +3032,9 @@ export async function stubSupabase(context, {
           row.finished_at = null;
           row.budget_hours_fab = row.budget_hours_fab ?? 0;
           row.budget_hours_mont = row.budget_hours_mont ?? 0;
-          // Los valores por defecto de la tabla de verdad («not null
-          // default 2» y demás). Sin esto, la pantalla recibía undefined
-          // y pintaba «NaN día(s)», que en producción no puede pasar.
+          // Los valores por defecto de la tabla de verdad (Â«not null
+          // default 2Â» y demÃ¡s). Sin esto, la pantalla recibÃ­a undefined
+          // y pintaba Â«NaN dÃ­a(s)Â», que en producciÃ³n no puede pasar.
           row.fab_workers = row.fab_workers ?? 2;
           row.mont_workers = row.mont_workers ?? 2;
           row.fab_manual = row.fab_manual ?? false;
@@ -2881,7 +3047,7 @@ export async function stubSupabase(context, {
           row.work_id = row.work_id ?? null;
           row.invoiced_amount = row.invoiced_amount ?? null;
           row.invoiced_on = row.invoiced_on ?? null;
-          registrar(`Salvi Plaza creó el proyecto ${row.code} · ${row.name}`, row.code, 'projects');
+          registrar(`Salvi Plaza creÃ³ el proyecto ${row.code} Â· ${row.name}`, row.code, 'projects');
         }
 
         if (table === 'work_orders') {
@@ -2892,7 +3058,7 @@ export async function stubSupabase(context, {
           row.returned_at = null; row.return_reason = null;
           row.planned_hours = row.planned_hours ?? 0;
           registrar(
-            `${actorName()} creó la orden de ${row.type === 'montaje' ? 'montaje' : 'fabricación'} ${row.code}`,
+            `${actorName()} creÃ³ la orden de ${row.type === 'montaje' ? 'montaje' : 'fabricaciÃ³n'} ${row.code}`,
             row.code, 'work_orders',
           );
         }
@@ -2900,10 +3066,10 @@ export async function stubSupabase(context, {
         if (table === 'materials') {
           row.received = row.received ?? false;
           row.late_notified_on = null;
-          registrar(`${actorName()} anotó material pendiente: ${row.name}`, null, 'materials');
+          registrar(`${actorName()} anotÃ³ material pendiente: ${row.name}`, null, 'materials');
         }
 
-        if (table === 'clients') registrar(`Salvi Plaza creó el cliente ${row.name}`, row.name, 'clients');
+        if (table === 'clients') registrar(`Salvi Plaza creÃ³ el cliente ${row.name}`, row.name, 'clients');
 
         db[table].push(row);
         return embed(table, row);
@@ -2922,13 +3088,13 @@ export async function stubSupabase(context, {
           row.status = NEXT_WHEN_ASSIGNED[row.type];
         }
         if (table === 'fichas' && patch.status) {
-          registrar(`Salvi Plaza cambió la ficha ${row.code}`, row.code, 'fichas');
+          registrar(`Salvi Plaza cambiÃ³ la ficha ${row.code}`, row.code, 'fichas');
         }
         if (table === 'projects' && 'no_assembly' in patch) {
           registrar(
             patch.no_assembly
-              ? `Salvi Plaza marcó «Sin montaje» en ${row.code}`
-              : `Salvi Plaza quitó «Sin montaje» de ${row.code}`,
+              ? `Salvi Plaza marcÃ³ Â«Sin montajeÂ» en ${row.code}`
+              : `Salvi Plaza quitÃ³ Â«Sin montajeÂ» de ${row.code}`,
             row.code, 'projects',
           );
         }
@@ -2936,8 +3102,8 @@ export async function stubSupabase(context, {
           if (patch.received) row.late_notified_on = null;
           registrar(
             patch.received
-              ? `${actorName()} marcó como recibido «${row.name}»`
-              : `${actorName()} volvió a marcar como pendiente «${row.name}»`,
+              ? `${actorName()} marcÃ³ como recibido Â«${row.name}Â»`
+              : `${actorName()} volviÃ³ a marcar como pendiente Â«${row.name}Â»`,
             null, 'materials',
           );
         }
@@ -2950,8 +3116,8 @@ export async function stubSupabase(context, {
           const name = row.code ?? row.name;
           registrar(
             patch.archived_at
-              ? `Salvi Plaza archivó ${label} ${name}`
-              : `Salvi Plaza recuperó ${label} archivado ${name}`,
+              ? `Salvi Plaza archivÃ³ ${label} ${name}`
+              : `Salvi Plaza recuperÃ³ ${label} archivado ${name}`,
             name, table,
           );
         }
@@ -2970,7 +3136,7 @@ export async function stubSupabase(context, {
   });
 }
 
-/** Entra en la aplicación con un usuario. */
+/** Entra en la aplicaciÃ³n con un usuario. */
 export async function signIn(page, port, username, password = 'contrasena-de-prueba') {
   await page.goto(`http://localhost:${port}/#/login`, { waitUntil: 'networkidle' });
   await page.locator('#username').fill(username);
@@ -2980,3 +3146,5 @@ export async function signIn(page, port, username, password = 'contrasena-de-pru
 }
 
 export { PHASES, PHASE_LABEL };
+
+

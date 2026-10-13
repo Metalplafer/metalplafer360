@@ -21,7 +21,10 @@ await p.locator('button:has-text("Poner datos de ejemplo")').click();
 await p.waitForTimeout(1500);
 const pantallas = [
   ['clientes', '#/admin/clientes'], ['fichas', '#/admin/fichas'],
-  ['proyectos', '#/admin/proyectos'], ['ordenes', '#/admin/ordenes'],
+  // FASE 4 · «ordenes» se retira: esa pantalla ya no existe. En su
+  // sitio se captura la de PARTES, que es el flujo de ahora.
+  ['proyectos', '#/admin/proyectos'], ['partes', '#/admin/partes'],
+  ['obras', '#/admin/obras'],
   ['material', '#/admin/material'], ['calendario', '#/admin/calendario'],
   ['facturacion', '#/admin/facturacion'], ['trabajadores', '#/admin/trabajadores'],
 ];

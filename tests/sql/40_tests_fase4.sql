@@ -256,9 +256,26 @@ select test.ok('archivos', 'Puede subir a la carpeta de su orden',
 select test.ok('archivos', 'No puede subir a la carpeta de una orden ajena',
   not public.storage_can_upload('orders/' || test.id('ot_ajena') || '/foto-1.jpg'));
 
-select test.ok('archivos', 'No puede subir a las carpetas administrativas',
-  not public.storage_can_upload('fichas/' || test.id('vis1') || '/x.pdf')
-  and not public.storage_can_upload('projects/' || test.id('proy1') || '/planos.pdf'));
+select test.ok('archivos', 'No puede subir a las fichas de administración',
+  not public.storage_can_upload('fichas/' || test.id('vis1') || '/x.pdf'));
+
+-- FASE 2.2 · Esta comprobación decía antes que el trabajador NO podía
+-- subir a la carpeta de un proyecto. Se pidió expresamente lo contrario:
+-- tiene que poder subir fotos, vídeos y documentos a los proyectos a los
+-- que llega, y «proy1» es uno de ellos porque tiene una orden suya.
+--
+-- Lo que sigue estando cerrado es el proyecto AJENO, y eso es lo que de
+-- verdad había que vigilar aquí.
+select test.ok('archivos', 'Sí puede subir a la carpeta de un proyecto suyo',
+  public.storage_can_upload('projects/' || test.id('proy1') || '/foto-obra.jpg'));
+
+select test.ok('archivos', 'Pero NO a la de un proyecto que no es suyo',
+  not public.storage_can_upload('projects/' || test.id('proy_conv') || '/planos.pdf'));
+
+select test.ok('archivos', 'Y lo que suba a un proyecto nunca es administrativo',
+  not exists (
+    select 1 from public.documents
+     where uploaded_by = test.id('juan') and scope = 'administrativa'));
 
 with x as (
   insert into public.documents (order_id, storage_path, file_name, mime_type,

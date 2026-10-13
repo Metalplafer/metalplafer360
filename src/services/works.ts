@@ -1,4 +1,5 @@
 import { supabase, unwrap } from '@/lib/supabase';
+import { Aviso } from '@/lib/errors';
 import type { Project, Work, WorkExtra, WorkSummary } from '@/types/db';
 
 /**
@@ -98,6 +99,28 @@ export async function setProjectWork(projectId: string, workId: string | null) {
   })) as unknown as Project;
 }
 
+/**
+ * FASE 1.3 · EL PERIODO DE LA OBRA EN EL CALENDARIO.
+ *
+ * Las dos fechas, o las dos en blanco para que la obra vuelva a seguir a
+ * sus proyectos. NO se comprueba disponibilidad.
+ */
+export async function setWorkDates(
+  workId: string, start: string | null, end: string | null,
+) {
+  const w = unwrap(await supabase.rpc('set_work_dates', {
+    p_work: workId, p_start: start, p_end: end,
+  })) as unknown as Work | null;
+
+  // Igual que con las fases: se confirma contra lo que ha devuelto la
+  // base de datos antes de decirle a nadie que está guardado.
+  if (!w || w.cal_start !== start || w.cal_end !== end) {
+    throw new Aviso('El periodo no se ha guardado. Vuelve a cargar la obra '
+      + 'y compruébalo antes de darlo por bueno.');
+  }
+  return w;
+}
+
 export async function archiveWork(id: string, archive = true) {
   return unwrap(await supabase.rpc('archive_work', {
     p_work: id, p_archive: archive,
@@ -139,6 +162,29 @@ export async function saveWorkExtra(input: {
 
 export async function deleteWorkExtra(id: string) {
   return unwrap(await supabase.rpc('delete_work_extra', { p_id: id }));
+}
+
+/**
+ * FASE 3.4 · MARCAR UN COSTE EXTRA COMO FACTURADO.
+ *
+ * Se marca A MANO, igual que la facturación de un proyecto. Guardar un
+ * coste extra NO lo factura: se pidió expresamente que no.
+ *
+ * Solo los marcados entran en el «facturado» de la obra, así que un
+ * mismo coste no puede contarse dos veces.
+ */
+export async function setWorkExtraInvoiced(
+  extraId: string, invoiced: boolean, on?: string | null,
+) {
+  const x = unwrap(await supabase.rpc('set_work_extra_invoiced', {
+    p_extra: extraId, p_invoiced: invoiced, p_on: on ?? null,
+  })) as unknown as WorkExtra | null;
+
+  if (!x || x.invoiced !== invoiced) {
+    throw new Aviso('El cambio no se ha guardado. Vuelve a cargar la obra y '
+      + 'compruébalo antes de darlo por bueno.');
+  }
+  return x;
 }
 
 // ---------------------------------------------------------------------

@@ -106,6 +106,41 @@ export function toUserMessage(err: unknown): string {
     return 'La contraseña debe tener al menos 8 caracteres.';
   }
 
+  // -------------------------------------------------------------------
+  // ERRORES DE LA CAPA DE DATOS (PostgREST), que llegan en inglés.
+  //
+  // Estos no son fallos de la persona que está usando la aplicación: son
+  // fallos NUESTROS, de cómo está escrita la consulta o de que el
+  // esquema ha cambiado. Pero sin traducir caían todos en el «error
+  // inesperado», y así un defecto real se quedaba escondido detrás de un
+  // mensaje que no dice nada: fue justo lo que pasó con los comentarios,
+  // que llevaban tiempo sin poder crearse por un PGRST201.
+  //
+  // Se dice qué ha pasado, en castellano, y se deja la pista técnica en
+  // la consola para quien tenga que arreglarlo.
+  // -------------------------------------------------------------------
+  const PGRST: Record<string, string> = {
+    // Más de un camino entre dos tablas y no se ha dicho por cuál.
+    PGRST201: 'Esta pantalla no ha podido relacionar dos datos entre sí. Es un fallo de la '
+      + 'aplicación, no de lo que has escrito. Avisa a administración.',
+    // No existe la relación que la consulta pide.
+    PGRST200: 'Esta pantalla ha pedido un dato relacionado que ya no existe. Es un fallo de '
+      + 'la aplicación, no de lo que has escrito. Avisa a administración.',
+    // Columna que no existe (esquema cambiado).
+    PGRST204: 'Esta pantalla ha pedido un campo que ya no existe. Es un fallo de la '
+      + 'aplicación. Avisa a administración.',
+    // Tabla o vista que no existe.
+    PGRST205: 'Esta pantalla ha pedido datos que ya no existen. Es un fallo de la '
+      + 'aplicación. Avisa a administración.',
+    // Se esperaba una fila y han venido cero (o varias).
+    PGRST116: 'No se ha encontrado lo que se buscaba. Puede que otra persona lo haya '
+      + 'cambiado o eliminado hace un momento. Vuelve a cargar la pantalla.',
+  };
+  if (e.code && PGRST[e.code]) {
+    console.error('[METALPLAFER360]', e.code, msg, err);
+    return PGRST[e.code];
+  }
+
   // Mensaje ya redactado en castellano por nosotros
   if (msg && /[áéíóúñ¿]|^(el|la|los|las|no|solo|ya|falta|debe|para|hay|tu)\b/i.test(msg)) return msg;
 

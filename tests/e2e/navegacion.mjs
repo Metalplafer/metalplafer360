@@ -145,8 +145,10 @@ try {
   check('El administrador entra y llega a su panel', page.url().includes('#/admin'));
   check('Se le saluda por su nombre',
     (await page.locator('h1').first().innerText()).includes('Salvi'));
-  check('El menú de administración tiene las 14 secciones',
-    (await page.locator('.sidebar nav a').count()) === 14);
+  // FASE 4 · eran 14; se retiró «Órdenes de trabajo» y quedan 13.
+  check('El menú de administración tiene las 13 secciones',
+    (await page.locator('.sidebar nav a').count()) === 13,
+    String(await page.locator('.sidebar nav a').count()));
 
   // ---------------------------------------------------------------------
   // La cabecera del menú lateral: [icono 360] [logo Metalplafer].
@@ -237,16 +239,22 @@ try {
   await page.waitForTimeout(250);
 
   const menu = await page.locator('.sidebar nav a').allInnerTexts();
-  // BLOQUE 1: «Partes de trabajo» entra entre Proyectos y Órdenes.
+  // BLOQUE 1: «Partes de trabajo» entra entre Proyectos y Material.
   // BLOQUE 4: «Obras» entra delante de Proyectos, porque es su contenedor.
+  // FASE 4: «Órdenes de trabajo» SE RETIRA. El trabajo se organiza con
+  // los partes, y la sección antigua ya no aparece en el menú.
   const expected = ['Dashboard', 'Fichas', 'Obras', 'Proyectos', 'Partes de trabajo',
-    'Órdenes de trabajo', 'Material pendiente', 'Calendario', 'Avisos', 'Clientes',
+    'Material pendiente', 'Calendario', 'Avisos', 'Clientes',
     'Trabajadores', 'Facturación', 'Informes', 'Configuración'];
   check('Las secciones son exactamente las previstas',
-    expected.every((label, i) => menu[i].includes(label)), menu.join(' | '));
+    menu.length === expected.length
+    && expected.every((label, i) => menu[i].includes(label)), menu.join(' | '));
+  check('Y «Órdenes de trabajo» ya no está entre ellas',
+    !menu.some((t) => t.includes('Órdenes de trabajo')), menu.join(' | '));
 
-  // El panel de inicio reúne producción, proyectos, órdenes, material,
-  // alertas y economía (se prueba a fondo en fase6.mjs).
+  // El panel de inicio reúne producción, proyectos, material, alertas y
+  // economía (se prueba a fondo en fase6.mjs). La tarjeta de órdenes se
+  // retiró con la sección, en la FASE 4.
   const proyectos = await page.locator('.panel:has-text("Proyectos") .figure b').allInnerTexts();
   check('El panel cuenta los proyectos activos y los finalizados',
     proyectos[0] === '2' && proyectos[2] === '1', proyectos.join(' | '));
@@ -260,9 +268,10 @@ try {
     alertas.includes('fichas por asignar'), alertas.replace(/\n/g, ' · '));
 
   const panel = await page.locator('main').innerText();
-  check('Reúne en un mismo sitio producción, órdenes, material y economía',
-    ['Producción', 'Órdenes de trabajo', 'Material', 'Economía']
-      .every((t) => panel.includes(t)));
+  check('Reúne en un mismo sitio producción, material y economía',
+    ['Producción', 'Material', 'Economía'].every((t) => panel.includes(t)));
+  check('Y ya no habla de órdenes de trabajo',
+    !panel.includes('Órdenes de trabajo'));
 
   // Navegación entre secciones
   await page.locator('.sidebar nav a:has-text("Proyectos")').click();

@@ -31,6 +31,8 @@
 .field > label, .label { font-size: .84rem; font-weight: 600; color: var(--steel-600); }
 .field .hint { font-size: .8rem; color: var(--faint); }
 .field .error { font-size: .82rem; color: var(--danger); }
+/* El mismo aviso, cuando va suelto y no dentro de un .field. */
+.error-text { font-size: .82rem; color: var(--danger); }
 .input, .select, .textarea {
   width: 100%; min-height: 40px; padding: 8px 11px;
   border: 1px solid var(--line-strong); border-radius: var(--r-md);

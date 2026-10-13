@@ -21,9 +21,10 @@ const WorkDetail = lazy(() => import('@/pages/admin/WorkDetail'));
 const ProjectsList = lazy(() => import('@/pages/admin/ProjectsList'));
 const ProjectForm = lazy(() => import('@/pages/admin/ProjectForm'));
 const ProjectDetail = lazy(() => import('@/pages/admin/ProjectDetail'));
-const OrdersList = lazy(() => import('@/pages/admin/OrdersList'));
-const OrderForm = lazy(() => import('@/pages/admin/OrderForm'));
-const OrderDetail = lazy(() => import('@/pages/admin/OrderDetail'));
+// FASE 4 · Aquí se cargaban las pantallas de las órdenes de trabajo de
+// administración. Se retiran de las rutas; los archivos se quedan en el
+// repositorio porque el lado del TRABAJADOR sigue usando su pantalla de
+// órdenes para terminar lo que esté a medias.
 const MaterialsList = lazy(() => import('@/pages/admin/MaterialsList'));
 const CalendarPage = lazy(() => import('@/pages/admin/CalendarPage'));
 const BillingPage = lazy(() => import('@/pages/admin/BillingPage'));
@@ -91,10 +92,18 @@ export function App() {
 
             <Route path="partes" element={<Lazy><AdminReports /></Lazy>} />
             <Route path="partes/:id" element={<Lazy><AdminReportDetail /></Lazy>} />
-            <Route path="ordenes" element={<Lazy><OrdersList /></Lazy>} />
-            <Route path="ordenes/nueva" element={<Lazy><OrderForm /></Lazy>} />
-            <Route path="ordenes/:id" element={<Lazy><OrderDetail /></Lazy>} />
-            <Route path="ordenes/:id/editar" element={<Lazy><OrderForm /></Lazy>} />
+
+            {/* FASE 4 · Las rutas de las órdenes de trabajo de
+                administración se retiran para que no quede un acceso
+                suelto escribiendo la dirección a mano. Quien llegue con
+                un enlace viejo cae en la pantalla de «no existe», que es
+                lo correcto: esa sección ya no está.
+
+                Lo que NO se toca es la base de datos. Las órdenes que
+                existan siguen ahí y siguen viéndose como histórico en la
+                ficha de su proyecto. Tampoco se toca el lado del
+                trabajador, para que una orden que esté a medias se pueda
+                terminar. */}
 
             <Route path="material" element={<Lazy><MaterialsList /></Lazy>} />
             <Route path="calendario" element={<Lazy><CalendarPage /></Lazy>} />

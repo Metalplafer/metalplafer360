@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Save } from 'lucide-react';
 import { useAsync } from '@/hooks/useAsync';
@@ -8,7 +8,7 @@ import { Alert, ErrorBox, Loading } from '@/components/ui/Feedback';
 import { ClientPicker, emptyClient, type ClientDraft } from '@/components/shared/ClientPicker';
 import { createClient, getClient, listContacts } from '@/services/clients';
 import { createProject, getProject, updateProject } from '@/services/projects';
-import { setProjectWork, worksForPicker } from '@/services/works';
+import { getWork, setProjectWork, worksForPicker } from '@/services/works';
 import { parseDecimal } from '@/lib/format';
 import { toUserMessage } from '@/lib/errors';
 
@@ -42,11 +42,48 @@ export default function ProjectForm() {
   const obras = useAsync(() => worksForPicker(), []);
   const [workId, setWorkId] = useState('');
 
+  /**
+   * FASE 3.1 · LOS DATOS DEL CLIENTE SALEN DE LA OBRA.
+   *
+   * Antes, venir desde una obra solo dejaba la obra elegida en el
+   * desplegable: el cliente había que volver a escribirlo, teniéndolo la
+   * obra ya guardado. Y escribirlo a mano acababa creando una SEGUNDA
+   * ficha del mismo cliente, porque al guardar se crea un cliente nuevo
+   * cuando no hay uno elegido.
+   *
+   * Ahora se trae el cliente de la obra CON SU IDENTIFICADOR, así que al
+   * guardar se reutiliza el que ya existe y no se crea ninguno.
+   *
+   * NO SE SOBRESCRIBE NADA: solo rellena si el cliente está vacío. Si
+   * quien lo está creando ya ha elegido o escrito un cliente, se queda
+   * el suyo. Y todos los campos siguen siendo editables.
+   */
+  const precargarDesdeObra = useCallback(async (obraId: string) => {
+    try {
+      const obra = await getWork(obraId);
+      if (!obra?.client_id) return;
+      const c = await getClient(obra.client_id);
+      setClient((actual) => (actual.id || actual.name.trim() ? actual : {
+        id: c.id, kind: c.kind, name: c.name, tax_id: c.tax_id ?? '', phone: c.phone ?? '',
+        email: c.email ?? '', address: c.address ?? '', city: c.city ?? '',
+        postal_code: c.postal_code ?? '',
+      }));
+      // La dirección de la obra, si el proyecto todavía no tiene una:
+      // es el mismo sitio y no hay que volver a escribirla.
+      if (obra.address) {
+        setForm((f) => (f.address.trim() ? f : { ...f, address: obra.address ?? '' }));
+      }
+    } catch { /* si la obra no se puede leer, se deja todo como está */ }
+  }, []);
+
   // Obra indicada en la dirección (al crear un proyecto desde su obra)
   useEffect(() => {
     const obra = params.get('obra');
-    if (obra && !editing) setWorkId(obra);
-  }, [params, editing]);
+    if (!obra || editing) return;
+    setWorkId(obra);
+    // Si además se ha indicado un cliente, manda ese y no se toca.
+    if (!params.get('cliente')) precargarDesdeObra(obra);
+  }, [params, editing, precargarDesdeObra]);
 
   // Cliente indicado en la dirección (al crear desde su ficha)
   useEffect(() => {
@@ -206,7 +243,12 @@ export default function ProjectForm() {
           <div className="field" style={{ maxWidth: 420 }}>
             <label htmlFor="p-work">Obra a la que pertenece</label>
             <select id="p-work" className="select" value={workId}
-                    onChange={(e) => setWorkId(e.target.value)}>
+                    onChange={(e) => {
+                      setWorkId(e.target.value);
+                      // Elegir una obra aquí precarga su cliente igual que
+                      // venir desde la obra. Si ya hay cliente, no se toca.
+                      if (e.target.value && !editing) precargarDesdeObra(e.target.value);
+                    }}>
               <option value="">Proyecto suelto, sin obra</option>
               {(obras.data ?? []).map((o) => (
                 <option key={o.id} value={o.id}>{o.code} · {o.name}</option>

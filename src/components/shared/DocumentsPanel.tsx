@@ -268,8 +268,16 @@ export function DocumentsPanel({ owner, title = 'Documentos y fotografías', onC
                         <FolderInput />
                       </button>
                     )}
-                    <button className="btn btn-ghost icon-btn" onClick={() => aPapelera(doc)}
-                            aria-label={`Enviar ${doc.file_name} a la papelera`}><Trash2 /></button>
+                    {/* FASE 2.2 · El trabajador solo quita LO SUYO. Antes
+                        el botón salía sobre los archivos de cualquiera y
+                        al pulsarlo la base de datos lo rechazaba, que es
+                        la peor forma de decir que no. La comprobación de
+                        verdad está en «trash_document»; esto es para no
+                        ofrecer algo que no se puede hacer. */}
+                    {(esAdmin || doc.uploaded_by === profile?.id) && (
+                      <button className="btn btn-ghost icon-btn" onClick={() => aPapelera(doc)}
+                              aria-label={`Enviar ${doc.file_name} a la papelera`}><Trash2 /></button>
+                    )}
                   </li>
                 ))}
               </ul>

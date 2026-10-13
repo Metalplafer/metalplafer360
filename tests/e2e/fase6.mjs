@@ -190,15 +190,20 @@ try {
   const panel = await page.locator('main').innerText();
   check('Reúne la producción del periodo', panel.includes('Producción') && panel.includes('Fabricación'));
   check('Reúne los proyectos', panel.includes('Proyectos') && panel.includes('Activos'));
-  check('Reúne las órdenes de trabajo', panel.includes('Órdenes de trabajo'));
+  // FASE 4 · La tarjeta de órdenes se retiró con la sección. Lo que se
+  // comprueba ahora es que NO está, para que no vuelva por descuido.
+  check('Ya no reúne las órdenes de trabajo, que se retiraron',
+    !panel.includes('Órdenes de trabajo'));
   check('Reúne el material', panel.includes('Pendiente de llegar'));
   check('Reúne la información económica', panel.includes('Presupuestado') && panel.includes('Cobrado'));
   check('Y lo que requiere atención', panel.includes('Requiere tu atención'));
 
   check('Suma las horas de fabricación y montaje del periodo',
     panel.includes('7,5 h') && panel.includes('3,5 h') && panel.includes('11 h'));
-  check('Avisa de la orden pendiente de revisión',
-    panel.includes('órdenes pendientes de revisión'));
+  // FASE 4 · Las dos alertas de órdenes se retiraron con la sección.
+  check('Ya no avisa de órdenes pendientes, que se retiraron',
+    !panel.includes('órdenes pendientes de revisión')
+    && !panel.includes('órdenes atrasadas sin enviar'));
   check('Avisa del material que no ha llegado a tiempo',
     panel.includes('materiales que no han llegado a tiempo'));
   check('Avisa del aviso de material del taller',

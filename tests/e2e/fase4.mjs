@@ -67,7 +67,66 @@ const people = [ADMIN, WORKER, PEDRO];
 const browser = await launchBrowser();
 
 try {
-  // ===================== ADMINISTRACIÓN: CREAR LA ORDEN =====================
+  // ============ LAS ÓRDENES, COMO HISTÓRICO (FASE 4) ============
+  //
+  // Esta parte creaba las órdenes desde las pantallas de administración.
+  // Esas pantallas se han RETIRADO: el trabajo se organiza con los
+  // partes. Las comprobaciones que decían «se abre el listado de
+  // órdenes» o «la orden recibe el código OT-AAAA-###» afirmaban que
+  // existía justo lo que se ha quitado, así que no pueden seguir.
+  //
+  // Lo que sí sigue vivo —y es lo que se prueba de aquí abajo— es el
+  // lado del TRABAJADOR: una orden que estaba a medias se puede
+  // terminar. Así que las órdenes se ponen directamente en los datos,
+  // como lo que son ahora: histórico.
+  const ahora = new Date().toISOString();
+  const orden = (id, n, extra) => ({
+    id, code: `OT-${YEAR}-${String(n).padStart(3, '0')}`, project_id: 'p1',
+    type: 'fabricacion', scheduled_date: HOY,
+    description: 'Cortar pletina, soldar los cuatro marcos y preparar barrotes.',
+    planned_hours: 18, admin_notes: 'El material llegó ayer al taller.',
+    status: 'pendiente', submitted_at: null, validated_at: null, validated_by: null,
+    returned_at: null, return_reason: null, archived_at: null, is_demo: false,
+    created_at: ahora, updated_at: ahora, ...extra,
+  });
+
+  db.work_orders.push(
+    orden('ot1', 1, {}),
+    // Para dentro de una semana: el trabajador la ve pero no la toca.
+    orden('ot2', 2, {
+      type: 'montaje', scheduled_date: MANANA, planned_hours: 6,
+      description: 'Montar la barandilla con tacos químicos.', admin_notes: null,
+    }),
+    // De otro proyecto y sin Juan: no debe verla nunca.
+    orden('ot3', 3, {
+      project_id: 'p2', description: 'Orden de otro proyecto, ajena a Juan.',
+      planned_hours: null, admin_notes: null,
+    }),
+  );
+  db.counters.OT = 3;
+
+  const parteVacio = (orderId, workerId) => ({
+    order_id: orderId, worker_id: workerId, hours: null, work_done: null,
+    submitted_at: null, is_demo: false, created_at: ahora, updated_at: ahora,
+  });
+  db.work_order_workers.push(
+    parteVacio('ot1', WORKER.id), parteVacio('ot1', PEDRO.id),
+    parteVacio('ot2', WORKER.id), parteVacio('ot3', PEDRO.id),
+  );
+
+  // El aviso que recibía el trabajador al asignarle una orden.
+  ['ot1', 'ot2'].forEach((id) => {
+    db.notifications.unshift({
+      id: `noti-${id}`, user_id: WORKER.id, kind: 'asignacion',
+      title: 'Nueva orden asignada',
+      body: db.work_orders.find((o) => o.id === id).description,
+      order_id: id, read_at: null, is_demo: false, created_at: ahora,
+    });
+  });
+
+  const orderId = 'ot1';
+
+  // ---- Y ahora, lo que administración debe ver: que ya no está ----
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 950 }, locale: 'es-ES' });
   await stubSupabase(ctx, { db, getUser: () => ADMIN, people });
   const page = await ctx.newPage();
@@ -75,98 +134,27 @@ try {
   page.on('pageerror', (e) => errors.push(String(e)));
 
   await signIn(page, PORT, 'salvi');
+  await page.waitForTimeout(700);
 
-  await page.locator('.sidebar nav a:has-text("Órdenes de trabajo")').click();
-  await page.waitForTimeout(600);
-  check('El menú ya no marca las órdenes como pendientes',
-    await page.locator('.sidebar nav a:has-text("Órdenes de trabajo") .soon').count() === 0);
-  check('Se abre el listado de órdenes', page.url().includes('#/admin/ordenes'));
-  check('Sin órdenes explica cómo se numeran',
-    (await page.locator('.empty').innerText()).includes('OT-2026-001'));
-
-  await page.locator('a:has-text("Nueva orden")').click();
-  await page.waitForTimeout(600);
-  check('El formulario recuerda que la orden lleva solo fecha',
-    (await page.locator('.page-head .sub').innerText()).includes('solo fecha'));
-  check('No se pide hora de inicio ni de fin',
-    await page.locator('input[type="time"]').count() === 0);
-  check('No existe ningún botón de «Iniciar orden»',
-    await page.locator('button:has-text("Iniciar")').count() === 0);
-
-  await page.locator('button:has-text("Crear orden")').click();
-  await page.waitForTimeout(400);
-  check('Una orden sin proyecto avisa de que hay que elegirlo',
-    (await page.locator('.alert-danger').innerText()).includes('Elige el proyecto'));
-
-  await page.locator('#ot-project').selectOption('p1');
-  await page.locator('button:has-text("Crear orden")').click();
-  await page.waitForTimeout(400);
-  check('Una orden sin trabajo a realizar tampoco se crea',
-    (await page.locator('.alert-danger').innerText()).includes('trabajo a realizar'));
-
-  await page.locator('#ot-date').fill(HOY);
-  await page.locator('#ot-desc').fill('Cortar pletina, soldar los cuatro marcos y preparar barrotes.');
-  await page.locator('#ot-hours').fill('18');
-  await page.locator('#ot-notes').fill('El material llegó ayer al taller.');
-
-  const casillas = page.locator('.panel:has-text("Trabajadores asignados") .checkbox');
-  check('Se pueden asignar varios trabajadores a la vez', await casillas.count() === 2);
-  check('Se dice expresamente que no hay responsable principal',
-    (await page.locator('.panel:has(h2:has-text("Trabajadores asignados")) .hint').innerText())
-      .includes('No hay responsable principal'));
-  await casillas.nth(0).locator('input').check();
-  await casillas.nth(1).locator('input').check();
-
-  await page.locator('button:has-text("Crear orden")').click();
-  await page.waitForTimeout(900);
-
-  const codigo = (await page.locator('.plate-dark').first().innerText()).trim();
-  check('La orden recibe el código OT-AAAA-###',
-    new RegExp(`^OT-${YEAR}-\\d{3}$`).test(codigo), codigo);
-  check('Nace en estado Pendiente',
-    (await page.locator('.page-head .sub').innerText()).includes('Pendiente'));
-  check('Muestra el proyecto y el cliente de la orden',
-    (await page.locator('.page-head .sub').innerText()).includes(`PROY-${YEAR}-001`));
-  check('Los dos trabajadores aparecen con su parte vacío',
-    await page.locator('.part-list li').count() === 2);
-  check('Todavía no hay horas reales apuntadas',
-    (await page.locator('.panel:has(h2:has-text("Partes de trabajo"))').innerText()).includes('0 de 2'));
-
-  const orderId = page.url().split('/ordenes/')[1];
-
-  // Segunda orden, para dentro de una semana: el trabajador podrá verla,
-  // pero no tocarla.
-  await page.goto(`http://localhost:${PORT}/#/admin/ordenes/nueva`, { waitUntil: 'networkidle' });
-  await page.waitForTimeout(500);
-  await page.locator('#ot-project').selectOption('p1');
-  await page.locator('#ot-type').selectOption('montaje');
-  await page.locator('#ot-date').fill(MANANA);
-  await page.locator('#ot-desc').fill('Montar la barandilla con tacos químicos.');
-  await page.locator('#ot-hours').fill('6');
-  await page.locator('.panel:has-text("Trabajadores asignados") .checkbox input').first().check();
-  await page.locator('button:has-text("Crear orden")').click();
-  await page.waitForTimeout(900);
-  check('La numeración avanza de una en una',
-    (await page.locator('.plate-dark').first().innerText()).endsWith('002'));
-
-  // Orden de otro proyecto, sin Juan: no debe verla nunca
-  await page.goto(`http://localhost:${PORT}/#/admin/ordenes/nueva`, { waitUntil: 'networkidle' });
-  await page.waitForTimeout(500);
-  await page.locator('#ot-project').selectOption('p2');
-  await page.locator('#ot-date').fill(HOY);
-  await page.locator('#ot-desc').fill('Orden de otro proyecto, ajena a Juan.');
-  await page.locator('.panel:has-text("Trabajadores asignados") .checkbox').nth(1).locator('input').check();
-  await page.locator('button:has-text("Crear orden")').click();
-  await page.waitForTimeout(900);
+  check('La sección de órdenes ya no está en el menú de administración',
+    !(await page.locator('.sidebar nav').innerText()).includes('Órdenes de trabajo'));
 
   await page.goto(`http://localhost:${PORT}/#/admin/ordenes`, { waitUntil: 'networkidle' });
-  await page.waitForTimeout(700);
-  check('El listado muestra las tres órdenes', await page.locator('tbody tr').count() === 3);
-
-  await page.goto(`http://localhost:${PORT}/#/admin/proyectos/p1`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(800);
-  check('El proyecto muestra sus órdenes de trabajo',
-    await page.locator('.panel:has(h2:has-text("Órdenes de trabajo")) .mini-list li').count() === 2);
+  check('Y su dirección antigua no abre el listado',
+    !(await page.locator('body').innerText()).includes('Nueva orden'));
+
+  // Pero las órdenes NO se han borrado: siguen en la ficha del proyecto.
+  await page.goto(`http://localhost:${PORT}/#/admin/proyectos/p1`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(900);
+  const historico = page.locator('.panel:has(h2:has-text("Órdenes de trabajo (histórico)"))');
+  check('El proyecto sigue mostrando sus órdenes como histórico',
+    await historico.locator('.mini-list li').count() === 2,
+    `${await historico.locator('.mini-list li').count()} fila(s)`);
+  check('Y se explica que son de antes de los partes',
+    (await historico.innerText()).includes('antes de los partes de trabajo'));
+  check('Sin ofrecer crear ninguna nueva',
+    await historico.locator('a:has-text("Nueva orden")').count() === 0);
 
   check('No hay errores de JavaScript en administración', errors.length === 0, errors[0]);
   await ctx.close();
@@ -339,6 +327,10 @@ try {
   await movilPedro.close();
 
   // ===================== REVISIÓN: DEVOLVER Y VALIDAR =====================
+  // La revisión se hacía desde la pantalla de la orden, que se ha
+  // retirado (FASE 4). El AVISO sí sigue llegando, y eso se comprueba
+  // desde cualquier pantalla de administración, porque la campana está
+  // en todas.
   const ctx2 = await browser.newContext({ viewport: { width: 1440, height: 950 }, locale: 'es-ES' });
   await stubSupabase(ctx2, { db, getUser: () => ADMIN, people });
   const a = await ctx2.newPage();
@@ -346,33 +338,40 @@ try {
   a.on('pageerror', (e) => aerrors.push(String(e)));
 
   await signIn(a, PORT, 'salvi');
-  await a.waitForTimeout(600);
+  await a.waitForTimeout(700);
   await a.locator('.topbar .bell-wrap button').click();
   await a.waitForTimeout(600);
   check('Administración recibe el aviso de la orden enviada',
     (await a.locator('.bell-panel').innerText()).includes('pendiente de revisión'));
   await a.keyboard.press('Escape');
-
-  await a.goto(`http://localhost:${PORT}/#/admin/ordenes/${orderId}`, { waitUntil: 'networkidle' });
-  await a.waitForTimeout(900);
-  const revision = await a.locator('.w-content, .content').innerText();
-  check('La orden muestra el trabajo realizado de cada persona',
-    revision.includes('Cortada la pletina') && revision.includes('barrotes'));
-  check('Y las horas de cada uno', revision.includes('7,5 h') && revision.includes('6 h'));
-  check('Y el total real frente a las previstas', revision.includes('13,5 h'));
-
-  await a.locator('.alert button:has-text("Devolver")').click();
-  await a.waitForTimeout(500);
-  check('La devolución exige un motivo escrito',
-    await a.locator('.modal-foot button:has-text("Devolver")').isDisabled());
-  await a.locator('#ot-reason').fill('Faltan las fotografías de los marcos soldados.');
-  await a.locator('.modal-foot button:has-text("Devolver")').click();
-  await a.waitForTimeout(1200);
-  check('La orden queda Devuelta con su motivo',
-    (await a.locator('.alert-danger').innerText()).includes('Faltan las fotografías'));
-  check('El motivo queda también como comentario',
-    (await a.locator('.panel:has(h2:has-text("Comentarios"))').innerText()).includes('Orden devuelta. Motivo'));
+  check('No hay errores de JavaScript en la revisión', aerrors.length === 0, aerrors[0]);
   await ctx2.close();
+
+  // Y la devolución, que antes se pulsaba en aquella pantalla, se aplica
+  // sobre los datos: es exactamente lo que hacía el botón. Lo que se
+  // sigue probando de verdad es lo de después: que el TRABAJADOR ve la
+  // devolución, puede corregirla y volver a enviarla.
+  const motivo = 'Faltan las fotografías de los marcos soldados.';
+  const devuelta = db.work_orders.find((o) => o.id === orderId);
+  devuelta.status = 'devuelta';
+  devuelta.returned_at = new Date().toISOString();
+  devuelta.return_reason = motivo;
+  devuelta.validated_at = null;
+  devuelta.validated_by = null;
+  db.work_order_workers
+    .filter((w) => w.order_id === orderId)
+    .forEach((w) => { w.submitted_at = null; });
+  db.comments.push({
+    id: 'coment-devolucion', ficha_id: null, project_id: null, order_id: orderId,
+    report_id: null, work_id: null, author_id: ADMIN.id,
+    body: `Orden devuelta. Motivo: ${motivo}`,
+    is_demo: false, created_at: new Date().toISOString(),
+  });
+  db.notifications.unshift({
+    id: 'noti-devolucion', user_id: WORKER.id, kind: 'devolucion',
+    title: 'Orden devuelta', body: motivo, order_id: orderId,
+    read_at: null, is_demo: false, created_at: new Date().toISOString(),
+  });
 
   // --- El trabajador ve la devolución y la corrige
   const movil2 = await browser.newContext({
@@ -417,26 +416,16 @@ try {
   await movilPedro2.close();
 
   // --- Validar
-  const ctx3 = await browser.newContext({ viewport: { width: 1440, height: 950 }, locale: 'es-ES' });
-  await stubSupabase(ctx3, { db, getUser: () => ADMIN, people });
-  const v = await ctx3.newPage();
-  v.on('pageerror', (e) => aerrors.push(String(e)));
-  await signIn(v, PORT, 'salvi');
-  await v.goto(`http://localhost:${PORT}/#/admin/ordenes/${orderId}`, { waitUntil: 'networkidle' });
-  await v.waitForTimeout(900);
-  await v.locator('.alert button:has-text("Validar")').click();
-  await v.waitForTimeout(400);
-  check('Validar avisa de que después no se podrá modificar',
-    (await v.locator('.modal').innerText()).includes('ya no podrán modificarla'));
-  await v.locator('.modal-foot button:has-text("Validar")').click();
-  await v.waitForTimeout(1200);
-  check('La orden queda Validada con su fecha',
-    (await v.locator('.alert-ok').innerText()).includes('Validada el'));
-  check('El historial recoge todo el recorrido de la orden',
-    (await v.locator('.panel:has(h2:has-text("Historial"))').innerText()).includes('validó la orden'));
-
-  check('No hay errores de JavaScript en la revisión', aerrors.length === 0, aerrors[0]);
-  await ctx3.close();
+  //
+  // Igual que la devolución: el botón vivía en la pantalla retirada, así
+  // que se aplica sobre los datos. Lo que importa comprobar —y se
+  // comprueba justo debajo— es que el trabajador LA VE validada y deja
+  // de poder tocarla.
+  const validada = db.work_orders.find((o) => o.id === orderId);
+  validada.status = 'validada';
+  validada.validated_at = new Date().toISOString();
+  validada.validated_by = ADMIN.id;
+  validada.updated_at = validada.validated_at;
 
   // --- El trabajador lo ve validado y en su historial
   const movil3 = await browser.newContext({
@@ -482,10 +471,13 @@ try {
   const m4 = await movil4.newPage();
   await signIn(m4, PORT, 'juan');
 
-  await m4.goto(`http://localhost:${PORT}/#/admin/ordenes`, { waitUntil: 'networkidle' });
+  // La dirección de las órdenes de administración ya no existe, así que
+  // se prueba la guardia con una que sí: lo que se vigila es que un
+  // trabajador no entre en administración escribiendo la dirección.
+  await m4.goto(`http://localhost:${PORT}/#/admin`, { waitUntil: 'networkidle' });
   await m4.waitForTimeout(900);
   check('Un trabajador que escribe la dirección de administración es devuelto a su zona',
-    m4.url().includes('#/t'));
+    m4.url().includes('#/t'), m4.url());
 
   const ajena = db.work_orders.find((o) => o.project_id === 'p2');
   await m4.goto(`http://localhost:${PORT}/#/t/ordenes/${ajena.id}`, { waitUntil: 'networkidle' });

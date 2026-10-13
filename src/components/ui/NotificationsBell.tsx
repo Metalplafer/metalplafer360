@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { Bell, CheckCircle2 } from 'lucide-react';
 import { useAsync } from '@/hooks/useAsync';
 import { Empty, Loading } from '@/components/ui/Feedback';
@@ -70,11 +69,10 @@ export function NotificationsBell() {
               <ul className="notice-list">
                 {notices.data.map((n) => (
                   <li key={n.id} className={n.read_at ? '' : 'unread'}>
-                    {n.order_id ? (
-                      <Link to={`/admin/ordenes/${n.order_id}`} onClick={() => setOpen(false)}>
-                        <strong>{n.title}</strong>
-                      </Link>
-                    ) : <strong>{n.title}</strong>}
+                    {/* FASE 4 · Los avisos antiguos llevaban a la pantalla
+                        de la orden, que ya no existe. Se siguen leyendo,
+                        pero sin un enlace que no va a ninguna parte. */}
+                    <strong>{n.title}</strong>
                     {n.body && <span>{n.body}</span>}
                     <small>{fmtDateTime(n.created_at)}</small>
                   </li>

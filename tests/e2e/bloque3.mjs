@@ -145,7 +145,10 @@ try {
       db.projects[0].fab_start !== antes, `${antes} → ${db.projects[0].fab_start}`);
     check('Y queda fijada a mano', db.projects[0].fab_manual === true);
     check('La pantalla lo dice claramente',
-      (await page.locator('.toast').last().innerText()).includes('fijado a mano'));
+      (await page.locator('.toast').last().innerText()).includes('fijada a mano'));
+    // Y dice QUÉ fase ha movido, que es lo que antes no se distinguía.
+    check('El aviso nombra la fase que se ha movido',
+      (await page.locator('.toast').last().innerText()).includes('Fabricación'));
   }
 
   // Volver a planificar NO deshace lo que se ha puesto a mano.

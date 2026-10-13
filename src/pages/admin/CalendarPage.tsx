@@ -9,7 +9,7 @@ import { PageHeader } from '@/components/ui/Layout';
 import { Modal } from '@/components/ui/Modal';
 import { Empty, ErrorBox, Loading } from '@/components/ui/Feedback';
 import {
-  clearNonWorkingDay, deleteCalendarNote, listCalendar, listNonWorkingDays,
+  clearNonWorkingDay, deleteCalendarNote, eventUid, listCalendar, listNonWorkingDays,
   moveCalendarItem, saveCalendarNote, setNonWorkingDay,
 } from '@/services/calendar';
 import { listPeople } from '@/services/people';
@@ -61,13 +61,17 @@ const Chip = memo(function Chip({ e, dragging, canDrag, setDragging, setOver, op
   setOver: (d: string | null) => void;
   openEvent: (e: CalendarEvent) => void;
 }) {
+  // La identidad COMPLETA del evento: qué es, de quién es y de qué día.
+  // Con solo «e.id» la fabricación y el montaje del mismo proyecto son
+  // la misma cosa, y arrastrar una movía la otra.
+  const uid = eventUid(e);
   return (
     <button
       type="button"
-      className={`cal-event${dragging === e.id ? ' dragging' : ''}`}
+      className={`cal-event${dragging === uid ? ' dragging' : ''}`}
       style={{ ['--ev' as string]: CALENDAR_COLOR[e.kind] }}
       draggable={canDrag && e.movable}
-      onDragStart={() => setDragging(e.id)}
+      onDragStart={() => setDragging(uid)}
       onDragEnd={() => { setDragging(null); setOver(null); }}
       onClick={() => openEvent(e)}
       title={`${CALENDAR_LABEL[e.kind]} · ${e.title}${e.client_name ? ` · ${e.client_name}` : ''}`}
@@ -124,7 +128,7 @@ const Day = memo(function Day({
         )}
       </div>
       <div className="cal-day-body">
-        {list.map((e) => <Chip key={`${e.kind}-${e.id}`} e={e} {...chipProps} />)}
+        {list.map((e) => <Chip key={eventUid(e)} e={e} {...chipProps} />)}
       </div>
     </div>
   );
@@ -203,19 +207,32 @@ export default function CalendarPage({ worker }: { worker?: boolean }) {
   }
 
   async function drop(date: string) {
-    const id = dragging;
+    const uid = dragging;
     setDragging(null);
     setOver(null);
-    if (!id) return;
-    const event = shown.find((e) => e.id === id);
-    if (!event || event.date === date) return;
+    if (!uid) return;
+    // Se busca por la identidad completa. Buscar por «id» devolvía la
+    // PRIMERA fila con ese identificador, que podía ser la otra fase del
+    // proyecto o el primer día de un tramo de varios días.
+    const event = shown.find((e) => eventUid(e) === uid);
+    if (!event) return;
+    // Un evento que no se puede mover no se mueve ni arrastrándolo: el
+    // atributo «draggable» es del navegador y no es una garantía.
+    if (!event.movable) return;
+    if (event.date === date) return;
     try {
       await moveCalendarItem(event, date);
       // Mover a mano una fase la saca del cálculo automático: desde
       // ahora manda la persona, y ningún recálculo se la vuelve a tocar.
-      const aMano = event.kind === 'fabricacion' || event.kind === 'montaje';
-      toast.success(`${event.code ?? event.title} pasa al ${fmtDate(date)}`
-        + (aMano ? '. Queda fijado a mano.' : ''));
+      //
+      // Se NOMBRA la fase que se ha movido. Así, de un vistazo, se ve que
+      // se ha movido la que se arrastró y no la otra, que es justo lo que
+      // antes no se podía distinguir.
+      const fijado = event.kind === 'fabricacion' ? '. Queda fijada a mano.'
+        : event.kind === 'montaje' ? '. Queda fijado a mano.'
+        : '';
+      toast.success(`${CALENDAR_LABEL[event.kind]} de ${event.code ?? event.title}`
+        + ` pasa al ${fmtDate(date)}${fijado}`);
       setReloadKey((n) => n + 1);
     } catch (err) { toast.error(err); }
   }
@@ -391,7 +408,7 @@ export default function CalendarPage({ worker }: { worker?: boolean }) {
                       </div>
                       <div className="stack" style={{ gap: 6 }}>
                         {(byDay.get(d) ?? []).map((e) => (
-                          <button key={`${e.kind}-${e.id}`} type="button" className="cal-row"
+                          <button key={eventUid(e)} type="button" className="cal-row"
                                   style={{ ['--ev' as string]: CALENDAR_COLOR[e.kind] }}
                                   onClick={() => openEvent(e)}>
                             <span className="cal-dot" aria-hidden />
@@ -421,7 +438,8 @@ export default function CalendarPage({ worker }: { worker?: boolean }) {
 
       {!worker && (
         <p className="hint" style={{ marginTop: 12, marginBottom: 0 }}>
-          Arrastra una orden de fabricación o de montaje a otro día para cambiarle la fecha.
+          Arrastra una fabricación o un montaje a otro día para cambiarle la fecha. Se mueve
+          exactamente la etiqueta que arrastras: mover la fabricación no toca el montaje.
           El cambio queda en el historial y <strong>no se avisa al trabajador</strong>.
         </p>
       )}

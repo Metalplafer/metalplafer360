@@ -22,7 +22,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
-  ADMIN, WORKER, YEAR, addDays, buildApp, createChecker, createDb, launchBrowser,
+  ADMIN, SUPABASE, WORKER, YEAR, addDays, buildApp, createChecker, createDb, launchBrowser,
   serveApp, signIn, stubSupabase, today,
 } from './fake-supabase.mjs';
 
@@ -41,6 +41,27 @@ const worker = { ...WORKER };
 const people = [admin, worker];
 
 const browser = await launchBrowser();
+
+/**
+ * Llama a la API igual que lo haría la aplicación, desde la propia
+ * página (así pasa por el simulador, que intercepta las peticiones).
+ *
+ * Las PANTALLAS de administración de las órdenes se retiraron en la
+ * FASE 4, pero la OPERACIÓN sigue existiendo: lo que ya no hay es un
+ * botón. Con esto el recorrido comprueba exactamente lo mismo que antes
+ * —el código, el estado, el aviso al trabajador y el historial— sin
+ * depender de una pantalla que ya no está.
+ */
+async function api(page, ruta, cuerpo) {
+  return page.evaluate(async ({ ruta, cuerpo, base }) => {
+    const r = await fetch(`${base}/rest/v1/${ruta}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', prefer: 'return=representation' },
+      body: JSON.stringify(cuerpo),
+    });
+    return r.json();
+  }, { ruta, cuerpo, base: SUPABASE });
+}
 
 /** Un archivo de mentira para las pruebas de subida. */
 function archivo(nombre, bytes = 2048, tipo = 'application/pdf') {
@@ -175,24 +196,21 @@ try {
 
   // ============================ ORDEN DE TRABAJO ============================
   console.log('\n   ── ORDEN DE TRABAJO ──');
-  await page.locator('.sidebar nav a:has-text("Órdenes de trabajo")').click();
-  await page.waitForTimeout(800);
-  await page.locator('a:has-text("Nueva orden")').click();
-  await page.waitForTimeout(700);
-  check('El formulario recuerda que la orden lleva solo fecha, sin horas',
-    (await page.locator('.page-head .sub').innerText()).includes('solo fecha')
-    && (await page.locator('input[type="time"]').count()) === 0);
+  check('La sección de órdenes ya no está en el menú (FASE 4)',
+    !(await page.locator('.sidebar nav').innerText()).includes('Órdenes de trabajo'));
 
-  await page.locator('#ot-project').selectOption(db.projects[0].id);
-  await page.locator('#ot-date').fill(HOY);
-  await page.locator('#ot-hours').fill('16');
-  await page.locator('#ot-desc').fill('Cortar pletina y soldar los cuatro tramos.');
-  await page.locator(`.checkbox:has-text("${worker.full_name}") input`).check();
-  await page.locator('button:has-text("Crear orden")').click();
-  await page.waitForTimeout(1300);
+  // La orden se crea llamando a la API, que es lo que hacía la pantalla.
+  const creada = await api(page, 'work_orders', {
+    project_id: db.projects[0].id, type: 'fabricacion', scheduled_date: HOY,
+    description: 'Cortar pletina y soldar los cuatro tramos.', planned_hours: 16,
+    admin_notes: null,
+  });
+  const ordenId = (Array.isArray(creada) ? creada[0] : creada)?.id ?? db.work_orders[0]?.id;
+  await api(page, 'rpc/assign_order_workers', { p_order: ordenId, p_workers: [worker.id] });
 
   check('La orden queda creada con su código',
-    db.work_orders.length === 1 && db.work_orders[0].code === `OT-${YEAR}-001`);
+    db.work_orders.length === 1 && db.work_orders[0].code === `OT-${YEAR}-001`,
+    db.work_orders[0]?.code);
   check('Nace pendiente', db.work_orders[0].status === 'pendiente');
   check('Y con el trabajador asignado',
     db.work_order_workers.some((w) => w.worker_id === worker.id));
@@ -320,30 +338,33 @@ try {
 
   // ============================ REVISIÓN Y VALIDACIÓN ============================
   console.log('\n   ── REVISIÓN Y VALIDACIÓN ──');
-  await page.goto(`http://localhost:${PORT}/#/admin/ordenes/${db.work_orders[0].id}`,
-    { waitUntil: 'networkidle' });
-  await page.waitForTimeout(1000);
+  // La pantalla de revisión de la orden se retiró en la FASE 4. La
+  // revisión y la validación se piden a la API, que es lo que hacía
+  // aquella pantalla. Lo que se sigue comprobando entero es el camino:
+  // se devuelve con motivo, el TRABAJADOR lo ve y lo corrige, se vuelve
+  // a enviar y se valida.
+  check('Lo que envió el trabajador está guardado, con sus horas y su trabajo',
+    db.work_order_workers.some((w) => Number(w.hours) === 7.5
+      && (w.work_done ?? '').includes('Cortados los cuatro tramos')),
+    JSON.stringify(db.work_order_workers[0] ?? null));
+  check('Y su fotografía y su firma también',
+    db.documents.some((d) => d.file_name === 'obra.jpg')
+    && db.documents.some((d) => d.category === 'firma'));
 
-  const revision = await page.locator('main').innerText();
-  check('Administración ve las horas y el trabajo realizado',
-    revision.includes('7,5') && revision.includes('Cortados los cuatro tramos'));
-  check('Y la fotografía y la firma que subió', revision.includes('obra.jpg'));
-
-  // Primero se devuelve, para probar el camino completo
-  await page.locator('.alert button:has-text("Devolver")').click();
-  await page.waitForTimeout(600);
+  const sinMotivo = await api(page, 'rpc/return_order',
+    { p_order: db.work_orders[0].id, p_reason: '  ' });
   check('No se puede devolver sin decir por qué',
-    await page.locator('.modal-foot button:has-text("Devolver")').isDisabled());
-  await page.locator('#ot-reason').fill('Falta la foto del acabado final.');
-  await page.locator('.modal-foot button:has-text("Devolver")').click();
-  await page.waitForTimeout(1300);
+    /motivo/i.test(JSON.stringify(sinMotivo)), JSON.stringify(sinMotivo));
+
+  await api(page, 'rpc/return_order',
+    { p_order: db.work_orders[0].id, p_reason: 'Falta la foto del acabado final.' });
   check('Se puede devolver con un motivo',
     db.work_orders[0].status === 'devuelta'
     && db.work_orders[0].return_reason.includes('acabado final'));
   check('El trabajador recibe el aviso de la devolución',
     db.notifications.some((n) => n.user_id === worker.id && /devuel/i.test(n.title + n.body)));
 
-  // El trabajador lo corrige y lo reenvía
+  // El trabajador lo corrige y lo reenvía: esto es pantalla de verdad.
   await m.reload({ waitUntil: 'networkidle' });
   await m.waitForTimeout(1100);
   check('El trabajador ve por qué se le devolvió',
@@ -354,12 +375,7 @@ try {
   await m.waitForTimeout(1400);
   check('La vuelve a enviar', db.work_orders[0].status === 'realizada');
 
-  await page.reload({ waitUntil: 'networkidle' });
-  await page.waitForTimeout(1100);
-  await page.locator('.alert button:has-text("Validar")').click();
-  await page.waitForTimeout(600);
-  await page.locator('.modal-foot button:has-text("Validar")').click();
-  await page.waitForTimeout(1300);
+  await api(page, 'rpc/validate_order', { p_order: db.work_orders[0].id });
   check('Administración valida la orden', db.work_orders[0].status === 'validada');
   check('Y queda constancia de quién la validó', Boolean(db.work_orders[0].validated_at));
 

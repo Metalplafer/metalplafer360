@@ -199,7 +199,10 @@ export default function MaterialsList() {
                       <p className="pre" style={{ margin: '6px 0' }}>{r.body}</p>
                       <div className="faint">
                         {fmtDateTime(r.created_at)}
-                        {r.order && <> · <Link to={`/admin/ordenes/${r.order.id}`}>{r.order.code}</Link></>}
+                        {/* FASE 4 · El código de la orden se sigue viendo,
+                            para saber de dónde salió el aviso, pero ya no
+                            se enlaza: esa pantalla se ha retirado. */}
+                        {r.order && <> · <span className="faint">{r.order.code}</span></>}
                         {r.project
                           ? <> · <Link to={`/admin/proyectos/${r.project.id}`}>{r.project.code}</Link></>
                           : <> · <span className="faint">sin proyecto</span></>}

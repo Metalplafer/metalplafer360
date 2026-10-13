@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
-  ArrowLeft, Boxes, Camera, CheckCircle2, Clock, Images, PenLine, Save, Send, Trash2,
+  ArrowLeft, Boxes, Camera, CheckCircle2, Clock, Film, Images, PenLine, Save, Send, Trash2,
 } from 'lucide-react';
 import { useAsync } from '@/hooks/useAsync';
 import { useAuth } from '@/auth/AuthProvider';
@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/Layout';
 import { Modal } from '@/components/ui/Modal';
 import { CommentsPanel } from '@/components/shared/CommentsPanel';
 import { SignaturePad } from '@/components/shared/SignaturePad';
-import { MediaViewer, isViewable, type MediaItem } from '@/components/shared/MediaViewer';
+import { MediaViewer, isVideo, isViewable, type MediaItem } from '@/components/shared/MediaViewer';
 import { getReport, myProjects, saveReport, workerProject } from '@/services/partes';
 import { submitRequestFromReport } from '@/services/materials';
 import { listDocuments, signedUrls, trashDocument, uploadDocument } from '@/services/documents';
@@ -97,10 +97,20 @@ export default function WorkerReportDetail() {
     setProjectChoice(proyectoPrevio ?? '');
   }, [report.data, nuevo, id, proyectoPrevio, today]);
 
+  /**
+   * LOS ENLACES PARA VER LOS ARCHIVOS, VÍDEOS INCLUIDOS.
+   *
+   * Antes aquí se pedían enlaces solo para «foto» y «firma». Los vídeos
+   * se quedaban fuera, y más abajo el visor exige tener el enlace para
+   * poder abrir algo: por eso un vídeo subido a un parte se veía en la
+   * cuadrícula pero al tocarlo no pasaba nada. Los de los proyectos sí
+   * funcionaban porque su panel pide los enlaces con «isViewable», que
+   * es lo que se usa ahora también aquí.
+   */
   useEffect(() => {
-    const imgs = (files.data ?? []).filter((d) => d.category === 'foto' || d.category === 'firma');
-    if (!imgs.length) { setThumbs({}); return; }
-    signedUrls(imgs.map((d) => d.storage_path)).then(setThumbs).catch(() => undefined);
+    const media = (files.data ?? []).filter(isViewable);
+    if (!media.length) { setThumbs({}); return; }
+    signedUrls(media.map((d) => d.storage_path)).then(setThumbs).catch(() => undefined);
   }, [files.data]);
 
   if (report.loading && !report.data && !nuevo) return <Loading />;
@@ -388,10 +398,14 @@ export default function WorkerReportDetail() {
                               const i = verlos.findIndex((x) => x.id === d.id);
                               if (i >= 0) setViendo(i);
                             }}
-                            aria-label={`Ver ${d.file_name}`}>
-                      {thumbs[d.storage_path]
-                        ? <img src={thumbs[d.storage_path]} alt={d.file_name} loading="lazy" />
-                        : <span className="photo-placeholder">{d.file_name}</span>}
+                            aria-label={isVideo(d) ? `Ver el vídeo ${d.file_name}` : `Ver ${d.file_name}`}>
+                      {/* Un vídeo no tiene miniatura: se marca como vídeo
+                          para que se sepa que al tocarlo se reproduce. */}
+                      {isVideo(d)
+                        ? <span className="photo-video"><Film size={22} aria-hidden /><small>Vídeo</small></span>
+                        : thumbs[d.storage_path]
+                          ? <img src={thumbs[d.storage_path]} alt={d.file_name} loading="lazy" />
+                          : <span className="photo-placeholder">{d.file_name}</span>}
                     </button>
                     {editable && (
                       <button className="photo-remove" onClick={() => removeFile(d)}

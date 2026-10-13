@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
-  Archive, ArchiveRestore, ArrowLeft, Boxes, Building2, FolderKanban, MapPin, Pencil,
-  Plus, Trash2,
+  Archive, ArchiveRestore, ArrowLeft, Boxes, Building2, Check, FolderKanban, MapPin,
+  Pencil, Plus, Trash2,
 } from 'lucide-react';
 import { useAsync } from '@/hooks/useAsync';
 import { useDialogs } from '@/components/ui/Dialogs';
@@ -13,9 +13,12 @@ import { CommentsPanel } from '@/components/shared/CommentsPanel';
 import { HistoryPanel } from '@/components/shared/HistoryPanel';
 import { BILLING_LABEL, BILLING_TONE, PHASE_LABEL, PHASE_TONE } from '@/config/constants';
 import { fmtDate, fmtEur } from '@/lib/format';
+import { RangoFechas } from '@/components/shared/RangoFechas';
+import { WorkDocumentsPanel } from '@/components/shared/WorkDocumentsPanel';
 import {
   archiveWork, deleteWork, deleteWorkExtra, getWork, listWorkExtras, saveWorkExtra,
-  setProjectInvoiced, setProjectWork, workProjects, workSummary,
+  setProjectInvoiced, setProjectWork, setWorkDates, setWorkExtraInvoiced,
+  workProjects, workSummary,
 } from '@/services/works';
 import type { WorkExtra } from '@/types/db';
 
@@ -40,6 +43,9 @@ export default function WorkDetail() {
   const [reloadKey, setReloadKey] = useState(0);
   const [extraEditando, setExtraEditando] = useState<WorkExtra | 'nuevo' | null>(null);
   const [extra, setExtra] = useState({ concept: '', amount: '', notes: '' });
+  // FASE 1.3 · El periodo propio de la obra en el calendario.
+  const [editandoPeriodo, setEditandoPeriodo] = useState(false);
+  const [periodo, setPeriodo] = useState({ desde: '', hasta: '' });
 
   const obra = useAsync(() => getWork(id), [id, reloadKey]);
   const cuentas = useAsync(() => workSummary(id), [id, reloadKey]);
@@ -54,6 +60,71 @@ export default function WorkDetail() {
   const o = obra.data;
   const c = cuentas.data;
   const archivada = Boolean(o.archived_at);
+
+  /**
+   * FASE 1.3 · Abrir el editor del periodo.
+   *
+   * Si la obra no tiene fechas propias, se parte de las que está usando
+   * ahora —las de sus proyectos—, que es el punto de partida razonable
+   * para ajustarlas.
+   */
+  function abrirPeriodo() {
+    setPeriodo({
+      desde: o.cal_start ?? c?.desde ?? '',
+      hasta: o.cal_end ?? c?.hasta ?? '',
+    });
+    setEditandoPeriodo(true);
+  }
+
+  /** Guardar el periodo, o quitarlo si se dejan las dos fechas en blanco. */
+  async function guardarPeriodo() {
+    const desde = periodo.desde || null;
+    const hasta = periodo.hasta || null;
+    if ((desde === null) !== (hasta === null)) {
+      toast.error(new Error('Escribe las dos fechas, o deja las dos en blanco para que '
+        + 'la obra siga a sus proyectos.'));
+      return;
+    }
+    setSaving(true);
+    try {
+      await setWorkDates(id, desde, hasta);
+      toast.success(desde
+        ? 'Periodo de la obra guardado'
+        : 'La obra vuelve a seguir las fechas de sus proyectos');
+      setEditandoPeriodo(false);
+      recargar();
+    } catch (e) { toast.error(e); } finally { setSaving(false); }
+  }
+
+  /**
+   * FASE 3.4 · Marcar o desmarcar un coste extra como facturado.
+   *
+   * Desmarcar se avisa, porque resta del total facturado de la obra y
+   * eso cambia una cifra que alguien puede estar usando.
+   */
+  async function alternarExtraFacturado(x: WorkExtra) {
+    if (x.invoiced) {
+      const ok = await confirm({
+        title: 'Quitar la marca de facturado',
+        message: (
+          <>
+            «{x.concept}» ({fmtEur(x.amount)}) dejará de contar como facturado y volverá
+            a sumar al pendiente de facturar de la obra.
+          </>
+        ),
+        confirmLabel: 'Quitar la marca',
+      });
+      if (!ok) return;
+    }
+    setSaving(true);
+    try {
+      await setWorkExtraInvoiced(x.id, !x.invoiced);
+      toast.success(x.invoiced
+        ? `«${x.concept}» vuelve a estar pendiente de facturar`
+        : `«${x.concept}» queda facturado`);
+      recargar();
+    } catch (e) { toast.error(e); } finally { setSaving(false); }
+  }
 
   async function guardarExtra() {
     const importe = Number(extra.amount.replace(',', '.'));
@@ -191,6 +262,64 @@ export default function WorkDetail() {
         </Alert>
       )}
 
+      {/* ============ FASE 1.3 · EL PERIODO EN EL CALENDARIO ============ */}
+      <Panel
+        title="Periodo en el calendario"
+        actions={!archivada && !editandoPeriodo && (
+          <button className="btn btn-sm" disabled={saving} onClick={abrirPeriodo}
+                  aria-label="Editar el periodo de la obra en el calendario">
+            <Pencil />Editar periodo
+          </button>
+        )}
+      >
+        <dl className="kv tight">
+          <dt>Ocupa</dt>
+          <dd>
+            {c?.desde
+              ? <>
+                  {fmtDate(c.desde)}
+                  {c.hasta && c.hasta !== c.desde ? ` → ${fmtDate(c.hasta)}` : ''}
+                  {' '}
+                  {o.cal_start
+                    ? <Badge tone="amber">Puesto a mano</Badge>
+                    : <Badge tone="neutral">Según sus proyectos</Badge>}
+                </>
+              : <span className="muted">
+                  Todavía no ocupa nada: ni la obra tiene fechas propias ni sus proyectos
+                  están planificados.
+                </span>}
+          </dd>
+        </dl>
+
+        {editandoPeriodo ? (
+          <RangoFechas
+            id="obra-periodo"
+            desde={periodo.desde}
+            hasta={periodo.hasta}
+            onDesde={(v) => setPeriodo((p) => ({ ...p, desde: v }))}
+            onHasta={(v) => setPeriodo((p) => ({ ...p, hasta: v }))}
+            onGuardar={guardarPeriodo}
+            onCancelar={() => setEditandoPeriodo(false)}
+            guardando={saving}
+            etiquetaDesde="Empieza"
+            etiquetaHasta="Acaba"
+            ayuda={
+              <>
+                Se guarda lo que escribas, sin comprobar si hay otras obras esos días.
+                Deja las dos en blanco para que la obra vuelva a ocupar del primer al
+                último día de sus proyectos.
+              </>
+            }
+          />
+        ) : (
+          <p className="hint" style={{ marginBottom: 0 }}>
+            Es la barra que se ve en el calendario. Si no le pones fechas propias, va del
+            primer día al último de sus proyectos. Los proyectos no se mueven: cada uno
+            mantiene su fabricación y su montaje.
+          </p>
+        )}
+      </Panel>
+
       {/* ===================== LAS CUENTAS ===================== */}
       <Panel title="Las cuentas de la obra">
         {cuentas.loading && !c ? <Loading /> : (
@@ -219,7 +348,15 @@ export default function WorkDetail() {
             </div>
             <p className="hint" style={{ marginBottom: 0 }}>
               Total de proyectos + costes extras = total estimado. La facturación se marca
-              a mano, proyecto a proyecto, en la tabla de abajo.
+              a mano: los proyectos en la tabla de abajo y los costes extra uno a uno.
+              {Number(c?.extras ?? 0) > 0 && (
+                <> De los {fmtEur(c?.extras ?? 0)} de costes extra,{' '}
+                  <strong>{fmtEur(c?.extras_facturados ?? 0)}</strong> ya están facturados
+                  {Number(c?.extras_pendientes ?? 0) > 0
+                    ? <> y quedan {fmtEur(c?.extras_pendientes ?? 0)} por facturar.</>
+                    : <>.</>}
+                </>
+              )}
               {Number(c?.cobrado ?? 0) > 0 && <> Cobrado hasta ahora: {fmtEur(c?.cobrado ?? 0)}.</>}
             </p>
           </>
@@ -338,8 +475,24 @@ export default function WorkDetail() {
                     <span className="cell-main">
                       <strong>{x.concept}</strong>
                       {x.notes && <small>{x.notes}</small>}
+                      {x.invoiced && x.invoiced_on && (
+                        <small>Facturado el {fmtDate(x.invoiced_on)}</small>
+                      )}
                     </span>
                     <span className="num">{fmtEur(x.amount)}</span>
+                    {/* FASE 3.4 · Se marca a mano, y se puede desmarcar.
+                        Solo lo marcado suma al facturado de la obra. */}
+                    <button className="btn btn-sm"
+                            disabled={saving || archivada}
+                            aria-pressed={x.invoiced}
+                            onClick={() => alternarExtraFacturado(x)}
+                            title={x.invoiced
+                              ? 'Está facturado. Pulsa para quitarle la marca.'
+                              : 'Marcar como facturado para que sume al total facturado'}>
+                      {x.invoiced
+                        ? <><Check />Facturado</>
+                        : <>Por facturar</>}
+                    </button>
                     <button className="btn btn-ghost icon-btn"
                             onClick={() => {
                               setExtra({
@@ -384,6 +537,10 @@ export default function WorkDetail() {
               )}
             </dl>
           </Panel>
+
+          {/* FASE 3.5 · La documentación de la obra: la suya y la de sus
+              proyectos, en una sola lista y sin duplicar archivos. */}
+          <WorkDocumentsPanel workId={o.id} onChange={recargar} />
 
           <CommentsPanel owner={{ workId: o.id }} reloadKey={String(reloadKey)} />
         </div>

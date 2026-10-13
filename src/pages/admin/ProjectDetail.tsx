@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
-  Archive, ArchiveRestore, ArrowLeft, Boxes, Building2, CheckCircle2, ClipboardList,
-  FileStack, FileText, HardHat, Lightbulb, MapPin, Pencil, Plus, RotateCcw, Trash2,
+  Archive, ArchiveRestore, ArrowLeft, Boxes, Building2, CheckCircle2,
+  FileStack, FileText, HardHat, Lightbulb, MapPin, Pencil, RotateCcw, Trash2,
   Users, Wand2,
 } from 'lucide-react';
 import { useAsync } from '@/hooks/useAsync';
@@ -27,7 +27,8 @@ import { MaterialNeedButton } from '@/components/shared/MaterialNeedButton';
 import { billing } from '@/services/billing';
 import { listPeople } from '@/services/people';
 import { assignProjectWorkers, listReports, projectHours, projectTeam } from '@/services/partes';
-import { planProject, releasePhase, setPhaseWorkers } from '@/services/calendar';
+import { planProject, releasePhase, setPhaseDates, setPhaseWorkers } from '@/services/calendar';
+import { RangoFechas } from '@/components/shared/RangoFechas';
 import { REPORT_STATUS_SHORT, REPORT_STATUS_TONE } from '@/config/constants';
 import { ORDER_STATUS_SHORT, ORDER_STATUS_TONE, ORDER_TYPE_LABEL } from '@/config/constants';
 import { fmtDate, fmtDateTime, fmtEur, fmtHours, fmtNumber, todayMadrid } from '@/lib/format';
@@ -55,6 +56,12 @@ export default function ProjectDetail() {
   const horas = useAsync(() => projectHours(id), [id, historyKey]);
   const [asignados, setAsignados] = useState<string[]>([]);
   const [editandoEquipo, setEditandoEquipo] = useState(false);
+
+  // FASE 1.1 · Las fechas de una fase, escritas a mano desde aquí.
+  // Se edita UNA fase a la vez, y se guarda SOLO esa: tocar la
+  // fabricación no puede mover el montaje.
+  const [editandoFechas, setEditandoFechas] = useState<'fabricacion' | 'montaje' | null>(null);
+  const [fechas, setFechas] = useState({ desde: '', hasta: '' });
 
   useEffect(() => {
     setAsignados((equipo.data ?? []).map((m) => m.worker_id));
@@ -88,6 +95,40 @@ export default function ProjectDetail() {
     try {
       await releasePhase(id, fase);
       toast.success('Fase recolocada');
+      setHistoryKey((k) => k + 1);
+      await project.reload();
+    } catch (e) { toast.error(e); } finally { setSaving(false); }
+  }
+
+  /** Abrir el editor de fechas de una fase con lo que ya tiene puesto. */
+  function abrirFechas(fase: 'fabricacion' | 'montaje') {
+    const p = project.data;
+    if (!p) return;
+    const esFab = fase === 'fabricacion';
+    setFechas({
+      desde: (esFab ? p.fab_start : p.mont_start) ?? '',
+      hasta: (esFab ? p.fab_end : p.mont_end) ?? '',
+    });
+    setEditandoFechas(fase);
+  }
+
+  /**
+   * Guardar las fechas de UNA fase.
+   *
+   * Sin inicio se entiende «quítale la fecha», que además devuelve la
+   * fase al cálculo automático. No se comprueba disponibilidad: la fecha
+   * que se escriba es la que se guarda.
+   */
+  async function guardarFechas(fase: 'fabricacion' | 'montaje') {
+    const desde = fechas.desde || null;
+    const hasta = desde ? (fechas.hasta || null) : null;
+    setSaving(true);
+    try {
+      await setPhaseDates(id, fase, desde, hasta);
+      toast.success(desde
+        ? `Fechas de ${fase === 'fabricacion' ? 'fabricación' : 'montaje'} guardadas`
+        : `${fase === 'fabricacion' ? 'La fabricación' : 'El montaje'} se queda sin fecha`);
+      setEditandoFechas(null);
       setHistoryKey((k) => k + 1);
       await project.reload();
     } catch (e) { toast.error(e); } finally { setSaving(false); }
@@ -482,6 +523,16 @@ export default function ProjectDetail() {
                         <strong>{Math.max(1, Math.ceil(Number(horas) / Math.max(gente, 1) / 8)) }</strong>
                         {' '}{Number(horas) > 0 ? 'día(s)' : ''}
                       </span>
+                      {/* FASE 1.1 · Escribir las fechas aquí mismo. */}
+                      {!locked && editandoFechas !== fase && (
+                        <button className="btn btn-sm" disabled={saving}
+                                onClick={() => abrirFechas(fase)}
+                                aria-label={esFab
+                                  ? 'Editar las fechas de fabricación'
+                                  : 'Editar las fechas de montaje'}>
+                          <Pencil />Editar fechas
+                        </button>
+                      )}
                       {aMano && !locked && (
                         <button className="btn btn-sm" disabled={saving}
                                 onClick={() => soltar(fase)}>
@@ -489,6 +540,29 @@ export default function ProjectDetail() {
                         </button>
                       )}
                     </div>
+
+                    {editandoFechas === fase && (
+                      <RangoFechas
+                        id={`plan-${fase}`}
+                        desde={fechas.desde}
+                        hasta={fechas.hasta}
+                        onDesde={(v) => setFechas((f) => ({ ...f, desde: v }))}
+                        onHasta={(v) => setFechas((f) => ({ ...f, hasta: v }))}
+                        onGuardar={() => guardarFechas(fase)}
+                        onCancelar={() => setEditandoFechas(null)}
+                        guardando={saving}
+                        etiquetaDesde="Empieza"
+                        etiquetaHasta="Acaba"
+                        ayuda={
+                          <>
+                            Se guarda lo que escribas, sin comprobar si hay otro trabajo esos
+                            días. Si dejas «Acaba» en blanco se calcula con las horas y la
+                            gente. Si dejas las dos en blanco, la fase se queda sin fecha y
+                            vuelve a la planificación automática.
+                          </>
+                        }
+                      />
+                    )}
                   </div>
                 );
               })}
@@ -496,7 +570,8 @@ export default function ProjectDetail() {
               Los días salen de las horas previstas y de cuánta gente va:
               horas ÷ personas ÷ 8. «Buscar hueco» respeta lo ya programado,
               los fines de semana, los festivos y el margen entre proyectos.
-              Lo que muevas a mano en el calendario no se vuelve a tocar.
+              Lo que escribas a mano aquí, o muevas a mano en el calendario, no se
+              vuelve a tocar. La fabricación y el montaje se guardan por separado.
             </p>
           </Panel>
 
@@ -610,37 +685,32 @@ export default function ProjectDetail() {
               )}
           </Panel>
 
-          <Panel
-            title="Órdenes de trabajo"
-            actions={!locked && (
-              <Link className="btn btn-sm" to={`/admin/ordenes/nueva?proyecto=${p.id}`}>
-                <Plus />Nueva orden
-              </Link>
-            )}
-          >
-            {orders.loading && !orders.data ? <Loading />
-              : !orders.data?.rows.length ? (
-                <p className="muted row" style={{ margin: 0, gap: 8 }}>
-                  <ClipboardList size={17} aria-hidden />
-                  Este proyecto todavía no tiene órdenes de fabricación ni de montaje.
-                </p>
-              ) : (
-                <ul className="mini-list">
-                  {orders.data.rows.map((o) => (
-                    <li key={o.id}>
-                      <Link to={`/admin/ordenes/${o.id}`}>
-                        <span className="plate">{o.code}</span>
-                        <span className="cell-main">
-                          <strong>{ORDER_TYPE_LABEL[o.type]} · {fmtDate(o.scheduled_date)}</strong>
-                          <small>{o.description.slice(0, 60)}</small>
-                        </span>
-                      </Link>
-                      <Badge tone={ORDER_STATUS_TONE[o.status]}>{ORDER_STATUS_SHORT[o.status]}</Badge>
-                    </li>
-                  ))}
-                </ul>
-              )}
-          </Panel>
+          {/* FASE 4 · Las órdenes de trabajo son HISTÓRICO.
+              Ya no se crean —el trabajo se organiza con los partes— y no
+              hay pantalla a la que ir, así que no se enlazan. Pero NO se
+              esconden: si este proyecto tuvo órdenes, siguen aquí a la
+              vista. Si no tuvo ninguna, el panel no aparece y deja de
+              ocupar sitio hablando de algo que ya no se usa. */}
+          {Boolean(orders.data?.rows.length) && (
+            <Panel title="Órdenes de trabajo (histórico)">
+              <ul className="mini-list">
+                {orders.data?.rows.map((o) => (
+                  <li key={o.id}>
+                    <span className="plate">{o.code}</span>
+                    <span className="cell-main">
+                      <strong>{ORDER_TYPE_LABEL[o.type]} · {fmtDate(o.scheduled_date)}</strong>
+                      <small>{o.description.slice(0, 60)}</small>
+                    </span>
+                    <Badge tone={ORDER_STATUS_TONE[o.status]}>{ORDER_STATUS_SHORT[o.status]}</Badge>
+                  </li>
+                ))}
+              </ul>
+              <p className="hint" style={{ marginBottom: 0 }}>
+                Son de antes de los partes de trabajo. Se conservan para poder consultarlas;
+                no se crean nuevas.
+              </p>
+            </Panel>
+          )}
 
           <Panel
             title="Material"
