@@ -271,9 +271,40 @@ Este usuario nace ya como **trabajador**, no hay que hacer nada más.
 4. Si no hay ninguna publicación en marcha, pulsa **Publicar METALPLAFER360**
    (izquierda) → **Run workflow** → **Run workflow**.
 5. Espera 2 o 3 minutos. Cuando aparezca una marca verde ✅, ya está publicada.
-6. La dirección es:
-   `https://<tu-usuario>.github.io/<nombre-del-repositorio>/`
-   También aparece en **Settings → Pages**.
+6. La dirección es la que aparece en **Settings → Pages**. Si no has
+   puesto un dominio propio, será
+   `https://<tu-usuario>.github.io/<nombre-del-repositorio>/`.
+
+### 9.1. Si usas un dominio propio
+
+La aplicación se publica **en la raíz** del dominio
+(`https://360.metalplafer.com/`), y así está configurada: no hay que
+hacer nada más que apuntar el DNS y poner el dominio en
+**Settings → Pages → Custom domain**.
+
+**Por qué importa.** La aplicación tiene que saber desde dónde pedir sus
+propios archivos. En la dirección de GitHub vive dentro de una carpeta
+(`/metalplafer360/`); con un dominio propio vive en la raíz (`/`). Si se
+construye con la carpeta y se sirve en la raíz, todos los JavaScript y
+los estilos dan **404** y la pantalla se queda **en blanco**: no es un
+problema del dominio ni del DNS, es esa ruta.
+
+**Si algún día hay que volver a la dirección de GitHub**, no hay que
+tocar ningún archivo. Basta con crear una variable y volver a publicar:
+
+**Settings → Secrets and variables → Actions → Variables → New variable**
+
+| Nombre | Valor |
+|---|---|
+| `VITE_BASE_PATH` | `/metalplafer360/` |
+
+Con la variable puesta, la aplicación vuelve a funcionar en
+`https://<tu-usuario>.github.io/metalplafer360/`. Para volver al dominio
+propio, se borra la variable y se publica otra vez.
+
+Hay una prueba que vigila las dos formas: `npm run test:publicacion`
+construye la aplicación, la sirve igual que lo haría cada dirección y
+comprueba que ningún archivo da 404 y que la interfaz se pinta.
 
 ---
 
@@ -456,6 +487,7 @@ pantalla de acceso, en el menú y en el móvil.
 | El pendiente de cobro no cuadra | El total sale del presupuesto del proyecto | Corrige el presupuesto en **Proyectos → Editar**; el pendiente se recalcula solo. |
 | Entra pero se queda en blanco | La publicación está a medias | **Actions** → mira si hay una marca roja ✗ y vuelve a lanzar **Run workflow**. |
 | Error 404 al abrir la dirección | GitHub Pages todavía no está activo | **Settings → Pages** → Source debe ser **GitHub Actions**. |
+| Pantalla **en blanco** y errores 404 de archivos `.js` y `.css` en la consola del navegador | La aplicación se construyó para una carpeta y se sirve en la raíz, o al contrario | Mira el apartado 9.1. Con dominio propio, la variable `VITE_BASE_PATH` **no** debe existir; en la dirección de GitHub debe valer `/metalplafer360/`. |
 | «No se ha podido conectar con el servidor» | Sin Internet, o el proyecto de Supabase está en pausa | Comprueba la conexión. Supabase pausa los proyectos gratuitos sin uso: entra en supabase.com y pulsa **Restore project**. |
 | El botón «Subir a Google Drive» está gris | Google Drive todavía no está conectado | Pulsa **Conectar Google Drive** en ese mismo recuadro ([paso 15.4](#154-conectar-google-drive)). |
 | «Falta configurar la conexión con Google» | No están puestos los dos secretos OAuth | Repasa el [paso 15.2](#152-guardar-los-secretos-en-supabase). El botón **GENERAR BACKUP AHORA** funciona igual sin esto. |

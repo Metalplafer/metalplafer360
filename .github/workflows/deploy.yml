@@ -81,8 +81,28 @@ jobs:
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
           VITE_LOGIN_DOMAIN: ${{ vars.VITE_LOGIN_DOMAIN }}
-          # En GitHub Pages la aplicación vive en /<nombre-del-repositorio>/
-          VITE_BASE_PATH: /${{ github.event.repository.name }}/
+          # ---------------------------------------------------------------
+          # DESDE DÓNDE PIDE LA APLICACIÓN SUS ARCHIVOS
+          #
+          # Aquí ponía «/${{ github.event.repository.name }}/», es decir
+          # «/metalplafer360/». Eso es lo correcto cuando la aplicación
+          # vive en metalplafer.github.io/metalplafer360/, porque está
+          # dentro de una carpeta.
+          #
+          # Con el dominio propio (360.metalplafer.com) la aplicación vive
+          # en la RAÍZ. Al pedir sus archivos en «/metalplafer360/assets/…»
+          # no había nada ahí: 404, y la pantalla se quedaba en blanco.
+          #
+          # Por omisión va «/», que es lo que necesita el dominio propio.
+          #
+          # SI ALGÚN DÍA HAY QUE VOLVER a publicar en la dirección de
+          # GitHub (metalplafer.github.io/metalplafer360/), NO hay que
+          # tocar este archivo: basta con crear la variable
+          #   Settings > Secrets and variables > Actions > Variables
+          #   VITE_BASE_PATH = /metalplafer360/
+          # y volver a publicar.
+          # ---------------------------------------------------------------
+          VITE_BASE_PATH: ${{ vars.VITE_BASE_PATH || '/' }}
         run: npm run build
 
       - name: Preparar la publicación
