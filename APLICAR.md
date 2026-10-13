@@ -18,6 +18,11 @@ añade el 35 y con la vista que rehace el 34.
 | 1.º | `supabase/sql/34_fechas_a_mano.sql` | Editar a mano las fechas de fabricación y montaje, y el periodo propio de una obra. |
 | 2.º | `supabase/sql/35_archivos_trabajador.sql` | Que el trabajador pueda subir archivos a sus proyectos y quitar solo los suyos. |
 | 3.º | `supabase/sql/36_clientes_obras_costes.sql` | Pantalla de clientes con su resumen económico, costes extra facturables y documentación de obras. |
+| 4.º | `supabase/sql/37_borrar_parte.sql` | Que administración pueda eliminar un parte de trabajo creado por error. |
+
+El 37 **no depende de los otros tres**: está comprobado que se instala
+sobre una base con los scripts 01 a 31 solamente. Si solo quieres la
+funcionalidad de eliminar partes, puedes ejecutar únicamente el 37.
 
 **Antes de pegar cada uno:** quita la línea
 
@@ -129,6 +134,12 @@ Con el administrador:
    obra: el cliente tiene que venir relleno, y al guardar **no** debe
    aparecer un cliente duplicado en la lista de clientes.
 9. **Menú.** «Órdenes de trabajo» ya no está.
+10. **Eliminar un parte.** Abre un parte de prueba en «Partes de trabajo»
+    y pulsa «Eliminar». Lee el aviso: tiene que decirte cuántos archivos
+    se van con él. Cancela una vez y comprueba que no ha pasado nada;
+    después elimínalo de verdad y comprueba que desaparece del listado y
+    que los demás partes siguen ahí. Con uno **validado** tiene que
+    negarse y decirte que lo rechaces primero.
 
 Con el móvil de un trabajador:
 

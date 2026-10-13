@@ -661,6 +661,132 @@ try {
   check('4 · Igual que las órdenes: no se ha borrado ningún registro',
     Array.isArray(db.work_orders));
 
+  // ===================================================================
+  // ELIMINAR UN PARTE DE TRABAJO
+  //
+  // Las reglas de verdad (quién puede, y que un parte validado no se
+  // borra) se prueban contra PostgreSQL en tests/sql/89. Aquí se prueba
+  // lo que ve y hace la persona: que se le avisa de lo que se va a
+  // perder, que puede echarse atrás, que la pantalla se actualiza y que
+  // un error llega traducido.
+  // ===================================================================
+
+  // Un segundo parte, para comprobar que borrar uno no toca el otro.
+  db.work_reports.push({
+    id: 'pt2', code: `PT-${YEAR}-002`, worker_id: WORKER.id, project_id: 'p1',
+    work_type: 'montaje', work_date: HOY, work_done: 'Este parte es de verdad.',
+    hours: 8, needs_material: false, status: 'enviado',
+    submitted_at: '2026-10-02T17:00:00Z', validated_at: null, validated_by: null,
+    rejected_at: null, reject_reason: null, assigned_at: null, assigned_by: null,
+    is_demo: false, created_at: '2026-10-02T09:00:00Z', updated_at: '2026-10-02T09:00:00Z',
+  });
+
+  // El listado abre por la pestaña «Pendientes», que son los enviados.
+  // Se pone también el primero en ese estado para que salgan los dos.
+  db.work_reports.find((r) => r.id === 'pt1').status = 'enviado';
+  db.work_reports.find((r) => r.id === 'pt1').submitted_at = '2026-10-01T17:00:00Z';
+
+  await page.goto(`http://localhost:${PORT}/#/admin/partes`, { waitUntil: 'networkidle' });
+  // Se recarga a propósito: con un router de hash, volver a la MISMA
+  // dirección no vuelve a montar la pantalla ni a pedir los datos.
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForTimeout(1000);
+  const partesAntes = await page.locator('tbody tr').count();
+  check('Borrado · el listado de partes enseña los dos',
+    partesAntes === 2, `${partesAntes} fila(s)`);
+
+  await page.goto(`http://localhost:${PORT}/#/admin/partes/pt1`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(1000);
+
+  check('Borrado · la ficha del parte ofrece eliminarlo',
+    await page.locator('.page-head button:has-text("Eliminar")').count() === 1);
+
+  // --- Se pide confirmación, y se puede echar atrás ---
+  await page.locator('.page-head button:has-text("Eliminar")').click();
+  await page.waitForTimeout(600);
+
+  const aviso = limpio(await page.locator('.modal').innerText());
+  check('Borrado · se pide confirmación antes de eliminar',
+    await page.locator('.modal').count() === 1 && aviso.includes('Eliminar el parte'));
+  check('Borrado · y se dice que no se puede deshacer',
+    aviso.includes('no se puede deshacer'), aviso.replace(/\n/g, ' · '));
+  check('Borrado · contando los archivos que se van con él',
+    aviso.includes('2 archivo(s)') && aviso.includes('firma'),
+    aviso.replace(/\n/g, ' · '));
+  check('Borrado · y recordando que rechazarlo es la otra opción',
+    aviso.includes('recházalo en lugar de eliminarlo'));
+
+  await page.locator('.modal button:has-text("Cancelar")').click();
+  await page.waitForTimeout(500);
+  check('Borrado · al cancelar NO se borra nada',
+    db.work_reports.length === 2
+    && db.documents.filter((d) => d.report_id === 'pt1').length === 2,
+    `${db.work_reports.length} parte(s)`);
+
+  // --- Un error del servidor llega traducido ---
+  //
+  // Se fuerza el caso real: un parte validado. La base de datos se
+  // niega, y lo que importa es que la persona lea POR QUÉ y qué hacer.
+  db.work_reports.find((r) => r.id === 'pt1').status = 'validado';
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForTimeout(1000);
+  await page.locator('.page-head button:has-text("Eliminar")').click();
+  await page.waitForTimeout(600);
+  await page.locator('.modal button:has-text("Eliminar el parte")').click();
+  await page.waitForTimeout(1000);
+
+  const fallo = limpio(await page.locator('.toast').last().innerText());
+  check('Borrado · un parte validado no se borra, y se explica por qué',
+    fallo.includes('está validado') && fallo.includes('Recházalo primero'),
+    fallo);
+  check('Borrado · y el parte sigue ahí después del error',
+    db.work_reports.some((r) => r.id === 'pt1'));
+
+  // --- Y ahora el camino bueno ---
+  db.work_reports.find((r) => r.id === 'pt1').status = 'enviado';
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForTimeout(1000);
+  await page.locator('.page-head button:has-text("Eliminar")').click();
+  await page.waitForTimeout(600);
+  await page.locator('.modal button:has-text("Eliminar el parte")').click();
+  await page.waitForTimeout(1400);
+
+  check('Borrado · el parte se elimina', !db.work_reports.some((r) => r.id === 'pt1'));
+  check('Borrado · con sus archivos y sus comentarios',
+    db.documents.filter((d) => d.report_id === 'pt1').length === 0
+    && db.comments.filter((c) => c.report_id === 'pt1').length === 0);
+  check('Borrado · el aviso dice qué se ha eliminado',
+    limpio(await page.locator('.toast').last().innerText()).includes(`PT-${YEAR}-001`),
+    limpio(await page.locator('.toast').last().innerText()));
+
+  // --- La pantalla y los listados se actualizan ---
+  await page.waitForTimeout(600);
+  check('Borrado · se vuelve al listado de partes',
+    page.url().includes('#/admin/partes') && !page.url().includes('pt1'), page.url());
+  check('Borrado · y el listado ya solo enseña el que queda',
+    await page.locator('tbody tr').count() === 1,
+    `${await page.locator('tbody tr').count()} fila(s)`);
+
+  // --- Lo que no se toca ---
+  check('Borrado · el otro parte sigue entero',
+    db.work_reports.some((r) => r.id === 'pt2' && r.status === 'enviado'));
+  check('Borrado · y el proyecto y su documentación siguen ahí',
+    db.projects.some((p) => p.id === 'p1')
+    && db.documents.filter((d) => d.project_id === 'p1').length === 2);
+
+  // --- El trabajador no tiene por dónde borrar ---
+  const movil5 = await browser.newContext({
+    viewport: { width: 390, height: 844 }, locale: 'es-ES', isMobile: true, hasTouch: true,
+  });
+  await stubSupabase(movil5, { db, getUser: () => WORKER });
+  const tel5 = await movil5.newPage();
+  await signIn(tel5, PORT, 'juan');
+  await tel5.goto(`http://localhost:${PORT}/#/t/partes/pt2`, { waitUntil: 'networkidle' });
+  await tel5.waitForTimeout(1100);
+  check('Borrado · al trabajador no se le ofrece eliminar su parte',
+    await tel5.locator('button:has-text("Eliminar")').count() === 0);
+  await movil5.close();
+
   check('Ninguna pantalla ha dado un error de programación',
     errores.length === 0, errores.join(' · '));
 

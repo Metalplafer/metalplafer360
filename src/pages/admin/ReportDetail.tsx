@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, Boxes, CheckCircle2, FolderKanban, Undo2 } from 'lucide-react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { ArrowLeft, Boxes, CheckCircle2, FolderKanban, Trash2, Undo2 } from 'lucide-react';
 import { useAsync } from '@/hooks/useAsync';
 import { useDialogs } from '@/components/ui/Dialogs';
 import { Alert, ErrorBox, Loading } from '@/components/ui/Feedback';
@@ -14,8 +14,9 @@ import {
 } from '@/config/constants';
 import { fmtDate, fmtDateTime, fmtHours } from '@/lib/format';
 import {
-  assignReportToProject, getReport, rejectReport, validateReport,
+  assignReportToProject, deleteReport, getReport, rejectReport, validateReport,
 } from '@/services/partes';
+import { documentPaths, removeStoredFiles } from '@/services/documents';
 import { listProjects } from '@/services/projects';
 
 /**
@@ -29,6 +30,7 @@ import { listProjects } from '@/services/projects';
  */
 export default function AdminReportDetail() {
   const { id = '' } = useParams();
+  const navigate = useNavigate();
   const { toast, confirm } = useDialogs();
   const [busy, setBusy] = useState(false);
   const [historyKey, setHistoryKey] = useState(0);
@@ -89,6 +91,62 @@ export default function AdminReportDetail() {
     } catch (e) { toast.error(e); } finally { setBusy(false); }
   }
 
+  /**
+   * ELIMINAR EL PARTE.
+   *
+   * Para los creados por error o durante las pruebas. Se dice EXACTAMENTE
+   * qué se va con él —contando los archivos que tiene ahora mismo— antes
+   * de pedir confirmación: «se eliminará el parte» no avisa de que
+   * también desaparece la firma del cliente.
+   *
+   * Las rutas del almacén se recogen ANTES de borrar, porque después las
+   * filas de «documents» ya no están y no habría forma de saber qué
+   * archivos retirar. Es el mismo orden que usa el borrado de un
+   * proyecto.
+   */
+  async function eliminar() {
+    const rutas = await documentPaths({ reportId: r.id }).catch(() => [] as string[]);
+    const ok = await confirm({
+      title: 'Eliminar el parte de trabajo',
+      message: (
+        <>
+          <p style={{ marginTop: 0 }}>
+            El parte <strong>{r.code}</strong>
+            {r.worker?.full_name ? <> de {r.worker.full_name}</> : null}
+            {r.hours != null ? <> ({fmtHours(r.hours)})</> : null} se eliminará
+            {r.project ? <> del proyecto {r.project.code}</> : null}.
+          </p>
+          {rutas.length > 0 && (
+            <p>
+              Se irán con él <strong>{rutas.length} archivo(s)</strong>: las fotografías,
+              los vídeos y la firma del cliente que tenga. Y sus comentarios.
+            </p>
+          )}
+          <p style={{ marginBottom: 0 }}>
+            <strong>Esto no se puede deshacer</strong> desde la aplicación. Queda una
+            anotación en el historial con todos los datos del parte, pero el parte y sus
+            archivos no se recuperan. Si solo quieres que el trabajador lo corrija,
+            recházalo en lugar de eliminarlo.
+          </p>
+        </>
+      ),
+      confirmLabel: 'Eliminar el parte',
+      danger: true,
+    });
+    if (!ok) return;
+    setBusy(true);
+    try {
+      const resultado = await deleteReport(r.id);
+      // El almacén se limpia después, ya con el parte borrado. Si esto
+      // falla, el parte está eliminado igualmente: no se deshace nada por
+      // un archivo que se resista.
+      await removeStoredFiles(rutas).catch(() => undefined);
+      toast.success(`${resultado.code} se ha eliminado`
+        + (resultado.documentos ? ` con sus ${resultado.documentos} archivo(s)` : ''));
+      navigate('/admin/partes');
+    } catch (e) { toast.error(e); } finally { setBusy(false); }
+  }
+
   return (
     <>
       <Link className="btn btn-sm btn-ghost" to="/admin/partes" style={{ marginBottom: 10 }}>
@@ -101,7 +159,17 @@ export default function AdminReportDetail() {
           {r.worker?.full_name ?? 'Trabajador'} · {ORDER_TYPE_LABEL[r.work_type]} ·{' '}
           {fmtDate(r.work_date)}
         </>}
-        actions={<Badge tone={REPORT_STATUS_TONE[r.status]}>{REPORT_STATUS_LABEL[r.status]}</Badge>}
+        actions={(
+          <span className="row" style={{ gap: 10 }}>
+            <Badge tone={REPORT_STATUS_TONE[r.status]}>{REPORT_STATUS_LABEL[r.status]}</Badge>
+            {/* Eliminar un parte creado por error o en pruebas. Solo
+                administración llega a esta pantalla, y la base de datos
+                lo vuelve a comprobar por su cuenta. */}
+            <button className="btn btn-danger btn-sm" disabled={busy} onClick={eliminar}>
+              <Trash2 />Eliminar
+            </button>
+          </span>
+        )}
       />
 
       <div className="stack" style={{ marginBottom: 16 }}>

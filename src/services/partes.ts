@@ -1,4 +1,5 @@
 import { supabase, unwrap } from '@/lib/supabase';
+import { Aviso } from '@/lib/errors';
 import type {
   OrderType, ProjectHours, ProjectReports, ProjectTeamRow, ReportStatus, WorkReport, WorkerProject,
 } from '@/types/db';
@@ -144,6 +145,46 @@ export async function assignReportToProject(id: string, projectId: string | null
   return unwrap(await supabase.rpc('assign_report_to_project', {
     p_report: id, p_project: projectId,
   })) as unknown as WorkReport;
+}
+
+/**
+ * ELIMINAR UN PARTE DE TRABAJO · solo administración.
+ *
+ * Para los creados por error o durante las pruebas. La comprobación de
+ * quién puede hacerlo está en la base de datos, no aquí: «work_reports»
+ * tiene retirado el permiso de borrar para quien tiene sesión, y la
+ * función empieza por «assert_admin». Un trabajador que llame a este
+ * servicio a mano recibe un «no tienes permisos».
+ *
+ * Un parte VALIDADO no se elimina: sus horas cuentan como trabajo
+ * realizado. La base de datos lo rechaza y explica que hay que
+ * rechazarlo primero.
+ *
+ * Devuelve el recuento de lo que se ha ido con él, para poder decírselo
+ * a quien lo ha borrado.
+ */
+export interface ReportDeletion {
+  ok: boolean;
+  code: string;
+  documentos: number;
+  firmas: number;
+  comentarios: number;
+  avisos: number;
+  proyecto: string | null;
+}
+
+export async function deleteReport(id: string) {
+  const r = unwrap(
+    await supabase.rpc('delete_work_report', { p_report: id }),
+  ) as unknown as ReportDeletion | null;
+
+  // Se confirma contra lo que ha devuelto la base de datos antes de
+  // decirle a nadie que el parte ya no está.
+  if (!r?.ok) {
+    throw new Aviso('El parte no se ha eliminado. Vuelve a cargar la pantalla '
+      + 'y compruébalo antes de darlo por bueno.');
+  }
+  return r;
 }
 
 /** Asignar trabajadores a un proyecto. Se manda la lista completa. */
