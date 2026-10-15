@@ -76,14 +76,24 @@ function servir(prefijo = '') {
 /** Construye como el workflow y abre la aplicación donde se le diga. */
 async function probar(navegador, { etiqueta, basePath, prefijo, direccion }) {
   console.log(`\n   ── ${etiqueta} ──`);
-  execFileSync('npm', ['run', 'build'], {
+
+  const entorno = basePath === null
+    // Sin la variable: es lo que hace el workflow por omisión ahora.
+    ? Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'VITE_BASE_PATH'))
+    : { ...process.env, VITE_BASE_PATH: basePath };
+
+  execFileSync(process.execPath, ['node_modules/typescript/bin/tsc', '--noEmit'], {
     cwd: RAIZ,
     stdio: 'ignore',
-    env: basePath === null
-      // Sin la variable: es lo que hace el workflow por omisión ahora.
-      ? Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'VITE_BASE_PATH'))
-      : { ...process.env, VITE_BASE_PATH: basePath },
+    env: entorno,
   });
+
+  execFileSync(process.execPath, ['node_modules/vite/bin/vite.js', 'build'], {
+    cwd: RAIZ,
+    stdio: 'ignore',
+    env: entorno,
+  });
+
 
   const servidor = servir(prefijo);
   await new Promise((r) => servidor.listen(PUERTO, r));
@@ -180,10 +190,22 @@ try {
 }
 
 // Se deja construido lo que se publica de verdad: la raíz.
-execFileSync('npm', ['run', 'build'], {
+
+const entorno = Object.fromEntries(
+  Object.entries(process.env).filter(([k]) => k !== 'VITE_BASE_PATH')
+);
+
+execFileSync(process.execPath, ['node_modules/typescript/bin/tsc', '--noEmit'], {
   cwd: RAIZ,
   stdio: 'ignore',
-  env: Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'VITE_BASE_PATH')),
+  env: entorno,
 });
+
+execFileSync(process.execPath, ['node_modules/vite/bin/vite.js', 'build'], {
+  cwd: RAIZ,
+  stdio: 'ignore',
+  env: entorno,
+});
+
 
 process.exit(report() ? 1 : 0);

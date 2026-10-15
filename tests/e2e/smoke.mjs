@@ -26,7 +26,7 @@ const DIST = join(ROOT, 'dist');
 const PORT = 4178;
 
 console.log('   Construyendo la aplicación para la prueba…');
-execFileSync('npx', ['vite', 'build', '--logLevel', 'error'], {
+execFileSync(process.execPath, ['node_modules/vite/bin/vite.js', 'build', '--logLevel', 'error'], {
   cwd: ROOT,
   stdio: 'inherit',
   env: {

@@ -157,7 +157,7 @@ export default function ReportsPage() {
             { key: 'fabricacion', label: 'Fabricación', type: 'hours', width: 14 },
             { key: 'montaje', label: 'Montaje', type: 'hours', width: 14 },
             { key: 'total', label: 'Total', type: 'hours', width: 14 },
-            { key: 'ordenes', label: 'Órdenes', type: 'int', width: 11 },
+            { key: 'trabajos', label: 'Trabajos', type: 'int', width: 11 },
           ],
           rows: w,
           totals: {
@@ -285,11 +285,11 @@ export default function ReportsPage() {
             { key: 'fabricacion', label: 'Fabricación', width: 2, align: 'right' },
             { key: 'montaje', label: 'Montaje', width: 2, align: 'right' },
             { key: 'total', label: 'Total', width: 2, align: 'right' },
-            { key: 'ordenes', label: 'Órdenes', width: 1, align: 'right' },
+            { key: 'trabajos', label: 'Trabajos', width: 1, align: 'right' },
           ],
           rows: w.map((r) => ({
             trabajador: r.trabajador, fabricacion: fmtHours(r.fabricacion),
-            montaje: fmtHours(r.montaje), total: fmtHours(r.total), ordenes: fmtNumber(r.ordenes),
+            montaje: fmtHours(r.montaje), total: fmtHours(r.total), trabajos: fmtNumber(r.trabajos),
           })),
           totals: {
             trabajador: 'TOTAL', fabricacion: fmtHours(hoursTotals.fabricacion),
@@ -511,7 +511,7 @@ export default function ReportsPage() {
                         <thead><tr>
                           <th>Trabajador</th><th className="right">Fabricación</th>
                           <th className="right">Montaje</th><th className="right">Total</th>
-                          <th className="right">Órdenes</th>
+                          <th className="right">Trabajos</th>
                         </tr></thead>
                         <tbody>
                           {w.map((r) => (
@@ -520,7 +520,7 @@ export default function ReportsPage() {
                               <td className="right num">{fmtHours(r.fabricacion)}</td>
                               <td className="right num">{fmtHours(r.montaje)}</td>
                               <td className="right num"><strong>{fmtHours(r.total)}</strong></td>
-                              <td className="right num">{fmtNumber(r.ordenes)}</td>
+                              <td className="right num">{fmtNumber(r.trabajos)}</td>
                             </tr>
                           ))}
                         </tbody>

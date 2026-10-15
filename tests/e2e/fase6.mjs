@@ -98,6 +98,22 @@ const db = createDb({
       returned_at: null, return_reason: null, archived_at: null, is_demo: false,
       created_at: `${MES}T09:00:00Z`, updated_at: `${ATRASADO}T19:00:00Z` },
   ],
+  // Un PARTE validado de fabricación. Está aquí por un motivo concreto:
+  // la orden «o1» tiene 7,5 h ENVIADAS pero NO validadas, y la base de
+  // datos no cuenta eso (solo lo validado). El Supabase simulado sí lo
+  // contaba, así que esta prueba venía dando por buenas unas horas que en
+  // producción nunca habrían salido. Ahora las 7,5 h de fabricación las
+  // pone un parte VALIDADO, que es trabajo de verdad contado, y de paso
+  // se comprueba que el panel cuenta los partes (migración 39).
+  work_reports: [
+    { id: 'pt1', code: `PT-${YEAR}-001`, worker_id: WORKER.id, project_id: 'p1',
+      ficha_id: null, work_type: 'fabricacion', work_date: HOY,
+      work_done: 'Corte y soldadura de los marcos.', hours: 7.5, needs_material: false,
+      status: 'validado', submitted_at: `${HOY}T17:00:00Z`,
+      validated_at: `${HOY}T19:00:00Z`, validated_by: ADMIN.id,
+      rejected_at: null, reject_reason: null, assigned_at: null, assigned_by: null,
+      is_demo: false, created_at: `${HOY}T17:00:00Z`, updated_at: `${HOY}T19:00:00Z` },
+  ],
   work_order_workers: [
     { order_id: 'o1', worker_id: WORKER.id, work_done: 'Marcos soldados.', hours: 7.5,
       submitted_at: `${HOY}T17:00:00Z`, assigned_at: `${MES}T09:00:00Z`,
@@ -198,8 +214,15 @@ try {
   check('Reúne la información económica', panel.includes('Presupuestado') && panel.includes('Cobrado'));
   check('Y lo que requiere atención', panel.includes('Requiere tu atención'));
 
+  // 7,5 h de un PARTE validado (fabricación) + 3,5 h de una ORDEN
+  // validada (montaje) = 11 h. Las dos procedencias, una sola cifra.
   check('Suma las horas de fabricación y montaje del periodo',
     panel.includes('7,5 h') && panel.includes('3,5 h') && panel.includes('11 h'));
+  // Y lo que NO cuenta: la orden «o1» tiene 18 h previstas y sus horas
+  // enviadas sin validar. Hasta que administración valida, no cuentan.
+  check('Y no cuenta lo que está enviado pero sin validar',
+    !panel.includes('18 h') && !panel.includes('29 h'),
+    panel.replace(/\n/g, ' · ').slice(0, 220));
   // FASE 4 · Las dos alertas de órdenes se retiraron con la sección.
   check('Ya no avisa de órdenes pendientes, que se retiraron',
     !panel.includes('órdenes pendientes de revisión')
@@ -424,7 +447,7 @@ print(json.dumps({'hojas': hojas, 'congelada': wb.worksheets[0].freeze_panes,
 
   // Se conecta (en la prueba, Google responde solo).
   db.drive.connected = true;
-  db.drive.account_email = 'metalplafer@gmail.com';
+  db.drive.account_email = 'copias@metalplafer.example';
   db.drive.folder_id = 'carpeta-123';
   db.drive.folder_name = 'METALPLAFER360 · Copias de seguridad';
   db.drive.connected_at = new Date().toISOString();
@@ -433,7 +456,7 @@ print(json.dumps({'hojas': hojas, 'congelada': wb.worksheets[0].freeze_panes,
 
   const estadoDrive = await page.locator('.drive-box').innerText();
   check('Conectado, la pantalla dice con qué cuenta y en qué carpeta',
-    estadoDrive.includes('Conectado') && estadoDrive.includes('metalplafer@gmail.com')
+    estadoDrive.includes('Conectado') && estadoDrive.includes('copias@metalplafer.example')
     && estadoDrive.includes('METALPLAFER360 · Copias de seguridad'), estadoDrive.replace(/\n/g, ' · '));
 
   await page.locator('button:has-text("Subir a Google Drive")').click();
@@ -580,9 +603,89 @@ print(json.dumps({'hojas': hojas, 'congelada': wb.worksheets[0].freeze_panes,
   check('Y deja cambiar el tamaño máximo de archivo',
     (await page.locator('#st-mb').inputValue()) === '100');
   await page.locator('#st-mb').fill('150');
-  await page.locator('button:has-text("Guardar")').last().click();
+  // Por su identificador, no por «el último Guardar»: la pestaña tiene
+  // ahora dos botones de guardar (el tamaño y la capacidad declarada).
+  await page.locator('#st-guardar-mb').click();
   await page.waitForTimeout(800);
   check('El tamaño máximo se guarda', db.settings.max_file_mb === 150);
+
+  // ---- Cuánto cabe: la capacidad DECLARADA a mano -------------------
+  // No se puede consultar el plan de Supabase desde la aplicación, así
+  // que mientras no se escriba no se pinta ningún porcentaje. Un
+  // porcentaje sobre una cifra inventada no mide nada.
+  const limpiarNbsp = (x) => x.replace(/\u00a0/g, ' ');
+  const sinCuota = limpiarNbsp(await page.locator('main').innerText());
+  check('Sin capacidad declarada se dice que falta, y dónde mirarlo',
+    sinCuota.includes('Falta decir cuánto espacio hay contratado')
+    && sinCuota.includes('Settings → Usage'),
+    sinCuota.replace(/\n/g, ' · ').slice(0, 220));
+  check('Y la columna de lo que cabe dice «sin declarar», no un número',
+    sinCuota.includes('sin declarar'));
+  check('Los archivos, la base de datos y las copias van por separado',
+    sinCuota.includes('Archivos') && sinCuota.includes('Base de datos')
+    && sinCuota.includes('Copias de seguridad'));
+  check('Y se dice que las copias ocupan en Drive, no en Supabase',
+    sinCuota.includes('Drive'));
+  check('Sin capacidad declarada no hay ninguna barra con porcentaje',
+    (await page.locator('.bar-row .bar-value:not(:text("—"))').count()) <= 1,
+    String(await page.locator('.bar-row').count()));
+
+  // Una capacidad pequeña a propósito: así el porcentaje se dispara y se
+  // puede comprobar que el aviso crítico aparece de verdad.
+  await page.locator('#st-qf').fill('1');
+  await page.locator('#st-qd').fill('500');
+  await page.locator('#st-qn').fill('Plan Pro, comprobado en la factura');
+  await page.locator('#st-guardar-cuota').click();
+  await page.waitForTimeout(1000);
+
+  check('La capacidad declarada se guarda, con su nota',
+    db.settings.storage_quota_mb === 1 && db.settings.db_quota_mb === 500
+    && db.settings.quota_note === 'Plan Pro, comprobado en la factura',
+    JSON.stringify({ f: db.settings.storage_quota_mb, d: db.settings.db_quota_mb }));
+  check('Y queda fechada, para saber si está vieja',
+    Boolean(db.settings.quota_checked_on), String(db.settings.quota_checked_on));
+
+  const conCuota = limpiarNbsp(await page.locator('main').innerText());
+  check('Ahora sí se dice que es un dato declarado a mano, no medido',
+    conCuota.includes('Es un dato declarado a mano'));
+  check('Y se avisa de que queda poco espacio',
+    conCuota.includes('Queda menos del 10 %'),
+    conCuota.replace(/\n/g, ' · ').slice(0, 240));
+  // Y se comprueba EL COLOR, no que la clase esté puesta: una clase sin
+  // estilo detrás no pinta nada, y eso es justo lo que se escapaba.
+  const colores = await page.evaluate(() => {
+    const dentro = (txt) => [...document.querySelectorAll('.bar-row')]
+      .find((f) => f.textContent.includes(txt))?.querySelector('.bar-fill');
+    const color = (el) => (el ? getComputedStyle(el).backgroundColor : null);
+    return { critico: color(dentro('Archivos')), normal: color(dentro('papelera')) };
+  });
+  check('La barra de los archivos se pinta de otro color, no solo con texto',
+    Boolean(colores.critico) && colores.critico !== colores.normal,
+    JSON.stringify(colores));
+  check('Y ese color es rojo, no el azul de siempre',
+    /^rgb\(\s*1[0-9][0-9]/.test(colores.critico ?? ''), JSON.stringify(colores));
+  check('La base de datos, con 500 MB, NO salta: tiene su propia capacidad',
+    (await page.locator('.bar-row:has-text("Base de datos") .bar-fill.critico').count()) === 0);
+
+  // Y se puede retirar: es la manera de decir «ya no me fío de este dato».
+  await page.locator('#st-qf').fill('');
+  await page.locator('#st-qd').fill('');
+  await page.locator('#st-guardar-cuota').click();
+  await page.waitForTimeout(1000);
+  check('Dejándola en blanco se retira, y se borra la fecha',
+    db.settings.storage_quota_mb === null && db.settings.db_quota_mb === null
+    && db.settings.quota_checked_on === null);
+
+  // Y una capacidad imposible se rechaza con un mensaje, no en silencio.
+  await page.locator('#st-qf').fill('0');
+  await page.locator('#st-guardar-cuota').click();
+  await page.waitForTimeout(800);
+  check('Una capacidad de cero se rechaza y se dice qué hacer',
+    (await page.locator('.toast').last().innerText()).includes('mayor que cero'),
+    await page.locator('.toast').last().innerText());
+  check('Y no se ha guardado nada al intentarlo',
+    db.settings.storage_quota_mb === null);
+  await page.locator('#st-qf').fill('');
 
   // ---- Trabajadores ----
   await page.locator('.sidebar nav a:has-text("Trabajadores")').click();

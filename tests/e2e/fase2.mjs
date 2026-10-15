@@ -211,7 +211,17 @@ try {
   await page.locator('#f-address').fill('Carrer Major, 12 · Matadepera');
   await page.locator('#f-date').fill(`${YEAR}-06-15`);
   await page.locator('#f-time').fill('09:30');
-  await page.locator('#f-assigned').selectOption({ label: 'Juan Ortega' });
+  // UNA VISITA ES DE ADMINISTRACIÓN. La lista no ofrece trabajadores, y la
+  // base de datos rechaza uno aunque alguien fuerce la petición (está
+  // probado en SQL, archivo 90). Aquí se comprueba las dos cosas: que el
+  // trabajador NO está en la lista y que administración sí.
+  const opcionesVisita = await page.locator('#f-assigned option').allInnerTexts();
+  check('En una visita no se ofrece ningún trabajador: las lleva administración',
+    !opcionesVisita.some((o) => o.includes('Juan Ortega')), opcionesVisita.join(' | '));
+  check('Y se explica por qué, con la alternativa',
+    (await page.locator('.field:has(#f-assigned)').innerText()).includes('créalo como aviso'));
+
+  await page.locator('#f-assigned').selectOption({ label: 'Salvi Plaza (administración)' });
   await page.locator('button:has-text("Crear visita")').click();
   await page.waitForTimeout(800);
 

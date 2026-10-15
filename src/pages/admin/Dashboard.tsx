@@ -157,7 +157,9 @@ export default function Dashboard() {
           <span className="figure"><b>{fmtHours(d.produccion.horas_fabricacion)}</b><span>Fabricación</span></span>
           <span className="figure"><b>{fmtHours(d.produccion.horas_montaje)}</b><span>Montaje</span></span>
           <span className="figure"><b>{fmtHours(d.produccion.horas_totales)}</b><span>Total del periodo</span></span>
-          <span className="figure"><b>{fmtNumber(d.produccion.ordenes_validadas)}</b><span>Órdenes validadas</span></span>
+          {/* Trabajos, no «órdenes»: cuenta los partes y las órdenes.
+              Mientras contaba solo órdenes, la cifra se quedaba corta. */}
+          <span className="figure"><b>{fmtNumber(d.produccion.trabajos_validados)}</b><span>Trabajos validados</span></span>
           <span className="figure"><b>{fmtNumber(d.produccion.trabajadores)}</b><span>Personas con horas</span></span>
         </div>
       </Panel>

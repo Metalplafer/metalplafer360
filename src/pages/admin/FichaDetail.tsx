@@ -3,7 +3,7 @@ import {
   Archive, ArchiveRestore, ArrowLeft, Building2, CalendarClock, Clock, FolderKanban, Mail,
   MapPin, MessageCircle, Pencil, Phone, Trash2, UserRound,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAsync } from '@/hooks/useAsync';
 import { useDialogs } from '@/components/ui/Dialogs';
 import { Badge, PageHeader, Panel } from '@/components/ui/Layout';
@@ -12,7 +12,7 @@ import { DocumentsPanel } from '@/components/shared/DocumentsPanel';
 import { documentPaths, removeStoredFiles } from '@/services/documents';
 import { CommentsPanel } from '@/components/shared/CommentsPanel';
 import { HistoryPanel } from '@/components/shared/HistoryPanel';
-import { deleteFicha, getFicha, updateFicha } from '@/services/fichas';
+import { assignFichaWorkers, deleteFicha, fichaTeam, getFicha, updateFicha } from '@/services/fichas';
 import { convertBudget, projectFromFicha } from '@/services/projects';
 import { listPeople } from '@/services/people';
 import { FICHA_STATUSES, FICHA_TYPE_LABEL, fichaStatus } from '@/config/constants';
@@ -27,11 +27,35 @@ export default function FichaDetail() {
 
   const ficha = useAsync(() => getFicha(id), [id]);
   const people = useAsync(() => listPeople(), []);
+  // Solo se pide el equipo cuando la ficha es un AVISO: una visita o un
+  // presupuesto no lo tienen.
+  const equipo = useAsync(
+    async () => (ficha.data?.type === 'aviso' ? fichaTeam(id) : []),
+    [id, ficha.data?.type],
+  );
   // Si este presupuesto ya se convirtió, aquí está su proyecto.
   const project = useAsync(() => projectFromFicha(id), [id, ficha.data?.status]);
   const [saving, setSaving] = useState(false);
   // Se incrementa tras cada acción para volver a pedir el historial.
   const [historyKey, setHistoryKey] = useState(0);
+  /**
+   * EL EQUIPO DEL AVISO, EN LA PANTALLA.
+   *
+   * Se guarda aparte de «equipo.data» para que la casilla se mueva EN EL
+   * ACTO al pulsarla. Si se pintara directamente de lo que ha devuelto
+   * la base de datos, la casilla no se movería hasta que terminara la
+   * ida y vuelta, y una casilla que no reacciona al dedo parece rota.
+   * Si la base de datos dice no, se deshace y se explica.
+   *
+   * El RESPONSABLE no entra aquí: sale también en «ficha_team», pero es
+   * otra cosa (se elige en el desplegable de arriba). Si se marcara su
+   * casilla, desmarcarla no haría nada.
+   */
+  const [enElAviso, setEnElAviso] = useState<string[]>([]);
+  useEffect(() => {
+    setEnElAviso((equipo.data ?? [])
+      .filter((x) => !x.es_responsable).map((x) => x.worker_id));
+  }, [equipo.data]);
 
   if (ficha.loading && !ficha.data) return <Loading />;
   if (ficha.error) return <ErrorBox message={ficha.error} onRetry={ficha.reload} />;
@@ -40,6 +64,8 @@ export default function FichaDetail() {
   const f = ficha.data;
   const status = fichaStatus(f.type, f.status);
   const archived = Boolean(f.archived_at);
+
+  const candidatos = (people.data ?? []).filter((p) => p.role === 'worker');
 
   async function changeStatus(next: string) {
     if (next === f.status) return;
@@ -73,6 +99,34 @@ export default function FichaDetail() {
       await ficha.reload();
       setHistoryKey((n) => n + 1);
     } catch (e) { toast.error(e); } finally { setSaving(false); }
+  }
+
+  /**
+   * PONER O QUITAR A ALGUIEN DEL EQUIPO DEL AVISO.
+   *
+   * Se manda la lista COMPLETA, igual que en los proyectos y en las
+   * órdenes: quitar a alguien es volver a mandarla sin él. Así no hay dos
+   * caminos distintos para añadir y para quitar.
+   */
+  async function toggleEquipo(personId: string) {
+    const estaba = enElAviso.includes(personId);
+    const antes = enElAviso;
+    const siguiente = estaba
+      ? enElAviso.filter((x) => x !== personId)
+      : [...enElAviso, personId];
+    setEnElAviso(siguiente);   // la casilla se mueve ya
+    setSaving(true);
+    try {
+      await assignFichaWorkers(f.id, siguiente);
+      toast.success(estaba
+        ? 'Trabajador retirado del aviso'
+        : 'Trabajador asignado al aviso');
+      await equipo.reload();
+      setHistoryKey((n) => n + 1);
+    } catch (e) {
+      setEnElAviso(antes);     // no ha podido ser: se deshace
+      toast.error(e);
+    } finally { setSaving(false); }
   }
 
   async function toggleArchive() {
@@ -224,20 +278,75 @@ export default function FichaDetail() {
 
               <div className="field" style={{ maxWidth: 340 }}>
                 <label htmlFor="assign">
-                  {f.type === 'presupuesto' ? 'Quién lo prepara' : 'Trabajador responsable'}
+                  {f.type === 'presupuesto' ? 'Quién lo prepara'
+                    : f.type === 'visita' ? 'Quién la hace'
+                    : 'Trabajador responsable'}
                 </label>
+                {/* UNA VISITA ES DE ADMINISTRACIÓN. Aquí solo se ofrecen
+                    perfiles de administración; la base de datos rechaza
+                    cualquier otro, así que la regla NO depende de que esta
+                    lista esté bien hecha. */}
                 <select id="assign" className="select" value={f.assigned_to ?? ''} disabled={saving || archived}
                         onChange={(e) => assign(e.target.value)}>
                   <option value="">Sin asignar</option>
-                  {(people.data ?? []).map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.full_name}{p.role === 'admin' ? ' (administración)' : ''}
-                    </option>
-                  ))}
+                  {(people.data ?? [])
+                    .filter((p) => f.type !== 'visita' || p.role === 'admin')
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.full_name}{p.role === 'admin' ? ' (administración)' : ''}
+                      </option>
+                    ))}
                 </select>
+                {f.type === 'visita' && (
+                  <p className="hint" style={{ marginBottom: 0 }}>
+                    Las visitas las lleva administración. Si el trabajo lo tiene que hacer
+                    un trabajador, créalo como aviso.
+                  </p>
+                )}
               </div>
             </div>
           </Panel>
+
+          {/* ---------------------------------------------------------------
+              EL EQUIPO DEL AVISO
+
+              Solo para los AVISOS. Un aviso lo puede atender más de una
+              persona, y cada una apunta sus propias horas en su parte. El
+              responsable de arriba sigue siendo el responsable: esto es su
+              equipo, no un sustituto.
+
+              Las visitas y los presupuestos no tienen equipo: los lleva
+              administración. La base de datos rechaza repartir una visita,
+              así que esto no se sostiene solo en no pintar el panel.
+              --------------------------------------------------------------- */}
+          {f.type === 'aviso' && (
+            <Panel title="Trabajadores del aviso">
+              {equipo.loading && !equipo.data ? <Loading /> : (
+                <div className="stack">
+                  {!candidatos.length ? (
+                    <p className="muted" style={{ margin: 0 }}>
+                      Todavía no hay trabajadores dados de alta.
+                    </p>
+                  ) : (
+                    <div className="substatus-grid">
+                      {candidatos.map((p) => (
+                        <label key={p.id} className="checkbox">
+                          <input type="checkbox" checked={enElAviso.includes(p.id)}
+                                 disabled={saving || archived}
+                                 onChange={() => toggleEquipo(p.id)} />
+                          {p.full_name}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  <p className="hint" style={{ margin: 0 }}>
+                    Puedes asignar varios. Cada uno verá el aviso en sus trabajos y
+                    apuntará sus propias horas en su parte.
+                  </p>
+                </div>
+              )}
+            </Panel>
+          )}
 
           <Panel title="Datos" actions={
             <div className="row" style={{ gap: 6 }}>

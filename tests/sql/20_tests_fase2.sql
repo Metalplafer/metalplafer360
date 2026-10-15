@@ -223,8 +223,12 @@ select test.ok('presupuestos', 'El historial explica el cambio en castellano',
 
 
 \echo '== VISITAS'
-update public.fichas set assigned_to = test.id('juan') where id = test.id('vis1');
-select test.ok('visitas', 'Al asignar trabajador la visita pasa a «Asignada»',
+-- Se asigna a SALVI, que es administración. Una visita ya no se puede dar
+-- a un trabajador normal (archivo 38), y lo que se comprueba aquí es la
+-- maquinaria de estados, que es la misma sea quien sea el responsable.
+-- La prohibición en sí tiene sus propias pruebas en el archivo 90.
+update public.fichas set assigned_to = test.id('salvi') where id = test.id('vis1');
+select test.ok('visitas', 'Al asignar la visita pasa a «Asignada»',
   (select status = 'asignada' from public.fichas where id = test.id('vis1')));
 
 select test.ok('visitas', 'Guarda fecha, hora, dirección y descripción',
@@ -359,8 +363,12 @@ select test.as_user(test.id('juan'));
 select test.ok('permisos', 'No lee ni una fila de «fichas»: ahí está el importe',
   not exists (select 1 from public.fichas));
 
-select test.ok('permisos', 'Ve solo la visita y el aviso que tiene asignados',
-  (select count(*) = 2 and bool_and(id in (test.id('vis1'), test.id('avi1')))
+-- Solo el AVISO. La visita se asigna ahora a administración (archivo 38),
+-- así que un trabajador ya no puede tener ninguna: eso es precisamente lo
+-- que se pedía. Lo que esta comprobación vigila sigue siendo lo mismo:
+-- que ve lo suyo y nada más.
+select test.ok('permisos', 'Ve solo el aviso que tiene asignado, y ninguna visita',
+  (select count(*) = 1 and bool_and(id = test.id('avi1'))
      from public.worker_fichas));
 
 select test.ok('permisos', 'No ve los presupuestos',
@@ -393,10 +401,18 @@ select test.ok('permisos', 'No puede modificar los datos de un cliente',
 
 -- Se comprueba leyendo por «worker_fichas», que es por donde entra el
 -- trabajador desde el BLOQUE 5: la ficha sigue como estaba.
-update public.fichas set status = 'cerrado', description = 'HACKEADO' where id = test.id('vis1');
+--
+-- Se usa su AVISO y no la visita: la visita es de administración desde el
+-- archivo 38 y un trabajador ya no la ve siquiera, así que preguntar por
+-- ella no devolvería «falso», devolvería nada, y la comprobación dejaría
+-- de medir lo que quiere medir. El aviso sí lo ve, y ahí se ve de verdad
+-- que escribir a pelo en «fichas» no le sirve de nada. Su estado aquí es
+-- «cerrado», así que se intenta retroceder a «por_asignar».
+update public.fichas set status = 'por_asignar', description = 'HACKEADO'
+ where id = test.id('avi1');
 select test.ok('permisos', 'No puede cambiar el estado de sus fichas por su cuenta',
-  (select status = 'realizada' and description <> 'HACKEADO'
-     from public.worker_fichas where id = test.id('vis1')));
+  (select status = 'cerrado' and coalesce(description, '') <> 'HACKEADO'
+     from public.worker_fichas where id = test.id('avi1')));
 
 select test.ok('permisos', 'No puede usar el buscador de clientes de administración',
   (select count(*) = 0 from public.suggest_clients('García')));

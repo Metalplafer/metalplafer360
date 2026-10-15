@@ -201,7 +201,7 @@ try {
     m.url().includes('#/t') && await m.locator('.w-tabbar').count() === 1);
   await captura(m, '04-movil-inicio');
 
-  await m.locator('.w-tabbar a:has-text("Proyectos")').click();
+  await m.locator('.w-tabbar a:has-text("Trabajos")').click();
   await m.waitForTimeout(1300);
   const susProyectos = await m.locator('.w-content').innerText();
   check('2 · Ve su proyecto', susProyectos.includes(`PROY-${YEAR}-001`));
@@ -230,7 +230,7 @@ try {
   await m.locator('a:has-text("Parte de trabajo")').first().click();
   await m.waitForTimeout(1200);
   check('3 · El parte se abre con el proyecto puesto',
-    await m.locator('#pt-proyecto').inputValue() === p1.id);
+    await m.locator('#pt-origen').inputValue() === `p:${p1.id}`);
 
   // Las fotos y la firma cuelgan del parte, así que no existen hasta que
   // el parte existe. Lo que NO puede pasar es que el trabajador no se
@@ -434,7 +434,7 @@ try {
   await m.locator('a:has-text("Parte sin proyecto")').click();
   await m.waitForTimeout(1200);
   check('6 · «Parte sin proyecto» se abre vacío de proyecto',
-    await m.locator('#pt-proyecto').inputValue() === '');
+    await m.locator('#pt-origen').inputValue() === '');
   await m.locator('button:has-text("Fabricación")').click();
   await m.locator('#pt-done').fill('Corte de pletinas para una persona del mostrador.');
   await m.locator('#pt-hours').fill('1,5');
@@ -718,7 +718,7 @@ try {
 
   // Pedro, en su propio móvil, tampoco ve lo de Juan.
   await signIn(pedro, PORT, 'pedro');
-  await pedro.locator('.w-tabbar a:has-text("Proyectos")').click();
+  await pedro.locator('.w-tabbar a:has-text("Trabajos")').click();
   await pedro.waitForTimeout(1400);
   const loDePedro = await pedro.locator('.w-content').innerText();
   check('14 · Pedro ve su proyecto y no el de Juan',

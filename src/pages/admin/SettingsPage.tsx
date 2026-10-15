@@ -15,13 +15,14 @@ import {
   generateBackup, listBackups, readBackupFile, restoreBackup,
 } from '@/services/backup';
 import {
-  getSettings, listCounters, setBackupSettings, setCompany, setCounter,
-  setGapDays, setMaxFileMb, storageUsage,
+  getSettings, listCounters, saveStorageQuota, setBackupSettings, setCompany, setCounter,
+  setGapDays, setMaxFileMb, storageSummary, storageUsage,
 } from '@/services/settings';
 import { clearDemo, demoStatus, seedDemo } from '@/services/demo';
 import { RESTORE_SCOPES, tablesForScopes, type BackupContents } from '@/lib/export/backup';
 import { MIME, downloadBytes } from '@/lib/download';
-import { fmtBytes, fmtDateTime, fmtNumber } from '@/lib/format';
+import { fmtBytes, fmtDate, fmtDateTime, fmtNumber } from '@/lib/format';
+import { Aviso } from '@/lib/errors';
 
 import type { AppSettings } from '@/types/db';
 
@@ -75,7 +76,7 @@ export default function SettingsPage() {
                 <PlanningTab settings={settings.data} onSaved={reload} />
               )}
               {tab === 'almacenamiento' && (
-                <StorageTab maxFileMb={maxFileMb} onSaved={reload} />
+                <StorageTab settings={settings.data} maxFileMb={maxFileMb} onSaved={reload} />
               )}
               {tab === 'preferencias' && <AppTab />}
             </>
@@ -627,21 +628,58 @@ function BackupTab({ settings, company, onSaved }: {
 // ---------------------------------------------------------------------
 // ALMACENAMIENTO
 // ---------------------------------------------------------------------
-function StorageTab({ maxFileMb, onSaved }: { maxFileMb: number; onSaved: () => void }) {
+function StorageTab({ settings, maxFileMb, onSaved }: {
+  settings: AppSettings; maxFileMb: number; onSaved: () => void;
+}) {
   const { toast } = useDialogs();
   const usage = useAsync(() => storageUsage(), []);
+  const resumen = useAsync(() => storageSummary(), []);
   const [mb, setMb] = useState(String(maxFileMb));
+  // La capacidad contratada. Se escribe a mano porque NO se puede
+  // consultar: el límite del plan vive en la facturación de Supabase.
+  const [quotaFiles, setQuotaFiles] = useState(
+    settings.storage_quota_mb != null ? String(settings.storage_quota_mb) : '');
+  const [quotaDb, setQuotaDb] = useState(
+    settings.db_quota_mb != null ? String(settings.db_quota_mb) : '');
+  const [quotaNota, setQuotaNota] = useState(settings.quota_note ?? '');
   const [busy, setBusy] = useState(false);
 
   const rows = usage.data ?? [];
   const total = rows.reduce((s, r) => s + Number(r.bytes), 0);
   const trash = rows.reduce((s, r) => s + Number(r.bytes_papelera), 0);
+  const barras = resumen.data ?? [];
+  const sinDeclarar = barras.length > 0 && barras.every((b) => b.cuota_bytes == null);
 
   async function save() {
     setBusy(true);
     try {
       await setMaxFileMb(Number(mb));
       toast.success('Tamaño máximo guardado');
+      onSaved();
+    } catch (e) { toast.error(e); } finally { setBusy(false); }
+  }
+
+  /** Guardar la capacidad declarada. En blanco la retira. */
+  async function guardarCuota() {
+    const num = (x: string) => {
+      const v = x.trim();
+      if (!v) return null;
+      const n = Number(v.replace(',', '.'));
+      return Number.isFinite(n) && n > 0 ? Math.round(n) : NaN;
+    };
+    const f = num(quotaFiles);
+    const d = num(quotaDb);
+    if (Number.isNaN(f) || Number.isNaN(d)) {
+      toast.error(new Aviso('Escribe la capacidad en MB, con un número mayor que cero. '
+        + 'Si no la sabes, déjala en blanco.'));
+      return;
+    }
+    setBusy(true);
+    try {
+      await saveStorageQuota(f, d, quotaNota.trim() || null);
+      toast.success(f == null && d == null
+        ? 'Capacidad retirada' : 'Capacidad declarada');
+      await resumen.reload();
       onSaved();
     } catch (e) { toast.error(e); } finally { setBusy(false); }
   }
@@ -656,6 +694,97 @@ function StorageTab({ maxFileMb, onSaved }: { maxFileMb: number; onSaved: () => 
           <span>Archivos</span>
         </span>
       </div>
+
+      {/* ----------------------------------------- CUÁNTO CABE
+          Los archivos, la base de datos y las copias van SEPARADOS: cada
+          uno tiene su capacidad y las copias ni siquiera ocupan en
+          Supabase (están en Drive). Una sola barra con todo sumado daría
+          un porcentaje falso.
+
+          Mientras no se declare la capacidad NO se pinta ninguna barra:
+          un porcentaje sobre una cifra inventada no mide nada. */}
+      {resumen.loading && !resumen.data ? <Loading /> : (
+        <>
+          {sinDeclarar && (
+            <Alert kind="info">
+              <strong>Falta decir cuánto espacio hay contratado.</strong>
+              <div style={{ marginTop: 2 }}>
+                El límite del plan no se puede consultar desde aquí: está en la facturación de
+                Supabase. Míralo en el panel de Supabase, en «Settings → Usage», y escríbelo
+                abajo. Hasta entonces se ve lo que ocupa, pero no cuánto queda.
+              </div>
+            </Alert>
+          )}
+
+          <div className="bar-list" style={{ margin: '14px 0' }}>
+            {barras.map((b) => (
+              <div key={b.concepto} className="bar-row" title={b.detalle}>
+                <span className="bar-label">{b.concepto}</span>
+                <span className="bar-track">
+                  <span className={`bar-fill ${b.nivel ?? ''}`}
+                        style={{ width: `${Math.min(b.porcentaje ?? 0, 100)}%` }} />
+                </span>
+                <span className="bar-value">
+                  {b.porcentaje != null ? `${fmtNumber(b.porcentaje)} %` : '—'}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div className="table-wrap" style={{ marginBottom: 16 }}>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Concepto</th><th className="right">Ocupa</th>
+                  <th className="right">Cabe</th><th className="right">Queda</th>
+                  <th>Qué es</th>
+                </tr>
+              </thead>
+              <tbody>
+                {barras.map((b) => (
+                  <tr key={b.concepto}>
+                    <td>
+                      {b.concepto}
+                      {!b.medido && <span className="faint"> · no se ha podido medir</span>}
+                    </td>
+                    <td className="right num">
+                      {b.usado_bytes != null ? fmtBytes(Number(b.usado_bytes)) : '—'}
+                    </td>
+                    <td className="right num">
+                      {b.cuota_bytes != null
+                        ? fmtBytes(Number(b.cuota_bytes))
+                        : <span className="faint">sin declarar</span>}
+                    </td>
+                    <td className="right num">
+                      {b.libre_bytes != null ? fmtBytes(Number(b.libre_bytes)) : '—'}
+                    </td>
+                    <td className="faint">{b.detalle}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {barras.some((b) => b.nivel === 'critico') && (
+            <Alert kind="danger">
+              <strong>Queda menos del 10 % de espacio.</strong>
+              <div style={{ marginTop: 2 }}>
+                Vacía la papelera para recuperar lo más fácil y, si no basta, habla con
+                quien lleva la cuenta de Supabase antes de que deje de entrar nada.
+              </div>
+            </Alert>
+          )}
+          {!barras.some((b) => b.nivel === 'critico')
+            && barras.some((b) => b.nivel === 'atencion') && (
+            <Alert kind="warn">
+              <strong>Se ha pasado del 70 % del espacio.</strong>
+              <div style={{ marginTop: 2 }}>
+                Todavía no es urgente. Vaciar la papelera es lo que más recupera.
+              </div>
+            </Alert>
+          )}
+        </>
+      )}
 
       {usage.loading && !usage.data ? <Loading />
         : !rows.length ? <Empty title="Todavía no se ha subido ningún archivo" />
@@ -691,12 +820,55 @@ function StorageTab({ maxFileMb, onSaved }: { maxFileMb: number; onSaved: () => 
         </Field>
       </div>
       <div className="row" style={{ marginTop: 12 }}>
-        <button className="btn" onClick={save} disabled={busy}><Save />Guardar</button>
+        <button id="st-guardar-mb" className="btn" onClick={save} disabled={busy}>
+          <Save />Guardar
+        </button>
       </div>
+
+      {/* --------------------------------- LA CAPACIDAD CONTRATADA
+          Se escribe a mano y se dice que es un dato declarado, porque
+          NO se puede consultar: el límite del plan está en la
+          facturación de Supabase, no en la base de datos. Antes que
+          inventarse una cifra y pintar una barra que no mide nada,
+          mejor preguntarla una vez y fechar la respuesta. */}
+      <div className="form-grid" style={{ marginTop: 20 }}>
+        <Field label="Capacidad de los archivos (MB)" htmlFor="st-qf"
+               hint="Lo que pone tu plan de Supabase. En blanco si no lo sabes.">
+          <input id="st-qf" className="input" inputMode="numeric" value={quotaFiles}
+                 placeholder="sin declarar"
+                 onChange={(e) => setQuotaFiles(e.target.value)} />
+        </Field>
+        <Field label="Capacidad de la base de datos (MB)" htmlFor="st-qd"
+               hint="También del plan. En blanco si no lo sabes.">
+          <input id="st-qd" className="input" inputMode="numeric" value={quotaDb}
+                 placeholder="sin declarar"
+                 onChange={(e) => setQuotaDb(e.target.value)} />
+        </Field>
+        <Field label="De dónde sale este dato" htmlFor="st-qn" span
+               hint="El plan contratado, quién lo miró, lo que haga falta recordar dentro de un año.">
+          <input id="st-qn" className="input" value={quotaNota}
+                 placeholder="Plan Pro, comprobado en Settings → Usage"
+                 onChange={(e) => setQuotaNota(e.target.value)} />
+        </Field>
+      </div>
+      <div className="row" style={{ marginTop: 12 }}>
+        <button id="st-guardar-cuota" className="btn" onClick={guardarCuota} disabled={busy}>
+          <Save />Guardar la capacidad
+        </button>
+      </div>
+      <p className="hint">
+        <strong>Es un dato declarado a mano</strong>, no medido: la aplicación no puede
+        preguntarle a Supabase cuánto espacio tiene contratado.
+        {settings.quota_checked_on
+          ? ` Comprobado el ${fmtDate(settings.quota_checked_on)}.`
+          : ' Todavía no se ha comprobado ninguna vez.'}
+        {' '}Si cambias de plan, vuelve a escribirlo aquí.
+      </p>
 
       <p className="hint" style={{ marginBottom: 0 }}>
         Los archivos viven en el contenedor privado de Supabase. Lo que se envía a la papelera
         deja de verse en la aplicación pero sigue ocupando hasta que se elimina del todo.
+        Las copias de seguridad se suben a Google Drive, así que ocupan allí y no en Supabase.
       </p>
     </Panel>
   );

@@ -1,5 +1,5 @@
 import { supabase, unwrap } from '@/lib/supabase';
-import type { Ficha, FichaType } from '@/types/db';
+import type { Ficha, FichaTeamRow, FichaType, Profile } from '@/types/db';
 
 const SELECT =
   '*, client:clients(id, name, phone, kind), contact:client_contacts(id, name, phone), ' +
@@ -109,4 +109,35 @@ export async function deleteFicha(id: string) {
   return unwrap(await supabase.rpc('delete_ficha', { p_ficha: id })) as unknown as {
     ok: boolean; code: string; documentos: number; comentarios: number;
   };
+}
+
+// ---------------------------------------------------------------------
+// EL EQUIPO DE UN AVISO
+//
+// Un AVISO DE CLIENTE puede llevar varios trabajadores. Conviven dos
+// cosas, y no es un descuido:
+//
+//   · «assigned_to», el RESPONSABLE, que es de siempre y sigue valiendo;
+//   · «ficha_workers», el EQUIPO, que es lo que se añade.
+//
+// Se manda la lista COMPLETA, igual que en los proyectos y en las
+// órdenes: quitar a alguien es volver a mandar la lista sin él.
+//
+// Una VISITA no se reparte: las lleva administración. La base de datos lo
+// rechaza, así que esto no depende de que la pantalla esconda el botón.
+// ---------------------------------------------------------------------
+
+/** Quién va en un aviso: su responsable y su equipo. */
+export async function fichaTeam(fichaId: string) {
+  return unwrap(await supabase.from('ficha_team').select('*')
+    .eq('ficha_id', fichaId)
+    .order('es_responsable', { ascending: false })
+    .order('full_name')) as FichaTeamRow[];
+}
+
+/** Pone el equipo de un aviso. Solo administración, y solo avisos. */
+export async function assignFichaWorkers(fichaId: string, workerIds: string[]) {
+  return unwrap(await supabase.rpc('assign_ficha_workers', {
+    p_ficha: fichaId, p_workers: workerIds,
+  })) as unknown as Profile[];
 }

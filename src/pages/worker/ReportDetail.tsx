@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft, Boxes, Camera, CheckCircle2, Clock, Film, Images, PenLine, Save, Send, Trash2,
+  Users,
 } from 'lucide-react';
 import { useAsync } from '@/hooks/useAsync';
 import { useAuth } from '@/auth/AuthProvider';
@@ -12,7 +13,10 @@ import { Modal } from '@/components/ui/Modal';
 import { CommentsPanel } from '@/components/shared/CommentsPanel';
 import { SignaturePad } from '@/components/shared/SignaturePad';
 import { MediaViewer, isVideo, isViewable, type MediaItem } from '@/components/shared/MediaViewer';
-import { getReport, myProjects, saveReport, workerProject } from '@/services/partes';
+import {
+  getReport, myAvisos, myProjects, reportCandidates, reportTeam, saveReport,
+  saveReportWorkers, workerProject,
+} from '@/services/partes';
 import { submitRequestFromReport } from '@/services/materials';
 import { listDocuments, signedUrls, trashDocument, uploadDocument } from '@/services/documents';
 import {
@@ -47,6 +51,8 @@ export default function WorkerReportDetail() {
 
   const report = useAsync(async () => (nuevo ? null : getReport(id)), [id, nuevo]);
   const proyectoPrevio = params.get('proyecto');
+  // Se ha entrado desde un AVISO DE CLIENTE asignado.
+  const avisoPrevio = params.get('aviso');
   // Se ha entrado por la opción «Parte sin proyecto» a propósito.
   const sinProyecto = params.get('sin-proyecto') === '1';
   const files = useAsync(async () => (nuevo ? [] : listDocuments({ reportId: id })), [id, nuevo]);
@@ -57,7 +63,19 @@ export default function WorkerReportDetail() {
   const [workDate, setWorkDate] = useState(today);
   // BLOQUE 5: el proyecto se elige AQUÍ, en el mismo formulario. «» es
   // «sin proyecto», que es una opción legítima y no un olvido.
-  const [projectChoice, setProjectChoice] = useState<string>(proyectoPrevio ?? '');
+  /**
+   * DE DÓNDE ES EL PARTE · un solo selector para las dos cosas.
+   *
+   * Se guarda con prefijo («p:» un proyecto, «a:» un aviso, «» nada)
+   * porque son EXCLUYENTES: un parte cuelga de un proyecto, de un aviso
+   * o de nada. Con dos estados separados se podrían contradecir, y la
+   * base de datos rechazaría el parte al guardarlo.
+   */
+  const [origen, setOrigen] = useState<string>(
+    proyectoPrevio ? `p:${proyectoPrevio}` : avisoPrevio ? `a:${avisoPrevio}` : '',
+  );
+  const projectChoice = origen.startsWith('p:') ? origen.slice(2) : '';
+  const avisoChoice = origen.startsWith('a:') ? origen.slice(2) : '';
   const [busy, setBusy] = useState(false);
   const [signing, setSigning] = useState(false);
   const [askingMaterial, setAskingMaterial] = useState(false);
@@ -74,6 +92,21 @@ export default function WorkerReportDetail() {
   );
   // Solo hace falta la lista mientras el parte se pueda cambiar.
   const mios = useAsync(() => myProjects(), []);
+  const misAvisos = useAsync(() => myAvisos(), []);
+  // Con quién se puede compartir y con quién se comparte ya. Las dos
+  // cosas vienen de la base de datos: la lista de candidatos la decide
+  // ella, no esta pantalla.
+  const candidatos = useAsync(
+    async () => (nuevo ? [] : reportCandidates(id)), [id, nuevo, report.data?.project_id,
+      report.data?.ficha_id]);
+  const equipo = useAsync(async () => (nuevo ? [] : reportTeam(id)), [id, nuevo]);
+  /**
+   * LOS ACOMPAÑANTES EN LA PANTALLA · identificador → horas, en texto.
+   *
+   * En texto y no en número porque se escribe con coma («3,5») y, a
+   * medio escribir, «3,» no es ningún número. Se convierte al guardar.
+   */
+  const [companeros, setCompaneros] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const r = report.data;
@@ -82,7 +115,7 @@ export default function WorkerReportDetail() {
       setWorkDone(r.work_done ?? '');
       setHours(r.hours != null ? String(r.hours).replace('.', ',') : '');
       setWorkDate(r.work_date);
-      setProjectChoice(r.project_id ?? '');
+      setOrigen(r.project_id ? `p:${r.project_id}` : r.ficha_id ? `a:${r.ficha_id}` : '');
       return;
     }
     // Parte NUEVO. Hay que vaciar el formulario a mano: «/t/partes/:id» y
@@ -94,8 +127,17 @@ export default function WorkerReportDetail() {
     setWorkDone('');
     setHours('');
     setWorkDate(today);
-    setProjectChoice(proyectoPrevio ?? '');
-  }, [report.data, nuevo, id, proyectoPrevio, today]);
+    setOrigen(proyectoPrevio ? `p:${proyectoPrevio}` : avisoPrevio ? `a:${avisoPrevio}` : '');
+  }, [report.data, nuevo, id, proyectoPrevio, avisoPrevio, today]);
+
+  // Lo guardado manda: cada vez que llega el equipo del parte se vuelve
+  // a pintar desde él. El autor no entra aquí: sus horas son las del
+  // parte, y la base de datos no le deja estar en los dos sitios.
+  useEffect(() => {
+    const filas = (equipo.data ?? []).filter((x) => !x.es_autor);
+    setCompaneros(Object.fromEntries(filas.map(
+      (x) => [x.worker_id, String(x.hours ?? '').replace('.', ',')])));
+  }, [equipo.data]);
 
   /**
    * LOS ENLACES PARA VER LOS ARCHIVOS, VÍDEOS INCLUIDOS.
@@ -118,7 +160,17 @@ export default function WorkerReportDetail() {
 
   const r = report.data;
   const validado = r?.status === 'validado';
-  const editable = nuevo || (r != null && REPORT_OPEN_STATUSES.has(r.status));
+  /**
+   * ¿ES MÍO ESTE PARTE?
+   *
+   * Puedo ESTAR en un parte compartido sin ser quien lo rellenó. En ese
+   * caso lo veo entero —es el mismo trabajo y las mismas fotografías—
+   * pero no lo corrijo: lo corrige su autor. La base de datos lo
+   * rechazaría de todas formas, así que enseñar los botones sería
+   * enseñar algo que no funciona.
+   */
+  const esMio = nuevo || (r != null && r.worker_id === profile?.id);
+  const editable = esMio && (nuevo || (r != null && REPORT_OPEN_STATUSES.has(r.status)));
 
   async function guardar(submit: boolean) {
     const parsed = parseHours(hours);
@@ -141,6 +193,7 @@ export default function WorkerReportDetail() {
       const guardado = await saveReport({
         id: r?.id ?? null,
         projectId: projectChoice || null,
+        fichaId: avisoChoice || null,
         workType,
         workDate,
         workDone,
@@ -150,6 +203,43 @@ export default function WorkerReportDetail() {
       toast.success(submit ? 'Parte enviado' : 'Parte guardado');
       if (nuevo) navigate(`/t/partes/${guardado.id}`, { replace: true });
       else await report.reload();
+    } catch (e) { toast.error(e); } finally { setBusy(false); }
+  }
+
+  /** Poner o quitar a alguien. Al ponerlo, se le proponen MIS horas. */
+  function toggleCompanero(workerId: string) {
+    setCompaneros((m) => {
+      if (workerId in m) {
+        const { [workerId]: _fuera, ...resto } = m;
+        return resto;
+      }
+      return { ...m, [workerId]: hours || '' };
+    });
+  }
+
+  /**
+   * GUARDAR CON QUIÉN SE HA HECHO EL TRABAJO.
+   *
+   * Se manda la lista completa: quitar a alguien es mandarla sin él. Las
+   * horas de cada uno se comprueban antes de salir, para decirlo aquí en
+   * lugar de que lo diga la base de datos con otras palabras.
+   */
+  async function guardarCompaneros() {
+    const filas: { workerId: string; hours: number }[] = [];
+    for (const [workerId, texto] of Object.entries(companeros)) {
+      const h = parseHours(texto);
+      if (!h) {
+        const quien = candidatos.data?.find((c) => c.id === workerId)?.full_name ?? 'esa persona';
+        toast.error(new Aviso(`Pon las horas que ha trabajado ${quien}.`));
+        return;
+      }
+      filas.push({ workerId, hours: h });
+    }
+    setBusy(true);
+    try {
+      await saveReportWorkers(r!.id, filas);
+      toast.success(filas.length ? 'Guardado quién ha venido' : 'El parte vuelve a ser solo tuyo');
+      await equipo.reload();
     } catch (e) { toast.error(e); } finally { setBusy(false); }
   }
 
@@ -210,6 +300,22 @@ export default function WorkerReportDetail() {
   }
 
   const p = proyecto.data;
+  // El AVISO del que es el parte, si lo es. Se busca en MIS avisos, que es
+  // justo el alcance que toca: si no está entre ellos, no es mío.
+  const avisoId = report.data?.ficha_id ?? avisoChoice ?? null;
+  const av = (misAvisos.data ?? []).find((x) => x.id === avisoId) ?? null;
+  /**
+   * LAS HORAS-PERSONA DEL TRABAJO.
+   *
+   * Si el parte es mío se calcula sobre lo que hay EN PANTALLA, para
+   * que la cifra acompañe a lo que estoy escribiendo. Si es de otro no
+   * hay nada escribiéndose: se suma lo guardado.
+   */
+  const horasPersona = esMio
+    ? (parseHours(hours) ?? 0)
+      + Object.values(companeros).reduce((n, x) => n + (parseHours(x) ?? 0), 0)
+    : (equipo.data ?? []).reduce((n, x) => n + (x.hours ?? 0), 0);
+  const quienLoRelleno = (equipo.data ?? []).find((x) => x.es_autor)?.full_name ?? null;
   const fotos = (files.data ?? []).filter((d) => d.category !== 'documento');
   // Lo que se puede mirar dentro de la aplicación, sin descargar nada.
   const verlos: MediaItem[] = fotos
@@ -230,11 +336,13 @@ export default function WorkerReportDetail() {
           <div style={{ minWidth: 0 }}>
             <h1>
               {nuevo
-                ? (sinProyecto && !projectChoice ? 'Parte sin proyecto' : 'Nuevo parte de trabajo')
+                ? (sinProyecto && !origen ? 'Parte sin proyecto' : 'Nuevo parte de trabajo')
                 : `Parte ${r?.code}`}
             </h1>
             <p className="muted">
-              {p ? `${p.code} · ${p.name}` : 'Sin proyecto'}
+              {p ? `${p.code} · ${p.name}`
+                : av ? `${av.code} · ${av.title ?? 'Aviso'}`
+                : 'Sin proyecto'}
             </p>
           </div>
           {r && (
@@ -243,13 +351,25 @@ export default function WorkerReportDetail() {
         </div>
       </div>
 
-      {nuevo && sinProyecto && !projectChoice && (
+      {nuevo && sinProyecto && !origen && (
         <Alert kind="info">
           <strong>Es el mismo parte de siempre, sin proyecto.</strong>
           <div style={{ marginTop: 2 }}>
             Para un trabajo de taller, un apaño suelto o algo que todavía no tiene
             proyecto. Rellénalo igual y envíalo: administración lo asignará a un
             proyecto si corresponde. Si ya sabes de qué proyecto es, elígelo abajo.
+          </div>
+        </Alert>
+      )}
+
+      {/* Estoy aquí porque hice el trabajo con él, no porque sea mío. */}
+      {r && !esMio && (
+        <Alert kind="info">
+          <strong>Este parte lo rellenó {quienLoRelleno ?? 'otro compañero'}.</strong>
+          <div style={{ marginTop: 2 }}>
+            Lo ves porque hiciste el trabajo con él: es un solo trabajo, con un solo
+            juego de fotografías. Tus horas están ahí abajo, en «Quién estuvo».
+            Si hay que corregir algo, lo corrige quien lo rellenó.
           </div>
         </Alert>
       )}
@@ -284,15 +404,28 @@ export default function WorkerReportDetail() {
             taller o un apaño suelto no tiene proyecto, y no hay que
             esperar a que administración cree uno para apuntar las horas. */}
         <div className="field">
-          <label className="label" htmlFor="pt-proyecto">Proyecto</label>
-          <select id="pt-proyecto" className="select" value={projectChoice} disabled={!editable}
-                  onChange={(e) => setProjectChoice(e.target.value)}>
+          <label className="label" htmlFor="pt-origen">¿De qué trabajo es?</label>
+          <select id="pt-origen" className="select" value={origen} disabled={!editable}
+                  onChange={(e) => setOrigen(e.target.value)}>
             <option value="">Sin proyecto</option>
-            {(mios.data ?? []).map((x) => (
-              <option key={x.id} value={x.id}>{x.code} · {x.name}</option>
-            ))}
+            {(mios.data ?? []).length > 0 && (
+              <optgroup label="Proyectos">
+                {(mios.data ?? []).map((x) => (
+                  <option key={x.id} value={`p:${x.id}`}>{x.code} · {x.name}</option>
+                ))}
+              </optgroup>
+            )}
+            {(misAvisos.data ?? []).length > 0 && (
+              <optgroup label="Avisos de cliente">
+                {(misAvisos.data ?? []).map((x) => (
+                  <option key={x.id} value={`a:${x.id}`}>
+                    {x.code} · {x.title ?? 'Aviso'}
+                  </option>
+                ))}
+              </optgroup>
+            )}
           </select>
-          {!projectChoice && (
+          {!origen && (
             <p className="hint" style={{ marginBottom: 0 }}>
               Parte sin proyecto. Administración lo asignará a uno después, si corresponde.
             </p>
@@ -320,14 +453,26 @@ export default function WorkerReportDetail() {
         </div>
 
         <div className="field">
-          <label className="label" htmlFor="pt-done">Trabajo realizado</label>
-          <textarea id="pt-done" className="input" rows={4} value={workDone} disabled={!editable}
-                    placeholder="Explica brevemente lo que has hecho."
-                    onChange={(e) => setWorkDone(e.target.value)} />
+          {esMio ? (
+            <>
+              <label className="label" htmlFor="pt-done">Trabajo realizado</label>
+              <textarea id="pt-done" className="input" rows={4} value={workDone}
+                        disabled={!editable}
+                        placeholder="Explica brevemente lo que has hecho."
+                        onChange={(e) => setWorkDone(e.target.value)} />
+            </>
+          ) : (
+            <>
+              <span className="label">Trabajo realizado</span>
+              <p className="pre" style={{ margin: 0 }}>{workDone || '—'}</p>
+            </>
+          )}
         </div>
 
         <div className="field">
-          <label className="label" htmlFor="pt-hours">Tus horas</label>
+          <label className="label" htmlFor="pt-hours">
+            {esMio ? 'Tus horas' : 'Sus horas'}
+          </label>
           <input id="pt-hours" className="input big" inputMode="decimal" value={hours}
                  disabled={!editable} placeholder="7,5"
                  onChange={(e) => setHours(e.target.value)} />
@@ -361,6 +506,105 @@ export default function WorkerReportDetail() {
           </div>
         )}
       </div>
+
+      {/* ------------------------------------------ CON QUIÉN LO HE HECHO
+          Un parte puede ser de uno o de varios. Si fueron dos, es UN
+          trabajo —una descripción, un tipo de actividad, un juego de
+          fotografías— y lo que es de cada uno son SUS horas.
+
+          Solo se puede elegir a quien está asignado al MISMO proyecto o
+          al MISMO aviso. La lista viene de la base de datos, de la misma
+          función que luego comprueba el guardado: así el selector no
+          puede ofrecer a nadie que después se rechace. Y si alguien
+          manipula la petición, la base de datos la para igual.
+
+          No aparece en un parte nuevo: hasta que el parte existe no hay
+          nada que compartir. */}
+      {!nuevo && r && (
+        <div className="w-block">
+          <h3>
+            <Users aria-hidden />
+            {esMio ? '¿Con quién lo has hecho?' : 'Quién estuvo'}
+          </h3>
+
+          {/* Si el parte NO es mío, no hay nada que elegir: se enseña
+              quién estuvo y cuántas horas puso cada uno, y ya está. El
+              reparto lo cambia su autor. */}
+          {!esMio ? (
+            <>
+              <ul className="team-list">
+                {(equipo.data ?? []).map((x) => (
+                  <li key={x.worker_id}>
+                    {x.full_name}
+                    {x.es_autor && <span className="faint"> · rellenó el parte</span>}
+                    {x.worker_id === profile?.id && <span className="faint"> · tú</span>}
+                    <span className="num" style={{ marginLeft: 'auto' }}>
+                      {x.hours != null ? fmtHours(x.hours) : '—'}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <p className="w-note" style={{ marginBottom: 0 }}>
+                Es un solo trabajo. Entre todos lleva{' '}
+                <strong>{fmtHours(horasPersona)}</strong>.
+              </p>
+            </>
+          ) : !r.project_id && !r.ficha_id ? (
+            <p className="muted" style={{ margin: 0 }}>
+              Este parte todavía no tiene proyecto ni aviso, así que no hay con quién
+              compartirlo. Elige uno arriba y guarda, o pídele a administración que lo
+              asigne.
+            </p>
+          ) : !candidatos.data?.length ? (
+            <p className="muted" style={{ margin: 0 }}>
+              No hay nadie más asignado a este trabajo. Si fuisteis dos, dile a
+              administración que dé de alta al otro y después repártelo.
+            </p>
+          ) : (
+            <div className="stack">
+              {candidatos.data.map((c) => {
+                const puesto = c.id in companeros;
+                return (
+                  <div key={c.id} className="row-between" style={{ gap: 10, alignItems: 'center' }}>
+                    <label className="checkbox" style={{ minWidth: 0 }}>
+                      <input type="checkbox" checked={puesto} disabled={!editable || busy}
+                             onChange={() => toggleCompanero(c.id)} />
+                      {c.full_name}
+                    </label>
+                    {puesto && (
+                      <span className="row" style={{ gap: 6, alignItems: 'center' }}>
+                        <input className="input" inputMode="decimal" aria-label={`Horas de ${c.full_name}`}
+                               style={{ width: 86, textAlign: 'right' }}
+                               value={companeros[c.id]} disabled={!editable || busy}
+                               placeholder="3,5"
+                               onChange={(e) => setCompaneros(
+                                 (m) => ({ ...m, [c.id]: e.target.value }))} />
+                        <span className="muted">h</span>
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+
+              <p className="w-note" style={{ margin: 0 }}>
+                Cada uno pone <strong>sus</strong> horas. En total, este trabajo lleva{' '}
+                <strong>{fmtHours(horasPersona)}</strong> entre todos.
+              </p>
+
+              {editable && (
+                <button className="btn btn-lg" disabled={busy} onClick={guardarCompaneros}>
+                  <Save />Guardar quién ha venido
+                </button>
+              )}
+              {!editable && (
+                <p className="hint" style={{ margin: 0 }}>
+                  El parte está validado: ya no se puede cambiar con quién se hizo.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* --------------------------------------- FOTOS, FIRMA, MATERIAL */}
       {!nuevo && r && (

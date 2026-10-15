@@ -106,8 +106,10 @@ select test.ok('b5_dinero', 'Y «worker_fichas» no tiene columna de importe',
 select test.err('b5_dinero', 'Si pide el importe a mano, la consulta no existe siquiera',
   $$select amount from public.worker_fichas limit 1$$, '42703');
 
+-- Dos, no tres: el aviso de la fase 2 y el de mostrador. La visita que
+-- antes contaba aquí es ahora de administración (archivo 38).
 select test.ok('b5_dinero', 'Tampoco ve fichas de otros',
-  (select count(*) = 3 from public.worker_fichas));
+  (select count(*) = 2 from public.worker_fichas));
 
 -- El calendario NO se rompió al cerrar la tabla: sigue viendo lo suyo.
 select test.ok('b5_dinero', 'Su aviso sigue saliendo en su calendario',

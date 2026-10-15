@@ -7,6 +7,50 @@ export interface StorageUsage {
   tipo: string; archivos: number; bytes: number; en_papelera: number; bytes_papelera: number;
 }
 
+/**
+ * UNA LÍNEA DEL RESUMEN DE ESPACIO.
+ *
+ * «cuota_bytes» en null quiere decir SIN DECLARAR, y entonces no hay
+ * porcentaje ni espacio libre que enseñar. «medido» dice si la cifra la
+ * hemos medido nosotros o nos la han declarado.
+ */
+export interface StorageSummaryRow {
+  concepto: string;
+  usado_bytes: number | null;
+  cuota_bytes: number | null;
+  libre_bytes: number | null;
+  porcentaje: number | null;
+  nivel: 'bien' | 'atencion' | 'critico' | 'sin_cuota' | null;
+  medido: boolean;
+  detalle: string;
+}
+
+/**
+ * CUÁNTO OCUPA CADA COSA Y CUÁNTO CABE.
+ *
+ * Los archivos, la base de datos y las copias van SEPARADOS: tienen
+ * cuotas distintas y las copias ni siquiera ocupan en Supabase, así que
+ * sumarlos en una sola barra daría un porcentaje falso.
+ */
+export async function storageSummary() {
+  return unwrap(await supabase.rpc('storage_summary')) as unknown as StorageSummaryRow[];
+}
+
+/**
+ * DECLARAR A MANO cuánto espacio hay contratado.
+ *
+ * Mandar null BORRA la cuota, y es la manera de decir «ya no me fío de
+ * este dato»: mejor sin declarar que con una cifra que nadie ha
+ * comprobado.
+ */
+export async function saveStorageQuota(
+  storageMb: number | null, dbMb: number | null, nota: string | null,
+) {
+  return unwrap(await supabase.rpc('save_storage_quota', {
+    p_storage_mb: storageMb, p_db_mb: dbMb, p_nota: nota,
+  })) as unknown as AppSettings;
+}
+
 export async function getSettings() {
   return unwrap(
     await supabase.from('app_settings').select('*').eq('id', 1).single(),

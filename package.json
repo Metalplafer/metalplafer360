@@ -12,7 +12,7 @@
     "test": "vitest run tests/unit",
     "test:sql": "bash tests/sql/run_all.sh",
     "test:e2e": "node tests/e2e/smoke.mjs",
-    "test:all": "npm run typecheck && npm test && npm run test:sql && npm run test:e2e && npm run test:nav && npm run test:fase2 && npm run test:fase3 && npm run test:fase4 && npm run test:fase5 && npm run test:fase6 && npm run test:fase7 && npm run test:bloque1 && npm run test:bloque2 && npm run test:bloque3 && npm run test:bloque4 && npm run test:bloque5 && npm run test:qa && npm run test:correcciones && npm run test:publicacion",
+    "test:all": "npm run typecheck && npm test && npm run test:sql && npm run test:e2e && npm run test:nav && npm run test:fase2 && npm run test:fase3 && npm run test:fase4 && npm run test:fase5 && npm run test:fase6 && npm run test:fase7 && npm run test:bloque1 && npm run test:bloque2 && npm run test:bloque3 && npm run test:bloque4 && npm run test:bloque5 && npm run test:qa && npm run test:correcciones && npm run test:avisos && npm run test:compartidos && npm run test:publicacion",
     "test:nav": "node tests/e2e/navegacion.mjs",
     "test:fase2": "node tests/e2e/fase2.mjs",
     "test:fase3": "node tests/e2e/fase3.mjs",
@@ -28,7 +28,9 @@
     "test:bloque5": "node tests/e2e/bloque5.mjs",
     "test:qa": "node tests/e2e/qa-final.mjs",
     "test:correcciones": "node tests/e2e/correcciones.mjs",
-    "test:publicacion": "node tests/e2e/publicacion.mjs"
+    "test:publicacion": "node tests/e2e/publicacion.mjs",
+    "test:avisos": "node tests/e2e/avisos.mjs",
+    "test:compartidos": "node tests/e2e/compartidos.mjs"
   },
   "dependencies": {
     "@fontsource/barlow": "^5.1.0",

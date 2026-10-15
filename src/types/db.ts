@@ -26,6 +26,22 @@ export interface AppSettings {
   updated_at: string;
   /** Días laborables libres entre proyectos en la planificación. */
   gap_days: number;
+  /**
+   * CUÁNTO ESPACIO HAY CONTRATADO · declarado A MANO.
+   *
+   * El límite del plan vive en la facturación de Supabase y no se puede
+   * consultar desde la base de datos, así que se escribe una vez y se
+   * deja claro en pantalla que es un dato declarado.
+   *
+   * «null» significa SIN DECLARAR, no «sin límite»: mientras lo esté, no
+   * se pinta ningún porcentaje ni ninguna barra.
+   */
+  storage_quota_mb: number | null;
+  db_quota_mb: number | null;
+  /** El día en que se comprobaron esas cifras, para saber si están viejas. */
+  quota_checked_on: string | null;
+  /** De dónde salieron: el plan, quién lo miró, lo que haga falta recordar. */
+  quota_note: string | null;
 }
 
 export interface AuditRow {
@@ -523,6 +539,71 @@ export interface ProjectTeamRow {
   role: UserRole;
 }
 
+/**
+ * UN AVISO DE CLIENTE TAL COMO LO VE SU TRABAJADOR.
+ *
+ * Sale de la vista «worker_avisos», que es el equivalente de
+ * «worker_projects» para los avisos: trae el trabajo y el contacto, y NO
+ * trae el importe. El dinero del aviso es de administración.
+ */
+export interface WorkerAviso {
+  id: string;
+  code: string;
+  status: string;
+  title: string | null;
+  description: string | null;
+  address: string | null;
+  phone: string | null;
+  scheduled_date: string | null;
+  scheduled_time: string | null;
+  client_id: string | null;
+  client_name: string | null;
+  assigned_to: string | null;
+  /** Cuántos partes he rellenado yo de este aviso. */
+  mis_partes: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Quién va en un aviso. Sin teléfono ni correo: solo el nombre y el rol. */
+export interface FichaTeamRow {
+  ficha_id: string;
+  worker_id: string;
+  full_name: string;
+  role: UserRole;
+  assigned_at: string;
+  /** El responsable de la ficha («assigned_to»), frente a su equipo. */
+  es_responsable: boolean;
+}
+
+/**
+ * UN ACOMPAÑANTE EN EL TRABAJO DE UN PARTE.
+ *
+ * Son LOS DEMÁS, no el autor: el autor está en «work_reports» con sus
+ * horas, y la base de datos impide que esté también aquí. Así sus horas
+ * no se pueden contar dos veces.
+ */
+export interface WorkReportWorker {
+  report_id: string;
+  worker_id: string;
+  /** Las horas reales de ESTA persona en este trabajo. */
+  hours: number;
+  added_at: string;
+  added_by: string | null;
+  is_demo: boolean;
+}
+
+/** Quién estuvo en el trabajo de un parte y cuántas horas puso cada uno. */
+export interface ReportTeamRow {
+  report_id: string;
+  worker_id: string;
+  full_name: string;
+  hours: number | null;
+  /** Quien rellenó el parte, frente a quienes le acompañaron. */
+  es_autor: boolean;
+  added_at: string;
+}
+
 export type ReportStatus = 'borrador' | 'enviado' | 'validado' | 'rechazado';
 
 /** Un parte de trabajo. Las horas son SIEMPRE de quien lo firma. */
@@ -531,6 +612,12 @@ export interface WorkReport {
   code: string;
   worker_id: string;
   project_id: string | null;
+  /**
+   * El AVISO DE CLIENTE del que es este parte, si lo es. Un parte cuelga
+   * de un proyecto, de un aviso o de nada: nunca de los dos a la vez, y
+   * eso lo impone la base de datos.
+   */
+  ficha_id: string | null;
   work_type: OrderType;
   work_date: string;
   work_done: string | null;
@@ -549,6 +636,7 @@ export interface WorkReport {
   updated_at: string;
   worker?: Pick<Profile, 'id' | 'full_name'> | null;
   project?: Pick<Project, 'id' | 'code' | 'name'> | null;
+  ficha?: Pick<Ficha, 'id' | 'code' | 'title' | 'type'> | null;
 }
 
 /** Previstas contra realizadas. Solo cuentan las horas ya validadas. */

@@ -38,7 +38,7 @@ export const WORKER = {
 // ---------------------------------------------------------------------
 export function buildApp() {
   console.log('   Construyendo la aplicación para la prueba…');
-  execFileSync('npx', ['vite', 'build', '--logLevel', 'error'], {
+  execFileSync(process.execPath, ['node_modules/vite/bin/vite.js', 'build', '--logLevel', 'error'], {
     cwd: ROOT, stdio: 'inherit',
     env: {
       ...process.env,
@@ -110,6 +110,13 @@ export function createDb(seed = {}) {
     clients: [], client_contacts: [], fichas: [], projects: [], project_substatuses: [],
     work_orders: [], work_order_workers: [], notifications: [],
     project_workers: [], work_reports: [],
+    // Los trabajadores de un AVISO DE CLIENTE. Convive con
+    // «fichas.assigned_to», que sigue siendo el responsable.
+    ficha_workers: [],
+    // LOS DEMÁS que estuvieron en el trabajo de un parte, con SUS
+    // horas. El autor NO está aquí: está en «work_reports». Así sus
+    // horas no se pueden contar dos veces.
+    work_report_workers: [],
     non_working_days: [], calendar_notes: [],
     works: [], work_extras: [],
     materials: [], material_requests: [], payments: [],
@@ -137,6 +144,10 @@ export function createDb(seed = {}) {
       gap_days: 1,
       backup_retention_days: 30,
       backup: { enabled: true, hour: 2, folder: 'METALPLAFER360 · Copias de seguridad' },
+      // SIN DECLARAR, igual que en la base de datos: el límite del plan
+      // no se puede consultar, así que nace vacío.
+      storage_quota_mb: null, db_quota_mb: null,
+      quota_checked_on: null, quota_note: null,
       updated_at: '2026-01-15T09:00:00Z',
     },
     ...seed,
@@ -566,10 +577,14 @@ export async function stubSupabase(context, {
     if (table === 'work_reports') {
       const worker = people.find((x) => x.id === row.worker_id) ?? null;
       const project = db.projects.find((x) => x.id === row.project_id) ?? null;
+      const ficha = db.fichas.find((x) => x.id === row.ficha_id) ?? null;
       return {
         ...row,
         worker: worker ? { id: worker.id, full_name: worker.full_name } : null,
         project: project ? { id: project.id, code: project.code, name: project.name } : null,
+        ficha: ficha
+          ? { id: ficha.id, code: ficha.code, title: ficha.title ?? null, type: ficha.type }
+          : null,
       };
     }
     if (table === 'material_requests') {
@@ -615,6 +630,90 @@ export async function stubSupabase(context, {
     (db.project_workers ?? [])
       .filter((pw) => pw.worker_id === user.id)
       .forEach((pw) => ids.add(pw.project_id));
+    return ids;
+  };
+
+  /**
+   * ¿PUEDO LEER ESTE PARTE? · lo rellené yo o estuve en ese trabajo.
+   * Leer, no editar: editarlo sigue siendo del autor.
+   */
+  const canReadReport = (user, reportId) => {
+    if (!user) return false;
+    const r = db.work_reports.find((x) => x.id === reportId);
+    if (r && r.worker_id === user.id) return true;
+    return (db.work_report_workers ?? [])
+      .some((w) => w.report_id === reportId && w.worker_id === user.id);
+  };
+
+  /**
+   * LAS HORAS REALMENTE TRABAJADAS · como la vista «hours_worked».
+   *
+   * El autor de cada parte validado, los que le acompañaron (cada uno
+   * con SUS horas) y las órdenes validadas. Solo lo VALIDADO.
+   *
+   * El autor no puede estar en «work_report_workers», así que nadie se
+   * cuenta dos veces.
+   */
+  const horasTrabajadas = () => {
+    const filas = [];
+    db.work_reports.filter((r) => r.status === 'validado').forEach((r) => {
+      if (r.hours != null) {
+        filas.push({ origen: 'parte', source_id: r.id, worker_id: r.worker_id,
+          project_id: r.project_id ?? null, ficha_id: r.ficha_id ?? null,
+          work_type: r.work_type, work_date: r.work_date, hours: Number(r.hours) });
+      }
+      (db.work_report_workers ?? []).filter((w) => w.report_id === r.id).forEach((w) => {
+        filas.push({ origen: 'parte', source_id: r.id, worker_id: w.worker_id,
+          project_id: r.project_id ?? null, ficha_id: r.ficha_id ?? null,
+          work_type: r.work_type, work_date: r.work_date, hours: Number(w.hours) });
+      });
+    });
+    db.work_orders.filter((o) => !o.archived_at && o.status === 'validada').forEach((o) => {
+      db.work_order_workers.filter((w) => w.order_id === o.id && w.hours != null)
+        .forEach((w) => filas.push({ origen: 'orden', source_id: o.id,
+          worker_id: w.worker_id, project_id: o.project_id ?? null, ficha_id: null,
+          work_type: o.type, work_date: o.scheduled_date, hours: Number(w.hours) }));
+    });
+    return filas;
+  };
+
+  /**
+   * CON QUIÉN SE PUEDE COMPARTIR UN PARTE · los asignados al MISMO
+   * proyecto o al MISMO aviso. Lo usan la lista de candidatos Y el
+   * guardado, igual que en la base de datos, para que no discrepen.
+   */
+  const enElMismoTrabajo = (r, workerId) => {
+    if (r.project_id) {
+      return (db.project_workers ?? [])
+        .some((pw) => pw.project_id === r.project_id && pw.worker_id === workerId);
+    }
+    if (r.ficha_id) {
+      const f = db.fichas.find((x) => x.id === r.ficha_id);
+      return (db.ficha_workers ?? [])
+          .some((fw) => fw.ficha_id === r.ficha_id && fw.worker_id === workerId)
+        || f?.assigned_to === workerId;
+    }
+    return false;
+  };
+
+  /**
+   * A QUÉ FICHAS ENTRA UNA PERSONA · los dos caminos, como en la base
+   * de datos: por ser el responsable («assigned_to», el de siempre) o
+   * por estar en el equipo del aviso («ficha_workers», el nuevo).
+   */
+  const assignedFichas = (user) => {
+    const ids = new Set(
+      db.fichas
+        .filter((f) => f.assigned_to === user.id
+          && ['visita', 'aviso'].includes(f.type) && !f.archived_at)
+        .map((f) => f.id),
+    );
+    (db.ficha_workers ?? [])
+      .filter((fw) => fw.worker_id === user.id)
+      .forEach((fw) => {
+        const f = db.fichas.find((x) => x.id === fw.ficha_id);
+        if (f && ['visita', 'aviso'].includes(f.type) && !f.archived_at) ids.add(f.id);
+      });
     return ids;
   };
 
@@ -669,9 +768,20 @@ export async function stubSupabase(context, {
     // paga y señal, y RLS filtra filas, no columnas: el trabajador no saca
     // ni una. Entra por la vista «worker_projects», que no las tiene.
     if (table === 'projects') return [];
-    if (table === 'work_reports') return rows.filter((r) => r.worker_id === user.id);
+    // Cada uno ve sus partes Y los partes en los que estuvo.
+    if (table === 'work_reports') {
+      return rows.filter((r) => r.worker_id === user.id || canReadReport(user, r.id));
+    }
+    if (table === 'work_report_workers') {
+      return rows.filter((r) => canReadReport(user, r.report_id));
+    }
     if (table === 'project_workers') {
       return rows.filter((r) => assignedProjects(user).has(r.project_id));
+    }
+    // Igual que «project_workers»: de la tabla solo le llegan las filas
+    // de los avisos en los que está.
+    if (table === 'ficha_workers') {
+      return rows.filter((r) => assignedFichas(user).has(r.ficha_id));
     }
     if (table === 'clients') {
       const ids = new Set(db.projects.filter((p) => myProjects.has(p.id)).map((p) => p.client_id));
@@ -682,10 +792,13 @@ export async function stubSupabase(context, {
     // «worker_fichas», que se construye sin la columna del dinero.
     if (table === 'fichas') return [];
     if (table === 'documents' || table === 'comments') {
-      const misPartes = new Set(db.work_reports.filter((x) => x.worker_id === user.id)
-        .map((x) => x.id));
+      // Los partes que puedo LEER: los míos y los que compartí. Igual
+      // que «can_read_report» en la base de datos.
+      const misPartes = new Set(db.work_reports
+        .filter((x) => canReadReport(user, x.id)).map((x) => x.id));
       const suyo = (r) => (r.order_id && mine.has(r.order_id))
         || (r.project_id && myProjects.has(r.project_id))
+        || (r.ficha_id && assignedFichas(user).has(r.ficha_id))
         || (r.report_id && misPartes.has(r.report_id));
       // BLOQUE 2: la documentación administrativa no se le devuelve, y
       // el almacén tampoco le firmaría el enlace del archivo.
@@ -833,6 +946,183 @@ export async function stubSupabase(context, {
       return json(ids.map((id) => people.find((x) => x.id === id)).filter(Boolean));
     }
 
+    /**
+     * «assign_ficha_workers»: pone el equipo de un AVISO. Se manda la
+     * lista completa, igual que en los proyectos. Solo administración y
+     * solo avisos: una visita la lleva administración.
+     */
+    if (path === '/rest/v1/rpc/assign_ficha_workers') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const { p_ficha: fichaId, p_workers: ids = [] } = body() ?? {};
+      const f = db.fichas.find((x) => x.id === fichaId);
+      if (!f) return fail('No se encuentra el aviso', 'P0002');
+      if (f.type !== 'aviso') {
+        return fail('Solo se pueden asignar trabajadores a un aviso. '
+          + 'Las visitas y los presupuestos los lleva administración.');
+      }
+      if (ids.some((id) => !people.find((x) => x.id === id && x.active !== false))) {
+        return fail('Alguna de las personas no existe o está desactivada');
+      }
+      const antes = new Set((db.ficha_workers ?? [])
+        .filter((fw) => fw.ficha_id === fichaId).map((fw) => fw.worker_id));
+      db.ficha_workers = (db.ficha_workers ?? [])
+        .filter((fw) => fw.ficha_id !== fichaId || ids.includes(fw.worker_id));
+      ids.filter((id) => !antes.has(id)).forEach((id) => {
+        db.ficha_workers.push({
+          ficha_id: fichaId, worker_id: id,
+          assigned_at: new Date().toISOString(), assigned_by: actor().id, is_demo: false,
+        });
+        const persona = people.find((x) => x.id === id);
+        registrar(`${actorName()} asignó a ${persona?.full_name ?? ''} al aviso ${f.code}`,
+          f.code, 'ficha_workers');
+        avisar(id, 'aviso_asignado', 'Aviso asignado',
+          `${f.code}${f.title ? ` · ${f.title}` : ''}`, null);
+      });
+      return json(ids.map((id) => people.find((x) => x.id === id)).filter(Boolean));
+    }
+
+    /** «report_candidates»: con quién se puede compartir este parte. */
+    /**
+     * «storage_summary»: cuánto ocupa cada cosa y cuánto cabe.
+     *
+     * Los archivos, la base de datos y las copias van SEPARADOS, y las
+     * copias sin capacidad porque ocupan en Drive. Mientras no se
+     * declare la capacidad no hay porcentaje: nulo, no cero.
+     */
+    if (path === '/rest/v1/rpc/storage_summary') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const s = db.settings;
+      const mb = (x) => (x == null ? null : x * 1024 * 1024);
+      const cuotaArchivos = mb(s.storage_quota_mb);
+      const cuotaDb = mb(s.db_quota_mb);
+      const vivos = db.documents.filter((d) => !d.deleted_at)
+        .reduce((n, d) => n + Number(d.size_bytes ?? 0), 0);
+      const papelera = db.documents.filter((d) => d.deleted_at)
+        .reduce((n, d) => n + Number(d.size_bytes ?? 0), 0);
+      const archivos = vivos + papelera;
+      // La base de datos no se puede medir aquí: se declara una cifra
+      // estable para que la pantalla tenga algo que pintar.
+      const baseDatos = 12 * 1024 * 1024;
+      const copias = db.backups.reduce((n, b) => n + Number(b.size_bytes ?? 0), 0);
+      const nivel = (usado, cuota) => {
+        if (cuota == null || cuota <= 0) return 'sin_cuota';
+        if (usado / cuota >= 0.9) return 'critico';
+        if (usado / cuota >= 0.7) return 'atencion';
+        return 'bien';
+      };
+      const pct = (usado, cuota) => (cuota == null
+        ? null : Math.round((usado * 1000) / cuota) / 10);
+      const libre = (usado, cuota) => (cuota == null ? null : Math.max(cuota - usado, 0));
+      return json([
+        { concepto: 'Archivos', usado_bytes: archivos, cuota_bytes: cuotaArchivos,
+          libre_bytes: libre(archivos, cuotaArchivos), porcentaje: pct(archivos, cuotaArchivos),
+          nivel: nivel(archivos, cuotaArchivos), medido: true,
+          detalle: 'Fotografías, vídeos, firmas y documentos, incluida la papelera.' },
+        { concepto: 'De eso, en la papelera', usado_bytes: papelera, cuota_bytes: null,
+          libre_bytes: null, porcentaje: archivos ? Math.round((papelera * 1000) / archivos) / 10 : 0,
+          nivel: 'bien', medido: true,
+          detalle: 'Sigue ocupando hasta que se elimina del todo. Es el espacio más fácil de recuperar.' },
+        { concepto: 'Medido en el contenedor', usado_bytes: archivos, cuota_bytes: cuotaArchivos,
+          libre_bytes: libre(archivos, cuotaArchivos), porcentaje: pct(archivos, cuotaArchivos),
+          nivel: nivel(archivos, cuotaArchivos), medido: true,
+          detalle: 'Cuadra con lo que conoce la aplicación.' },
+        { concepto: 'Base de datos', usado_bytes: baseDatos, cuota_bytes: cuotaDb,
+          libre_bytes: libre(baseDatos, cuotaDb), porcentaje: pct(baseDatos, cuotaDb),
+          nivel: nivel(baseDatos, cuotaDb), medido: true,
+          detalle: 'Las filas: clientes, proyectos, partes, historial. Nada que ver con los archivos.' },
+        { concepto: 'Copias de seguridad', usado_bytes: copias, cuota_bytes: null,
+          libre_bytes: null, porcentaje: null, nivel: 'sin_cuota', medido: true,
+          detalle: 'Se suben a Google Drive, así que ocupan ALLÍ y no cuentan en la cuota de Supabase.' },
+      ]);
+    }
+
+    /** «save_storage_quota»: declarar a mano cuánto espacio hay. */
+    if (path === '/rest/v1/rpc/save_storage_quota') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const b = body() ?? {};
+      if (b.p_storage_mb != null && Number(b.p_storage_mb) <= 0) {
+        return fail('La capacidad de los archivos tiene que ser mayor que cero. '
+          + 'Si no la sabes, déjala en blanco.');
+      }
+      if (b.p_db_mb != null && Number(b.p_db_mb) <= 0) {
+        return fail('La capacidad de la base de datos tiene que ser mayor que cero. '
+          + 'Si no la sabes, déjala en blanco.');
+      }
+      const vacio = b.p_storage_mb == null && b.p_db_mb == null;
+      Object.assign(db.settings, {
+        storage_quota_mb: b.p_storage_mb ?? null,
+        db_quota_mb: b.p_db_mb ?? null,
+        quota_note: (b.p_nota ?? '').trim() || null,
+        quota_checked_on: vacio ? null : today(),
+        updated_at: new Date().toISOString(),
+      });
+      registrar(vacio
+        ? `${actorName()} retiró la capacidad declarada del almacenamiento`
+        : `${actorName()} declaró la capacidad del almacenamiento: `
+          + `${b.p_storage_mb ?? 'sin declarar'} MB de archivos`,
+        null, 'app_settings');
+      return json(db.settings);
+    }
+
+    if (path === '/rest/v1/rpc/report_candidates') {
+      const user = getUser();
+      const r = db.work_reports.find((x) => x.id === body()?.p_report);
+      if (!r) return json([]);
+      if (!(user?.role === 'admin' || r.worker_id === user?.id)) return json([]);
+      return json(people
+        .filter((x) => x.active !== false && x.id !== r.worker_id
+          && enElMismoTrabajo(r, x.id))
+        .sort((a, b) => a.full_name.localeCompare(b.full_name, 'es')));
+    }
+
+    /**
+     * «save_report_workers»: con quién se hizo el trabajo. Se manda la
+     * lista completa; vacía deja el parte individual.
+     */
+    if (path === '/rest/v1/rpc/save_report_workers') {
+      const user = getUser();
+      const { p_report: rid, p_participantes: lista = [] } = body() ?? {};
+      const r = db.work_reports.find((x) => x.id === rid);
+      if (!r) return fail('No se encuentra el parte de trabajo', 'P0002');
+      if (!(user?.role === 'admin' || r.worker_id === user?.id)) {
+        return fail('Ese parte no es tuyo', '42501');
+      }
+      if (r.status === 'validado') {
+        return fail(`El parte ${r.code} ya está validado: sus horas cuentan como trabajo `
+          + 'realizado y no se puede cambiar con quién se hizo. Recházalo primero.', '42501');
+      }
+      if (!r.project_id && !r.ficha_id && lista.length) {
+        return fail('Este parte todavía no tiene proyecto ni aviso, así que no hay con quién '
+          + 'compartirlo. Pídele a administración que lo asigne y después repártelo.');
+      }
+      if (lista.some((x) => x.worker_id === r.worker_id)) {
+        return fail('Tus horas ya están en el parte: no te añadas a ti mismo como acompañante.');
+      }
+      const malos = lista.filter((x) => !enElMismoTrabajo(r, x.worker_id))
+        .map((x) => people.find((pp) => pp.id === x.worker_id)?.full_name)
+        .filter(Boolean);
+      if (malos.length) {
+        return fail(`No se puede compartir el parte con ${malos.join(', ')}: `
+          + 'no está asignado al mismo trabajo.', '42501');
+      }
+      if (lista.some((x) => !people.find((pp) => pp.id === x.worker_id && pp.active !== false))) {
+        return fail('Alguna de las personas no existe o está desactivada');
+      }
+      const ids = lista.map((x) => x.worker_id);
+      db.work_report_workers = (db.work_report_workers ?? [])
+        .filter((w) => w.report_id !== rid || ids.includes(w.worker_id));
+      lista.forEach((x) => {
+        const ya = db.work_report_workers.find(
+          (w) => w.report_id === rid && w.worker_id === x.worker_id);
+        if (ya) { ya.hours = Number(x.hours); return; }
+        db.work_report_workers.push({
+          report_id: rid, worker_id: x.worker_id, hours: Number(x.hours),
+          added_at: new Date().toISOString(), added_by: user.id, is_demo: false,
+        });
+      });
+      return json(db.work_report_workers.filter((w) => w.report_id === rid));
+    }
+
     if (path === '/rest/v1/rpc/save_work_report') {
       const user = getUser();
       if (!user) return fail('Hace falta tener la sesión iniciada', '42501');
@@ -850,6 +1140,19 @@ export async function stubSupabase(context, {
       if (b.p_submit && !hecho) return fail('Escribe qué trabajo has hecho antes de enviar el parte');
       if (b.p_submit && !horas) return fail('Indica las horas que has trabajado antes de enviar el parte');
 
+      // Un parte cuelga de un proyecto, de un aviso o de nada: nunca de
+      // los dos. Y el aviso tiene que ser uno al que entre de verdad.
+      if (b.p_project && b.p_ficha) {
+        return fail('Un parte es de un proyecto o de un aviso, no de los dos');
+      }
+      if (b.p_ficha) {
+        const av = db.fichas.find((x) => x.id === b.p_ficha && x.type === 'aviso');
+        if (!av) return fail('No se encuentra el aviso', 'P0002');
+        if (user.role !== 'admin' && !assignedFichas(user).has(b.p_ficha)) {
+          return fail('Ese aviso no está asignado a ti', '42501');
+        }
+      }
+
       let parte = b.p_report ? db.work_reports.find((r) => r.id === b.p_report) : null;
       if (b.p_report && !parte) return fail('No se encuentra el parte de trabajo', 'P0002');
       if (parte && parte.worker_id !== user.id) return fail('Ese parte no es tuyo', '42501');
@@ -864,6 +1167,7 @@ export async function stubSupabase(context, {
           id: `pt-${Math.random().toString(36).slice(2, 10)}`,
           code: `PT-${YEAR}-${String(db.counters.PT).padStart(3, '0')}`,
           worker_id: user.id, project_id: b.p_project ?? null,
+          ficha_id: b.p_ficha ?? null,
           work_type: b.p_work_type ?? 'fabricacion', work_date: dia,
           work_done: hecho, hours: horas, needs_material: Boolean(b.p_needs_material),
           status: estado, submitted_at: b.p_submit ? new Date().toISOString() : null,
@@ -874,7 +1178,8 @@ export async function stubSupabase(context, {
         db.work_reports.unshift(parte);
       } else {
         Object.assign(parte, {
-          project_id: b.p_project ?? parte.project_id,
+          project_id: b.p_ficha ? null : (b.p_project ?? parte.project_id),
+          ficha_id: b.p_project ? null : (b.p_ficha ?? parte.ficha_id ?? null),
           work_type: b.p_work_type ?? parte.work_type, work_date: dia,
           work_done: hecho, hours: horas, needs_material: Boolean(b.p_needs_material),
           status: estado, submitted_at: b.p_submit ? new Date().toISOString() : null,
@@ -943,6 +1248,14 @@ export async function stubSupabase(context, {
       const parte = db.work_reports.find((r) => r.id === body()?.p_report);
       if (!parte) return fail('No se encuentra el parte de trabajo', 'P0002');
       const proyecto = body()?.p_project ?? null;
+      // Un parte de un AVISO ya tiene dueño: ponerle además un proyecto
+      // lo dejaría colgando de dos sitios y sus horas se podrían contar
+      // dos veces.
+      if (proyecto && parte.ficha_id) {
+        const av = db.fichas.find((x) => x.id === parte.ficha_id);
+        return fail(`El parte ${parte.code} es del aviso ${av?.code ?? ''}, así que no se le `
+          + 'puede poner un proyecto. Las horas de un aviso van al aviso.');
+      }
       Object.assign(parte, {
         project_id: proyecto,
         assigned_at: proyecto ? new Date().toISOString() : null,
@@ -2217,8 +2530,7 @@ export async function stubSupabase(context, {
       // sigue viendo sus visitas y sus avisos, pero no el importe.
       const fichasVisibles = esAdmin
         ? db.fichas
-        : db.fichas.filter((f) => f.assigned_to === user.id
-            && ['visita', 'aviso'].includes(f.type) && !f.archived_at);
+        : db.fichas.filter((f) => assignedFichas(user).has(f.id));
       fichasVisibles
         .filter((f) => !f.archived_at && f.scheduled_date && ['visita', 'aviso'].includes(f.type))
         .forEach((f) => {
@@ -2281,10 +2593,10 @@ export async function stubSupabase(context, {
      */
     if (path === '/rest/v1/worker_fichas') {
       const user = getUser() ?? ADMIN;
+      // Los DOS caminos: responsable o equipo del aviso.
       const suyas = user.role === 'admin'
         ? db.fichas
-        : db.fichas.filter((f) => f.assigned_to === user.id
-            && ['visita', 'aviso'].includes(f.type) && !f.archived_at);
+        : db.fichas.filter((f) => assignedFichas(user).has(f.id));
       const rows = suyas.map((f) => ({
         id: f.id, code: f.code, type: f.type, status: f.status,
         title: f.title ?? null, description: f.description ?? null,
@@ -2324,6 +2636,79 @@ export async function stubSupabase(context, {
       return json(applyOrder(applyFilters(rows, url), url));
     }
 
+    /**
+     * «report_team»: quién estuvo en el trabajo de un parte y cuántas
+     * horas puso cada uno. El AUTOR va marcado y sus horas son las del
+     * parte: no están en la tabla de acompañantes.
+     */
+    if (path === '/rest/v1/report_team') {
+      const user = getUser() ?? ADMIN;
+      const puede = (rid) => user.role === 'admin' || canReadReport(user, rid);
+      const autores = db.work_reports.filter((r) => puede(r.id)).map((r) => ({
+        report_id: r.id, worker_id: r.worker_id,
+        full_name: people.find((x) => x.id === r.worker_id)?.full_name ?? '',
+        hours: r.hours, es_autor: true, added_at: r.created_at,
+      }));
+      const demas = (db.work_report_workers ?? [])
+        .filter((w) => puede(w.report_id)).map((w) => ({
+          report_id: w.report_id, worker_id: w.worker_id,
+          full_name: people.find((x) => x.id === w.worker_id)?.full_name ?? '',
+          hours: w.hours, es_autor: false, added_at: w.added_at,
+        }));
+      return json(applyOrder(applyFilters([...autores, ...demas], url), url));
+    }
+
+    /**
+     * «worker_avisos»: el AVISO DE CLIENTE tal como lo ve su trabajador.
+     * Se construye a propósito SIN «amount», igual que la vista de
+     * verdad: el dinero del aviso es de administración.
+     */
+    if (path === '/rest/v1/worker_avisos') {
+      const user = getUser() ?? ADMIN;
+      const suyos = db.fichas.filter((f) => f.type === 'aviso' && !f.archived_at
+        && (user.role === 'admin' || assignedFichas(user).has(f.id)));
+      const rows = suyos.map((f) => ({
+        id: f.id, code: f.code, status: f.status,
+        title: f.title ?? null, description: f.description ?? null,
+        address: f.address ?? null, phone: f.phone ?? null,
+        scheduled_date: f.scheduled_date ?? null, scheduled_time: f.scheduled_time ?? null,
+        client_id: f.client_id ?? null,
+        client_name: db.clients.find((c) => c.id === f.client_id)?.name ?? null,
+        assigned_to: f.assigned_to ?? null,
+        mis_partes: db.work_reports
+          .filter((r) => r.ficha_id === f.id && r.worker_id === user.id).length,
+        created_at: f.created_at ?? null, updated_at: f.updated_at ?? null,
+      }));
+      return json(applyOrder(applyFilters(rows, url), url));
+    }
+
+    /** «ficha_team»: el responsable del aviso y su equipo. Sin teléfono. */
+    if (path === '/rest/v1/ficha_team') {
+      const user = getUser() ?? ADMIN;
+      const puede = (fichaId) => user.role === 'admin' || assignedFichas(user).has(fichaId);
+      const equipo = (db.ficha_workers ?? [])
+        .filter((fw) => puede(fw.ficha_id))
+        .map((fw) => {
+          const persona = people.find((x) => x.id === fw.worker_id);
+          return {
+            ficha_id: fw.ficha_id, worker_id: fw.worker_id,
+            full_name: persona?.full_name ?? '', role: persona?.role ?? 'worker',
+            assigned_at: fw.assigned_at, es_responsable: false,
+          };
+        });
+      const jefes = db.fichas
+        .filter((f) => f.assigned_to && puede(f.id))
+        .map((f) => {
+          const persona = people.find((x) => x.id === f.assigned_to);
+          return {
+            ficha_id: f.id, worker_id: f.assigned_to,
+            full_name: persona?.full_name ?? '', role: persona?.role ?? 'worker',
+            assigned_at: f.updated_at ?? null, es_responsable: true,
+          };
+        });
+      return json(applyOrder(applyFilters([...equipo, ...jefes], url), url));
+    }
+
     if (path === '/rest/v1/project_team') {
       const user = getUser() ?? ADMIN;
       const ids = user.role === 'admin'
@@ -2341,14 +2726,19 @@ export async function stubSupabase(context, {
       return json(applyFilters(rows, url));
     }
 
-    /** Horas previstas contra realizadas. SOLO cuentan las validadas. */
+    /**
+     * Horas PREVISTAS contra REALIZADAS.
+     *
+     * Las previstas las pone administración y no las toca nadie más.
+     * Las realizadas salen de «horasTrabajadas», que es la misma fuente
+     * del panel e incluye a los acompañantes de un parte compartido.
+     */
     if (path === '/rest/v1/project_hours') {
+      const reales = horasTrabajadas();
       const rows = db.projects.map((x) => {
-        const validados = db.work_reports
-          .filter((r) => r.project_id === x.id && r.status === 'validado');
-        const suma = (tipo) => validados
-          .filter((r) => r.work_type === tipo)
-          .reduce((n, r) => n + Number(r.hours ?? 0), 0);
+        const suma = (tipo) => reales
+          .filter((h) => h.project_id === x.id && h.work_type === tipo)
+          .reduce((n, h) => n + h.hours, 0);
         const fab = suma('fabricacion');
         const mont = suma('montaje');
         return {
@@ -2370,8 +2760,12 @@ export async function stubSupabase(context, {
           por_validar: list.filter((r) => r.status === 'enviado').length,
           validados: list.filter((r) => r.status === 'validado').length,
           rechazados: list.filter((r) => r.status === 'rechazado').length,
+          // Las horas de TODOS los que estuvieron, no solo del autor.
           horas_validadas: list.filter((r) => r.status === 'validado')
-            .reduce((n, r) => n + Number(r.hours ?? 0), 0),
+            .reduce((n, r) => n + Number(r.hours ?? 0)
+              + (db.work_report_workers ?? [])
+                .filter((w) => w.report_id === r.id)
+                .reduce((m, w) => m + Number(w.hours ?? 0), 0), 0),
         };
       });
       return json(applyFilters(rows, url));
@@ -2487,12 +2881,15 @@ export async function stubSupabase(context, {
       const porFase = {};
       for (const fase of PHASES) porFase[fase] = activos.filter((p) => p.phase === fase).length;
 
-      const hFab = horasDe((o, w) => o.type === 'fabricacion' && enPeriodo(o) && w.submitted_at);
-      const hMont = horasDe((o, w) => o.type === 'montaje' && enPeriodo(o) && w.submitted_at);
-
-      const personas = new Set(db.work_order_workers
-        .filter((w) => { const o = db.work_orders.find((x) => x.id === w.order_id); return o && enPeriodo(o) && Number(w.hours ?? 0) > 0; })
-        .map((w) => w.worker_id));
+      // Migración 39 · de «hours_worked»: partes Y órdenes. Antes esto
+      // sumaba solo órdenes y se quedaba corto.
+      const reales = horasTrabajadas()
+        .filter((h) => h.work_date >= desde && h.work_date <= hasta);
+      const suma = (f) => reales.filter(f).reduce((n, h) => n + h.hours, 0);
+      const hFab = suma((h) => h.work_type === 'fabricacion');
+      const hMont = suma((h) => h.work_type === 'montaje');
+      const trabajos = new Set(reales.map((h) => `${h.origen}|${h.source_id}`));
+      const personas = new Set(reales.map((h) => h.worker_id));
 
       const vivas = db.work_orders.filter((o) => !o.archived_at);
       const presupuestado = activos.reduce((t, p) => t + Number(p.budget_amount ?? 0), 0);
@@ -2502,7 +2899,7 @@ export async function stubSupabase(context, {
         periodo: { desde, hasta },
         produccion: {
           horas_fabricacion: hFab, horas_montaje: hMont, horas_totales: hFab + hMont,
-          ordenes_validadas: validadas.length, trabajadores: personas.size,
+          trabajos_validados: trabajos.size, trabajadores: personas.size,
         },
         proyectos: {
           activos: activos.length,
@@ -3055,6 +3452,13 @@ export async function stubSupabase(context, {
         };
 
         if (table === 'fichas') {
+          // UNA VISITA ES DE ADMINISTRACIÓN. Igual que el disparador de
+          // la base de datos: se rechaza nacer asignada a un trabajador.
+          if (row.type === 'visita' && row.assigned_to
+              && people.find((x) => x.id === row.assigned_to)?.role !== 'admin') {
+            return fail('Una visita solo se puede asignar a administración. Si el trabajo '
+              + 'lo tiene que hacer un trabajador, créalo como aviso.');
+          }
           const prefix = PREFIX[row.type];
           db.counters[prefix] += 1;
           row.code = `${prefix}-${YEAR}-${String(db.counters[prefix]).padStart(3, '0')}`;
@@ -3119,6 +3523,17 @@ export async function stubSupabase(context, {
     if (method === 'PATCH') {
       const rows = applyFilters(db[table], url);
       const patch = body() ?? {};
+      // UNA VISITA ES DE ADMINISTRACIÓN. La regla mira SOLO la
+      // asignación: una visita ya asignada se sigue pudiendo guardar.
+      if (table === 'fichas' && 'assigned_to' in patch && patch.assigned_to) {
+        const destino = people.find((x) => x.id === patch.assigned_to);
+        const choca = rows.some((row) => row.type === 'visita'
+          && row.assigned_to !== patch.assigned_to && destino?.role !== 'admin');
+        if (choca) {
+          return fail('Una visita solo se puede asignar a administración. Si el trabajo '
+            + 'lo tiene que hacer un trabajador, créalo como aviso.');
+        }
+      }
       rows.forEach((row) => {
         const before = { ...row };
         Object.assign(row, patch, { updated_at: new Date().toISOString() });

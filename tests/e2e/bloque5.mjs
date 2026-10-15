@@ -165,10 +165,15 @@ try {
   await signIn(m, PORT, 'juan');
 
   // ---------------- SUS PROYECTOS, ORDENADOS -------------------------
-  await m.locator('.w-tabbar a:has-text("Proyectos")').click();
+  await m.locator('.w-tabbar a:has-text("Trabajos")').click();
   await m.waitForTimeout(1200);
 
-  const tarjetas = await m.locator('.ot-card .plate').allInnerTexts();
+  // La pantalla lleva ahora DOS cosas: los avisos de cliente y los
+  // proyectos. Las chapas se leen de la sección de proyectos, que es lo
+  // que esta prueba vigila; los avisos tienen las suyas en el archivo 91.
+  const tarjetas = await m
+    .locator('section.w-section:has(h2:has-text("Proyectos")) .ot-card .plate')
+    .allInnerTexts();
   check('Ve los proyectos a los que está asignado, y solo esos',
     tarjetas.length === 2, tarjetas.join(' | '));
   check('Ordenados por lo que toca antes, no por código ni como vengan',
@@ -283,9 +288,9 @@ try {
     && await m.locator('#pt-hours').count() === 1
     && await m.locator('button:has-text("Fabricación")').count() === 1);
   check('Con el proyecto en «Sin proyecto», que es una opción de verdad',
-    await m.locator('#pt-proyecto').inputValue() === '');
+    await m.locator('#pt-origen').inputValue() === '');
   check('Y se puede elegir un proyecto si resulta que sí lo tiene',
-    (await m.locator('#pt-proyecto').innerText()).includes(`PROY-${YEAR}-001`));
+    (await m.locator('#pt-origen').innerText()).includes(`PROY-${YEAR}-001`));
 
   await m.locator('button:has-text("Montaje")').click();
   await m.locator('#pt-done').fill('Corte y plegado de una pletina para una persona del mostrador.');
@@ -308,13 +313,13 @@ try {
     { waitUntil: 'networkidle' });
   await m.waitForTimeout(1000);
   check('Viniendo de un proyecto, el parte se abre con ese proyecto puesto',
-    await m.locator('#pt-proyecto').inputValue() === 'p-pronto');
+    await m.locator('#pt-origen').inputValue() === 'p:p-pronto');
 
   await m.goto(`http://localhost:${PORT}/#/t/partes/nuevo`, { waitUntil: 'networkidle' });
   await m.waitForTimeout(1000);
   check('Y un parte nuevo NO se queda con el proyecto del anterior',
-    await m.locator('#pt-proyecto').inputValue() === '',
-    await m.locator('#pt-proyecto').inputValue());
+    await m.locator('#pt-origen').inputValue() === '',
+    await m.locator('#pt-origen').inputValue());
 
   // ---------------- SOLICITAR MATERIAL, SIN PROYECTO -----------------
   await m.locator('.w-tabbar a:has-text("Inicio")').click();

@@ -14,7 +14,8 @@ import {
 } from '@/services/calendar';
 import { listPeople } from '@/services/people';
 import {
-  CALENDAR_COLOR, CALENDAR_KINDS, CALENDAR_LABEL, CALENDAR_VIEWS, type CalendarView,
+  CALENDAR_COLOR, CALENDAR_KINDS, CALENDAR_LABEL, CALENDAR_VIEWS, WORKER_CALENDAR_KINDS,
+  type CalendarView,
 } from '@/config/constants';
 import {
   addDays, addMonths, dayNumber, fmtDate, longDate, mondayOf, monthLabel,
@@ -141,7 +142,10 @@ export default function CalendarPage({ worker }: { worker?: boolean }) {
 
   const [view, setView] = useState<CalendarView>(worker ? 'agenda' : 'mes');
   const [anchor, setAnchor] = useState(today);
-  const [kinds, setKinds] = useState<CalendarKind[]>([...CALENDAR_KINDS]);
+  // Las categorías de ESTA pantalla. Un trabajador ve su trabajo:
+  // fabricación, montaje y sus avisos. Administración las ve todas.
+  const disponibles = worker ? WORKER_CALENDAR_KINDS : CALENDAR_KINDS;
+  const [kinds, setKinds] = useState<CalendarKind[]>([...disponibles]);
   const [workerId, setWorkerId] = useState('');
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
@@ -164,6 +168,21 @@ export default function CalendarPage({ worker }: { worker?: boolean }) {
     [festivos.data],
   );
 
+  /**
+   * LO QUE SE PINTA.
+   *
+   * Un solo filtro, y a propósito: «kinds» ARRANCA valiendo
+   * «disponibles» y solo puede cambiar pulsando la leyenda, que no
+   * ofrece otra cosa. Así que filtrar dos veces no añadiría nada que
+   * esto no haga ya, y un camino que ninguna prueba puede recorrer es
+   * un camino que nadie vigila.
+   *
+   * Esto es lo que mantiene una visita FUERA del calendario de un
+   * trabajador: si tuviera una asignada de antes, la base de datos se
+   * la sigue mandando (y hace bien: es un trabajo que tiene entre
+   * manos), pero su calendario no la pinta. Está probado en
+   * tests/e2e/avisos.mjs con una visita heredada.
+   */
   const shown = useMemo(
     () => (events.data ?? []).filter((e) => kinds.includes(e.kind)),
     [events.data, kinds],
@@ -340,7 +359,7 @@ export default function CalendarPage({ worker }: { worker?: boolean }) {
       <div className="cal-filters">
         {/* El color es siempre del TIPO de trabajo, nunca de la persona. */}
         <div className="cal-legend" aria-label="Tipos de evento">
-          {CALENDAR_KINDS.map((k) => (
+          {disponibles.map((k) => (
             <button key={k} type="button" className="cal-legend-item" aria-pressed={kinds.includes(k)}
                     onClick={() => toggleKind(k)}>
               <span className="cal-dot" style={{ ['--ev' as string]: CALENDAR_COLOR[k] }} aria-hidden />

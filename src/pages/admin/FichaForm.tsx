@@ -70,6 +70,22 @@ export default function FichaForm() {
 
   const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
 
+  /**
+   * CAMBIAR EL TIPO DE FICHA.
+   *
+   * Si se pasa a VISITA y había elegido un trabajador, se deja «Sin
+   * asignar»: una visita solo se puede asignar a administración, y dejar
+   * dentro un responsable que la lista ya no ofrece haría que el
+   * formulario pareciera correcto y lo rechazara la base de datos al
+   * guardar. Mejor que se vea aquí.
+   */
+  function cambiarTipo(t: FichaType) {
+    setType(t);
+    if (t !== 'visita' || !form.assigned_to) return;
+    const elegido = (people.data ?? []).find((p) => p.id === form.assigned_to);
+    if (elegido && elegido.role !== 'admin') set({ assigned_to: '' });
+  }
+
   async function submit(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -155,7 +171,8 @@ export default function FichaForm() {
           <Panel title="Tipo de ficha">
             <div className="segmented" role="group" aria-label="Tipo de ficha">
               {TYPES.map((t) => (
-                <button key={t} type="button" aria-pressed={type === t} onClick={() => setType(t)}>
+                <button key={t} type="button" aria-pressed={type === t}
+                        onClick={() => cambiarTipo(t)}>
                   {FICHA_TYPE_LABEL[t]}
                 </button>
               ))}
@@ -246,18 +263,29 @@ export default function FichaForm() {
               </>
             )}
 
+            {/* UNA VISITA ES DE ADMINISTRACIÓN: en una visita esta lista
+                solo ofrece perfiles de administración. La base de datos
+                rechaza cualquier otro, de modo que la regla no depende de
+                que esta lista esté bien filtrada. */}
             <Field
-              label={type === 'presupuesto' ? 'Quién lo prepara' : 'Trabajador responsable'}
+              label={type === 'presupuesto' ? 'Quién lo prepara'
+                : type === 'visita' ? 'Quién la hace'
+                : 'Trabajador responsable'}
               htmlFor="f-assigned" span
-              hint="Si lo dejas sin asignar, la ficha queda «Por asignar».">
+              hint={type === 'visita'
+                ? 'Las visitas las lleva administración. Si el trabajo lo tiene que hacer un '
+                  + 'trabajador, créalo como aviso.'
+                : 'Si lo dejas sin asignar, la ficha queda «Por asignar».'}>
               <select id="f-assigned" className="select" value={form.assigned_to}
                       onChange={(e) => set({ assigned_to: e.target.value })}>
                 <option value="">Sin asignar</option>
-                {(people.data ?? []).map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.full_name}{p.role === 'admin' ? ' (administración)' : ''}
-                  </option>
-                ))}
+                {(people.data ?? [])
+                  .filter((p) => type !== 'visita' || p.role === 'admin')
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.full_name}{p.role === 'admin' ? ' (administración)' : ''}
+                    </option>
+                  ))}
               </select>
             </Field>
           </div>

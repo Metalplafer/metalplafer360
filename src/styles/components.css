@@ -486,6 +486,11 @@
 .bar-track { height: 10px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
 .bar-fill { display: block; height: 100%; background: var(--blue); border-radius: 999px; min-width: 2px; }
 .bar-value { text-align: right; font-weight: 600; font-size: .88rem; }
+/* El color de una barra de espacio lo decide el nivel que calcula la
+   base de datos («quota_level»), no la pantalla: así los umbrales están
+   en un solo sitio. Y nunca va solo: al lado hay siempre una cifra. */
+.bar-fill.atencion { background: var(--warn); }
+.bar-fill.critico  { background: var(--danger); }
 
 /* Elegir las tarjetas del panel */
 .card-config { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }

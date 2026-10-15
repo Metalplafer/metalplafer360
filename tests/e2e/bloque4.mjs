@@ -397,7 +397,7 @@ try {
     vacio(pedido.calendario), JSON.stringify(pedido.calendario).slice(0, 160));
 
   // Lo que sí ve: su proyecto, y sin una sola cifra de dinero.
-  await m.locator('.w-tabbar a:has-text("Proyectos")').click();
+  await m.locator('.w-tabbar a:has-text("Trabajos")').click();
   await m.waitForTimeout(1200);
   const suProyecto = await m.locator('.w-content').innerText();
   check('El trabajador sigue viendo el proyecto que tiene asignado',

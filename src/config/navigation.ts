@@ -44,7 +44,8 @@ export const ADMIN_NAV: NavItem[] = [
  */
 export const WORKER_NAV: NavItem[] = [
   { path: '/t', label: 'Inicio', icon: Home, end: true },
-  { path: '/t/proyectos', label: 'Proyectos', icon: FolderKanban },
+  // «Mis trabajos»: los proyectos Y los avisos de cliente asignados.
+  { path: '/t/proyectos', label: 'Trabajos', icon: FolderKanban },
   { path: '/t/partes', label: 'Mis partes', icon: ClipboardList },
   { path: '/t/calendario', label: 'Calendario', icon: CalendarDays },
   { path: '/t/perfil', label: 'Perfil', icon: UserRound },

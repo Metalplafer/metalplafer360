@@ -14,7 +14,8 @@ import {
 } from '@/config/constants';
 import { fmtDate, fmtDateTime, fmtHours } from '@/lib/format';
 import {
-  assignReportToProject, deleteReport, getReport, rejectReport, validateReport,
+  assignReportToProject, deleteReport, getReport, rejectReport, reportTeam,
+  validateReport,
 } from '@/services/partes';
 import { documentPaths, removeStoredFiles } from '@/services/documents';
 import { listProjects } from '@/services/projects';
@@ -40,6 +41,9 @@ export default function AdminReportDetail() {
   const [proyectoElegido, setProyectoElegido] = useState('');
 
   const parte = useAsync(() => getReport(id), [id, historyKey]);
+  // Quién estuvo en el trabajo. Hace falta para validar con criterio:
+  // las horas del parte son las del autor, no las del trabajo entero.
+  const equipo = useAsync(() => reportTeam(id), [id, historyKey]);
   const proyectos = useAsync(
     async () => (asignando ? listProjects({ state: 'activos', pageSize: 100 }) : null),
     [asignando],
@@ -50,6 +54,10 @@ export default function AdminReportDetail() {
   if (!parte.data) return null;
 
   const r = parte.data;
+  // Un parte es compartido si alguien más estuvo en el trabajo. El autor
+  // siempre sale en «report_team», así que una sola fila es individual.
+  const compartido = (equipo.data?.length ?? 0) > 1;
+  const horasPersona = (equipo.data ?? []).reduce((n, m) => n + (m.hours ?? 0), 0);
 
   async function validar() {
     const ok = await confirm({
@@ -217,7 +225,7 @@ export default function AdminReportDetail() {
           </Alert>
         )}
 
-        {!r.project_id && (
+        {!r.project_id && !r.ficha_id && (
           <Alert kind="warn" action={
             <button className="btn" disabled={busy} onClick={() => setAsignando(true)}>
               <FolderKanban />Asignar a un proyecto
@@ -247,12 +255,26 @@ export default function AdminReportDetail() {
               <dt>Trabajador</dt><dd>{r.worker?.full_name ?? '—'}</dd>
               <dt>Tipo de trabajo</dt><dd>{ORDER_TYPE_LABEL[r.work_type]}</dd>
               <dt>Día trabajado</dt><dd>{fmtDate(r.work_date)}</dd>
-              <dt>Horas</dt><dd className="num">{r.hours != null ? fmtHours(r.hours) : '—'}</dd>
-              <dt>Proyecto</dt>
+              <dt>{compartido ? 'Sus horas' : 'Horas'}</dt>
+              <dd className="num">{r.hours != null ? fmtHours(r.hours) : '—'}</dd>
+              {compartido && (
+                <>
+                  <dt>Total del trabajo</dt>
+                  <dd className="num">
+                    {fmtHours(horasPersona)}
+                    <span className="faint"> · entre {equipo.data?.length} personas</span>
+                  </dd>
+                </>
+              )}
+              <dt>{r.ficha_id ? 'Aviso de cliente' : 'Proyecto'}</dt>
               <dd>
                 {r.project
                   ? <Link to={`/admin/proyectos/${r.project.id}`}>
                       {r.project.code} · {r.project.name}
+                    </Link>
+                  : r.ficha
+                  ? <Link to={`/admin/fichas/${r.ficha.id}`}>
+                      {r.ficha.code} · {r.ficha.title ?? 'Aviso'}
                     </Link>
                   : 'Sin asignar'}
               </dd>
@@ -269,6 +291,31 @@ export default function AdminReportDetail() {
               tiene su parte.
             </p>
           </Panel>
+
+          {/* ------------------------------------------- EL REPARTO
+              Un parte compartido es UN trabajo con las horas de cada
+              uno. Administración tiene que verlo para validar: si no,
+              las horas del parte parecen ser las del trabajo entero y
+              se quedan cortas. */}
+          {compartido && (
+            <Panel title="Quién estuvo en este trabajo">
+              <ul className="mini-list">
+                {(equipo.data ?? []).map((m) => (
+                  <li key={m.worker_id}>
+                    <span>
+                      {m.full_name}
+                      {m.es_autor && <span className="faint"> · rellenó el parte</span>}
+                    </span>
+                    <span className="num">{m.hours != null ? fmtHours(m.hours) : '—'}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="hint" style={{ marginBottom: 0 }}>
+                Es un solo trabajo con un solo juego de fotografías. Al validarlo cuentan
+                las horas de todos: {fmtHours(horasPersona)} en total.
+              </p>
+            </Panel>
+          )}
 
           <HistoryPanel entityCode={r.code} reloadKey={String(historyKey)} />
         </div>

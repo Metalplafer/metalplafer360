@@ -39,6 +39,7 @@ const WorkerHistory = lazy(() => import('@/pages/worker/History'));
 const AdminReports = lazy(() => import('@/pages/admin/ReportsList'));
 const AdminReportDetail = lazy(() => import('@/pages/admin/ReportDetail'));
 const WorkerProjects = lazy(() => import('@/pages/worker/MyProjects'));
+const WorkerAvisoDetail = lazy(() => import('@/pages/worker/AvisoDetail'));
 const WorkerProjectDetail = lazy(() => import('@/pages/worker/ProjectDetail'));
 const WorkerReports = lazy(() => import('@/pages/worker/MyReports'));
 const WorkerReportDetail = lazy(() => import('@/pages/worker/ReportDetail'));
@@ -126,6 +127,11 @@ export function App() {
             <Route index element={<Lazy><WorkerHome /></Lazy>} />
             <Route path="proyectos" element={<Lazy><WorkerProjects /></Lazy>} />
             <Route path="proyectos/:id" element={<Lazy><WorkerProjectDetail /></Lazy>} />
+            {/* El AVISO DE CLIENTE asignado. El listado sigue viviendo en
+                «/t/proyectos», que ahora es «Mis trabajos» y lleva las dos
+                cosas; la dirección no se cambia para no romper enlaces ya
+                guardados. */}
+            <Route path="avisos/:id" element={<Lazy><WorkerAvisoDetail /></Lazy>} />
             <Route path="partes" element={<Lazy><WorkerReports /></Lazy>} />
             <Route path="partes/:id" element={<Lazy><WorkerReportDetail /></Lazy>} />
             <Route path="ordenes" element={<Lazy><WorkerOrders /></Lazy>} />

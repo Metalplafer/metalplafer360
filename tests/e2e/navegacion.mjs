@@ -357,8 +357,10 @@ try {
   check('La barra inferior tiene las 5 secciones',
     (await wpage.locator('.w-tabbar a').count()) === 5);
   const tabs = await wpage.locator('.w-tabbar a').allInnerTexts();
+  // «Trabajos» y no «Proyectos»: la pantalla lleva ahora los proyectos Y
+  // los avisos de cliente asignados, que es lo que se pidió.
   check('Las secciones del móvil son las previstas',
-    ['Inicio', 'Proyectos', 'Mis partes', 'Calendario', 'Perfil']
+    ['Inicio', 'Trabajos', 'Mis partes', 'Calendario', 'Perfil']
       .every((t, i) => tabs[i].includes(t)), tabs.join(' | '));
 
   const tabBox = await wpage.locator('.w-tabbar a').first().boundingBox();

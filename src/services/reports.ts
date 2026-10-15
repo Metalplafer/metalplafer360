@@ -9,7 +9,14 @@ export interface DashboardData {
   periodo: { desde: string; hasta: string };
   produccion: {
     horas_fabricacion: number; horas_montaje: number; horas_totales: number;
-    ordenes_validadas: number; trabajadores: number;
+    /**
+     * Trabajos con horas en el periodo: partes Y órdenes.
+     *
+     * Antes se llamaba «ordenes_validadas» y contaba solo órdenes. En
+     * cuanto los partes fueron la vía normal, el nombre decía una cosa
+     * y la cifra significaba otra (migración 39).
+     */
+    trabajos_validados: number; trabajadores: number;
   };
   proyectos: {
     activos: number; creados: number; finalizados: number; dias_medio: number;
@@ -45,7 +52,9 @@ export interface PhaseReportRow {
 }
 
 export interface WorkerHoursRow {
-  trabajador: string; fabricacion: number; montaje: number; total: number; ordenes: number;
+  trabajador: string; fabricacion: number; montaje: number; total: number;
+  /** Cuántos trabajos: partes y órdenes. Antes era «ordenes» (migración 39). */
+  trabajos: number;
 }
 
 export interface ProjectHoursRow {

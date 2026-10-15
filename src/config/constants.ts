@@ -256,6 +256,23 @@ export const CALENDAR_KINDS: CalendarKind[] = [
   'obra', 'fabricacion', 'montaje', 'material', 'visita', 'aviso', 'otro',
 ];
 
+/**
+ * LO QUE VE UN TRABAJADOR EN SU CALENDARIO.
+ *
+ * Su trabajo y nada más: lo que fabrica, lo que monta y los avisos de
+ * cliente que tiene asignados.
+ *
+ * Fuera quedan las VISITAS (son de administración), el MATERIAL y las
+ * OBRAS (planificación y compras, que son de administración) y los
+ * «OTROS» (las notas internas de administración).
+ *
+ * Esto es lo que se PINTA. Lo que le LLEGA ya lo decide la base de datos
+ * con «v_calendar», que filtra por lo que tiene asignado: esta lista no
+ * es la que guarda el secreto, solo evita enseñarle categorías que no son
+ * suyas y que además le saldrían siempre vacías.
+ */
+export const WORKER_CALENDAR_KINDS: CalendarKind[] = ['fabricacion', 'montaje', 'aviso'];
+
 export const CALENDAR_LABEL: Record<CalendarKind, string> = {
   fabricacion: 'Fabricación',
   montaje: 'Montaje',

@@ -110,7 +110,7 @@ try {
   check('Y tiene el botón de parte de trabajo a mano',
     await m.locator('a:has-text("Parte de trabajo")').count() > 0);
 
-  await m.locator('.w-tabbar a:has-text("Proyectos")').click();
+  await m.locator('.w-tabbar a:has-text("Trabajos")').click();
   await m.waitForTimeout(700);
   check('«Mis proyectos» enseña el proyecto asignado',
     (await m.locator('.w-content').innerText()).includes(`PROY-${YEAR}-001`));
@@ -220,8 +220,8 @@ try {
   check('Se puede abrir un parte sin proyecto',
     (await m.locator('.w-greeting').innerText()).includes('Sin proyecto'));
   check('Y el proyecto se elige en el propio formulario',
-    await m.locator('#pt-proyecto').count() === 1
-    && await m.locator('#pt-proyecto').inputValue() === '');
+    await m.locator('#pt-origen').count() === 1
+    && await m.locator('#pt-origen').inputValue() === '');
 
   await m.locator('button:has-text("Montaje")').click();
   await m.locator('#pt-done').fill('Faena que me dijo Salvi, todavía sin proyecto en la aplicación.');
