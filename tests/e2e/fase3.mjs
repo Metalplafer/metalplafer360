@@ -83,9 +83,18 @@ try {
     (await page.locator('.alert-danger').innerText()).includes('Ponle un nombre'));
 
   await page.locator('#p-name').fill('Rejas ventanas planta baja');
-  await page.locator('#p-desc').fill('Rejas fijas de pletina con barrotes cuadrados.');
-  await page.locator('#p-measures').fill('4 ud · 1,20 × 1,40 m');
-  await page.locator('#p-finish').fill('Negro forja');
+
+  // LA PRIMERA PIEZA. La descripción, las medidas y el acabado son del
+  // producto, no del proyecto.
+  //
+  // Dejarla en blanco en un proyecto NUEVO sigue permitiéndose, como
+  // antes de que existieran los productos: a veces solo se sabe el
+  // nombre del trabajo. Lo que no se puede es VACIAR los productos de un
+  // proyecto que ya los tiene guardados, y eso se comprueba en
+  // tests/e2e/mejoras.mjs.
+  await page.locator('#pp-desc-0').fill('Rejas fijas de pletina con barrotes cuadrados.');
+  await page.locator('#pp-measures-0').fill('4 ud · 1,20 × 1,40 m');
+  await page.locator('#pp-finish-0').fill('Negro forja');
   await page.locator('#p-location').fill('Fachada principal');
   await page.locator('#p-address').fill('Carrer de Calders, 9 · Castellar del Vallès');
   await page.locator('#p-observations').fill('No taladrar la piedra del zócalo.');
@@ -110,9 +119,14 @@ try {
     (await page.locator('.page-head').innerText()).includes('En preparación'));
 
   const datos = await page.locator('.panel:has-text("El trabajo")').innerText();
-  check('Guarda producto, medidas, acabado, ubicación y observaciones',
-    datos.includes('4 ud · 1,20 × 1,40 m') && datos.includes('Negro forja')
-    && datos.includes('Fachada principal') && datos.includes('No taladrar'), datos.replace(/\n/g, ' · '));
+  check('Guarda la ubicación y las observaciones del proyecto',
+    datos.includes('Fachada principal') && datos.includes('No taladrar'),
+    datos.replace(/\n/g, ' · '));
+
+  const pieza = await page.locator('.panel:has-text("Qué se fabrica")').innerText();
+  check('Las medidas y el acabado se guardan en el producto',
+    pieza.includes('4 ud · 1,20 × 1,40 m') && pieza.includes('Negro forja'),
+    pieza.replace(/\n/g, ' · '));
 
   check('La dirección del proyecto se muestra junto a la del cliente, y son distintas',
     datos.includes('Carrer de Calders, 9') && datos.includes('Dirección del cliente: Carrer de la Indústria, 12'));
@@ -157,8 +171,15 @@ try {
     (await page.locator('.page-head').innerText()).includes('Fabricación'));
   check('Los subestados de la fase anterior se limpian',
     (await page.locator('.substatus-grid .chip[aria-pressed="true"]').count()) === 0);
+  // Cuatro desde que se añadió «Lacado-Zincado». Se comprueba la cifra Y
+  // el nombre: si solo se contara, cambiar un subestado por otro pasaría
+  // desapercibido.
   check('Fabricación ofrece sus propios subestados',
-    (await page.locator('.substatus-grid .chip').count()) === 3);
+    (await page.locator('.substatus-grid .chip').count()) === 4,
+    await page.locator('.substatus-grid').innerText());
+  check('Y entre ellos está «Lacado-Zincado»',
+    (await page.locator('.substatus-grid .chip:has-text("Lacado-Zincado")').count()) === 1,
+    await page.locator('.substatus-grid').innerText());
 
   // Sin montaje: no se puede saltar a Facturación sin marcarlo
   await page.locator('.rail-step:has-text("Facturación")').click();

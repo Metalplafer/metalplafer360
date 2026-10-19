@@ -141,8 +141,12 @@ with x as (
 select test.put('pres1', id),
        test.ok('fichas', 'El primer presupuesto del año es PRES-AAAA-001',
          code = 'PRES-' || extract(year from public.today_madrid())::int || '-001') ,
-       test.ok('fichas', 'Aunque se pida otro estado, la ficha nace en «Por asignar»',
-         status = 'por_asignar')
+       -- Lo que se vigila es que el disparador MANDE sobre el estado que
+       -- venga en el insert. Lo que cambia (archivo 43) es dónde nace un
+       -- presupuesto: ya no en «Por asignar», porque ya no tiene
+       -- responsable administrativo a quien asignárselo.
+       test.ok('fichas', 'Aunque se pida otro estado, el presupuesto nace en «Pendiente»',
+         status = 'pendiente')
   from x;
 
 with x as (
@@ -223,6 +227,12 @@ select test.ok('presupuestos', 'El historial explica el cambio en castellano',
 
 
 \echo '== VISITAS'
+
+-- LAS VISITAS NO CAMBIAN (archivo 43): siguen naciendo en «Por asignar»
+-- porque las lleva administración y sí se asignan.
+select test.ok('visitas', 'Una visita sigue naciendo en «Por asignar»',
+  (select status = 'por_asignar' from public.fichas where id = test.id('vis1')));
+
 -- Se asigna a SALVI, que es administración. Una visita ya no se puede dar
 -- a un trabajador normal (archivo 38), y lo que se comprueba aquí es la
 -- maquinaria de estados, que es la misma sea quien sea el responsable.
@@ -251,9 +261,17 @@ select test.ok('avisos', 'Guarda cliente, teléfono, dirección, fecha y hora pr
       and scheduled_time = '10:00'
      from public.fichas where id = test.id('avi1')));
 
-update public.fichas set assigned_to = test.id('juan') where id = test.id('avi1');
-select test.ok('avisos', 'Al asignar trabajador el aviso pasa a «Asignado»',
+-- LO QUE AHORA MUEVE UN AVISO A «ASIGNADO» es repartirlo entre
+-- operarios (archivo 43). Antes lo hacía elegir responsable
+-- administrativo, y ese responsable ya no existe para los avisos.
+-- Es la misma regla de siempre, en el sitio donde ahora se asigna.
+select public.assign_ficha_workers(test.id('avi1'), array[test.id('juan')]::uuid[]);
+select test.ok('avisos', 'Al repartirlo entre operarios el aviso pasa a «Asignado»',
   (select status = 'asignado' from public.fichas where id = test.id('avi1')));
+
+select test.ok('avisos', 'Y el operario queda en el equipo del aviso',
+  exists (select 1 from public.ficha_workers
+           where ficha_id = test.id('avi1') and worker_id = test.id('juan')));
 
 update public.fichas set status = 'en_curso' where id = test.id('avi1');
 update public.fichas set status = 'realizado' where id = test.id('avi1');

@@ -87,9 +87,9 @@ try {
   const sugerencia = page.locator('.suggest-item, .suggestion, [role="option"]').first();
   if (await sugerencia.count()) { await sugerencia.click(); await page.waitForTimeout(400); }
   await page.locator('#p-name').fill('Barandilla escalera comunitaria');
-  await page.locator('#p-desc').fill('Barandilla de acero para escalera de 4 plantas.');
-  await page.locator('#p-measures').fill('4 tramos · 3,20 m');
-  await page.locator('#p-finish').fill('Negro forja');
+  await page.locator('#pp-desc-0').fill('Barandilla de acero para escalera de 4 plantas.');
+  await page.locator('#pp-measures-0').fill('4 tramos · 3,20 m');
+  await page.locator('#pp-finish-0').fill('Negro forja');
   await page.locator('#p-address').fill('Rambla, 45 · Sabadell');
   await page.locator('#p-budget').fill('6400');
   await page.locator('#p-advance').fill('2000');

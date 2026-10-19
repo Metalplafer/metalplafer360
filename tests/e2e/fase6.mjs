@@ -61,10 +61,20 @@ const db = createDb({
       title: 'Puerta corredera nave', description: null, status: 'enviado', assigned_to: ADMIN.id,
       due_date: null, archived_at: null, is_demo: false,
       created_at: `${MES}T10:00:00Z`, updated_at: `${MES}T10:00:00Z` },
+    // M2: un aviso ANTIGUO puede seguir en «Por asignar». Se deja a
+    // propósito: el aviso del panel ya NO tiene que contarlo, y sin él
+    // esa comprobación pasaría por no haber nada que no contar.
     { id: 'f2', code: `AVI-${YEAR}-001`, type: 'aviso', client_id: 'c2', contact_id: null,
       title: 'Cierre que no ajusta', description: null, status: 'por_asignar', assigned_to: null,
       due_date: null, archived_at: null, is_demo: false,
       created_at: `${MES}T11:00:00Z`, updated_at: `${MES}T11:00:00Z` },
+    // Y una VISITA sin asignar, que es lo que el panel SÍ tiene que
+    // avisar: las visitas las lleva administración y siguen naciendo así.
+    { id: 'f3', code: `VIS-${YEAR}-001`, type: 'visita', client_id: 'c2', contact_id: null,
+      title: 'Medir el hueco de la escalera', description: null,
+      status: 'por_asignar', assigned_to: null,
+      due_date: null, archived_at: null, is_demo: false,
+      created_at: `${MES}T12:00:00Z`, updated_at: `${MES}T12:00:00Z` },
   ],
   projects: [
     { id: 'p1', code: `PROY-${YEAR}-001`, client_id: 'c1', contact_id: null, source_ficha_id: null,
@@ -231,7 +241,16 @@ try {
     panel.includes('materiales que no han llegado a tiempo'));
   check('Avisa del aviso de material del taller',
     panel.includes('avisos de material del taller por revisar'));
-  check('Avisa de la ficha por asignar', panel.includes('fichas por asignar'));
+  // M2: el aviso cuenta SOLO las visitas. Si contara las tres clases se
+  // quedaría encendido para siempre por avisos y presupuestos antiguos
+  // que ya nadie va a asignar.
+  check('Avisa de la visita por asignar', panel.includes('visitas por asignar'),
+    panel.split('\n').filter((l) => l.includes('asignar')).join(' | '));
+  check('Y es UNA, la visita: el aviso antiguo en ese estado no cuenta',
+    /1\s+visitas por asignar/.test(panel.replace(/\s+/g, ' ')),
+    panel.replace(/\s+/g, ' ').match(/\d+ visitas por asignar/)?.[0] ?? 'no sale');
+  check('Y ya no habla de «fichas» por asignar',
+    !panel.includes('fichas por asignar'));
 
   // La regla del encargo: NO hay alerta de exceso de horas.
   check('NO hay ninguna alerta de exceso de horas',

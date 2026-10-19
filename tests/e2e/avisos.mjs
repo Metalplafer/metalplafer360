@@ -23,13 +23,17 @@
  * tests/sql/90_tests_avisos.sql. Aquí se comprueba la PANTALLA.
  */
 import {
-  ADMIN, WORKER, YEAR, buildApp, createChecker, createDb, diaLaborable,
+  ADMIN, WORKER, YEAR, buildApp, createChecker, createDb, proximoLaborable,
   launchBrowser, serveApp, signIn, stubSupabase, today,
 } from './fake-supabase.mjs';
 
 const PORT = 4198;
 const HOY = today();
-const LABORABLE = diaLaborable(HOY);
+// El próximo día laborable, HACIA DELANTE. La agenda del trabajador va de
+// hoy en adelante, así que lo programado tiene que caer hoy o después:
+// con «diaLaborable», que camina hacia atrás, estas pruebas fallaban los
+// sábados y los domingos sin que hubiera nada roto.
+const LABORABLE = proximoLaborable(HOY);
 
 /** Un segundo trabajador, para poder repartir un aviso entre dos. */
 const WORKER2 = {
@@ -182,15 +186,30 @@ try {
     && nuevaVisita.some((o) => o.includes('Salvi Plaza')),
     nuevaVisita.join(' | '));
 
-  // Y si se había elegido a un trabajador y luego se cambia a VISITA, se
-  // deja «Sin asignar»: así no parece correcto y lo rechaza la base de
-  // datos al guardar.
-  await page.locator('.segmented button:has-text("Aviso")').click();
+  // CAMBIAR DE TIPO NO ARRASTRA EL RESPONSABLE.
+  //
+  // M2: el responsable solo existe en las VISITAS, así que al cambiar a
+  // aviso el campo desaparece. Lo que hay que comprobar es que, además,
+  // se LIMPIA: si no, la ficha se guardaría con un responsable que su
+  // propio formulario ya no enseña, y nadie podría quitarlo.
+  //
+  // Antes esto se probaba al revés —poner un trabajador en un aviso y
+  // pasar a visita—, pero eso ya no se puede hacer: el aviso no tiene
+  // ese campo.
+  await page.locator('#f-assigned').selectOption({ label: 'Salvi Plaza (administración)' });
   await page.waitForTimeout(400);
-  await page.locator('#f-assigned').selectOption({ label: 'Juan Ortega' });
+  check('En una visita se puede poner responsable de administración',
+    (await page.locator('#f-assigned').inputValue()) !== '',
+    await page.locator('#f-assigned').inputValue());
+
+  await page.locator('.segmented button:has-text("Aviso")').click();
+  await page.waitForTimeout(500);
+  check('Al cambiar a aviso, el campo de responsable desaparece',
+    (await page.locator('#f-assigned').count()) === 0);
+
   await page.locator('.segmented button:has-text("Visita")').click();
   await page.waitForTimeout(500);
-  check('Y si se cambia a visita con un trabajador puesto, se deja sin asignar',
+  check('Y al volver a visita está sin asignar: el responsable se limpió',
     (await page.locator('#f-assigned').inputValue()) === '',
     await page.locator('#f-assigned').inputValue());
 

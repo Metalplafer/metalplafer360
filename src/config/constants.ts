@@ -58,6 +58,10 @@ export const FICHA_STATUSES: Record<FichaType, StatusDef[]> = {
     { key: 'avanzado',    label: 'Presupuesto avanzado',    tone: 'blue' },
     { key: 'por_revisar', label: 'Presupuesto por revisar', tone: 'signal' },
     { key: 'enviado',     label: 'Presupuesto enviado',     tone: 'violet' },
+    // El cliente ya ha dicho sí, pero la paga y señal no está cobrada,
+    // así que el trabajo NO empieza: este estado no se puede convertir
+    // en proyecto. Lo impide la base de datos, no la pantalla.
+    { key: 'pendiente_senal', label: 'Pendiente de paga y señal', tone: 'signal' },
     { key: 'aceptado',    label: 'Presupuesto aceptado',    tone: 'green' },
     { key: 'cancelado',   label: 'Presupuesto cancelado',   tone: 'steel' },
   ],
@@ -121,6 +125,7 @@ export const SUBSTATUSES: Record<ProjectPhase, { key: string; label: string }[]>
   fabricacion: [
     { key: 'en_fabricacion', label: 'En fabricación' },
     { key: 'falta_material', label: 'Falta material' },
+    { key: 'lacado_zincado', label: 'Lacado-Zincado' },
     { key: 'por_finalizar',  label: 'Por finalizar' },
   ],
   montaje: [

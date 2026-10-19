@@ -7,13 +7,24 @@ import { Field, PageHeader, Panel } from '@/components/ui/Layout';
 import { Alert, ErrorBox, Loading } from '@/components/ui/Feedback';
 import { ClientPicker, emptyClient, type ClientDraft } from '@/components/shared/ClientPicker';
 import { createClient, getClient, listContacts } from '@/services/clients';
-import { createProject, getProject, updateProject } from '@/services/projects';
+import {
+  createProject, getProject, projectProducts, saveProjectProducts, updateProject,
+} from '@/services/projects';
+import {
+  ProductBlocks, emptyProduct, productoVacio,
+} from '@/components/shared/ProductBlocks';
+import type { ProjectProductDraft } from '@/types/db';
 import { getWork, setProjectWork, worksForPicker } from '@/services/works';
 import { parseDecimal } from '@/lib/format';
 import { toUserMessage } from '@/lib/errors';
 
+/**
+ * La descripción, las medidas y el acabado YA NO están aquí: son de cada
+ * PRODUCTO, porque un proyecto puede ser varias piezas. El nombre del
+ * proyecto sí se queda: es su título, no una pieza.
+ */
 const emptyForm = {
-  name: '', description: '', measures: '', finish: '', location: '',
+  name: '', location: '',
   address: '', observations: '', budget_amount: '', advance_amount: '',
   budget_hours_fab: '', budget_hours_mont: '', contact_id: '',
 };
@@ -30,6 +41,8 @@ export default function ProjectForm() {
 
   const [client, setClient] = useState<ClientDraft>(emptyClient);
   const [form, setForm] = useState(emptyForm);
+  /** Siempre hay al menos un bloque, también al crear un proyecto nuevo. */
+  const [products, setProducts] = useState<ProjectProductDraft[]>([{ ...emptyProduct }]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,6 +50,26 @@ export default function ProjectForm() {
     async () => (client.id ? listContacts(client.id) : []),
     [client.id],
   );
+
+  /**
+   * Los productos del proyecto que se edita.
+   *
+   * Si el proyecto todavía no tiene productos guardados, la vista
+   * devuelve UNO construido con sus columnas de siempre, así que el
+   * formulario sale relleno con lo que ya había y nadie pierde nada.
+   */
+  const guardados = useAsync(async () => (id ? projectProducts(id) : []), [id]);
+
+  useEffect(() => {
+    const rows = guardados.data;
+    if (!rows?.length) return;
+    setProducts(rows.map((r) => ({
+      name: r.name ?? '',
+      description: r.description ?? '',
+      measures: r.measures ?? '',
+      finish: r.finish ?? '',
+    })));
+  }, [guardados.data]);
 
   // BLOQUE 4: la obra que agrupa este proyecto. Opcional.
   const obras = useAsync(() => worksForPicker(), []);
@@ -100,8 +133,7 @@ export default function ProjectForm() {
     const p = project.data;
     if (!p) return;
     setForm({
-      name: p.name, description: p.description ?? '', measures: p.measures ?? '',
-      finish: p.finish ?? '', location: p.location ?? '', address: p.address ?? '',
+      name: p.name, location: p.location ?? '', address: p.address ?? '',
       observations: p.observations ?? '',
       budget_amount: p.budget_amount != null ? String(p.budget_amount).replace('.', ',') : '',
       advance_amount: p.advance_amount != null ? String(p.advance_amount).replace('.', ',') : '',
@@ -141,7 +173,27 @@ export default function ProjectForm() {
       return;
     }
     if (!form.name.trim()) {
-      setError('Ponle un nombre al proyecto: qué se fabrica o se monta.');
+      setError('Ponle un nombre al proyecto: cómo se llama el trabajo entero.');
+      return;
+    }
+    /**
+     * DEJAR LOS PRODUCTOS EN BLANCO.
+     *
+     * Solo se rechaza si el proyecto YA tiene productos guardados: ahí,
+     * vaciarlos sería BORRARLOS, y además la base de datos se negaría a
+     * mitad del guardado dejando el proyecto con las medidas en blanco y
+     * los productos intactos.
+     *
+     * En un proyecto NUEVO —o en uno antiguo que todavía no tiene
+     * productos propios— dejarlo en blanco se permite, porque es lo que
+     * se podía hacer antes de que existieran los productos: a veces solo
+     * se sabe el nombre del trabajo. Entonces no se guarda ningún
+     * producto y el proyecto sigue enseñando sus columnas, como siempre.
+     */
+    const hayGuardados = (guardados.data ?? []).some((r) => !r.heredado);
+    if (products.every(productoVacio) && hayGuardados) {
+      setError('Este proyecto ya tiene productos guardados. Rellena al menos uno, '
+        + 'o quita los que no quieras y deja el que sí.');
       return;
     }
 
@@ -164,13 +216,21 @@ export default function ProjectForm() {
         clientId = created.id;
       }
 
+      // Las columnas del proyecto se rellenan con el PRIMER producto.
+      // No es duplicar datos por gusto: el móvil del trabajador, los
+      // informes y las copias de seguridad leen por ahí, y
+      // «save_project_products» las mantiene al día después. Así, si el
+      // guardado de los productos fallara, el proyecto ya tendría los
+      // datos del primero y ninguna pantalla se quedaría en blanco.
+      const primero = products.find((x) => !productoVacio(x)) ?? products[0];
+
       const payload = {
         client_id: clientId!,
         contact_id: form.contact_id || null,
         name: form.name,
-        description: form.description,
-        measures: form.measures,
-        finish: form.finish,
+        description: primero.description,
+        measures: primero.measures,
+        finish: primero.finish,
         location: form.location,
         address: form.address,
         observations: form.observations,
@@ -183,6 +243,14 @@ export default function ProjectForm() {
       const saved = editing && id
         ? await updateProject(id, payload)
         : await createProject(payload);
+
+      // Los productos van DESPUÉS, con su propia función, que descarta
+      // los bloques en blanco y comprueba que quede al menos uno. Si no
+      // se ha escrito ninguno, no se llama: el proyecto se queda como
+      // los de antes y la lectura con respaldo hace el resto.
+      if (!products.every(productoVacio)) {
+        await saveProjectProducts(saved.id, products);
+      }
 
       // La obra se cambia con su propia función: así queda escrito en el
       // historial del proyecto Y en el de la obra.
@@ -263,25 +331,10 @@ export default function ProjectForm() {
 
         <Panel title="El trabajo">
           <div className="form-grid">
-            <Field label="Nombre o producto *" htmlFor="p-name" span
-                   hint="Qué se fabrica. Por ejemplo: barandilla escalera comunitaria.">
+            <Field label="Nombre del proyecto *" htmlFor="p-name" span
+                   hint="Cómo se llama el trabajo entero. Por ejemplo: barandillas comunidad Rambla 42.">
               <input id="p-name" className="input" value={form.name} required
                      onChange={(e) => set({ name: e.target.value })} />
-            </Field>
-
-            <Field label="Descripción" htmlFor="p-desc" span>
-              <textarea id="p-desc" className="textarea" rows={3} value={form.description}
-                        onChange={(e) => set({ description: e.target.value })} />
-            </Field>
-
-            <Field label="Medidas" htmlFor="p-measures" hint="Por ejemplo: 6,00 × 4,50 m o 4 ud · 1,20 × 1,40 m">
-              <input id="p-measures" className="input" value={form.measures}
-                     onChange={(e) => set({ measures: e.target.value })} />
-            </Field>
-
-            <Field label="Acabado" htmlFor="p-finish" hint="Por ejemplo: galvanizado + lacado RAL 7016">
-              <input id="p-finish" className="input" value={form.finish}
-                     onChange={(e) => set({ finish: e.target.value })} />
             </Field>
 
             <Field label="Ubicación" htmlFor="p-location" hint="Dónde va colocado: fachada, escalera, terraza…">
@@ -301,6 +354,17 @@ export default function ProjectForm() {
                         onChange={(e) => set({ observations: e.target.value })} />
             </Field>
           </div>
+        </Panel>
+
+        <Panel title="Qué se fabrica">
+          {guardados.data?.some((r) => r.heredado) && (
+            <Alert kind="info">
+              Este proyecto se creó cuando solo se podía anotar un producto. Aquí
+              está lo que tenía. Si en realidad son varias piezas, añádelas y se
+              guardarán por separado.
+            </Alert>
+          )}
+          <ProductBlocks products={products} onChange={setProducts} />
         </Panel>
 
         <Panel title="Presupuesto y horas previstas">

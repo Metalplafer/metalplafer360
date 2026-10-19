@@ -159,16 +159,15 @@ try {
 
   check('El presupuesto se crea con el código PRES-AAAA-001',
     (await page.locator('.plate').first().innerText()) === `PRES-${YEAR}-001`);
-  check('Nace en estado «Por asignar»',
-    (await page.locator('.page-head').innerText()).includes('Por asignar'));
+  // M2: un presupuesto YA NO nace «Por asignar». No lleva responsable
+  // administrativo, así que nace donde empieza su trabajo de verdad.
+  check('Nace en estado «Presupuesto pendiente»',
+    (await page.locator('.page-head').innerText()).includes('Presupuesto pendiente'),
+    await page.locator('.page-head').innerText());
+  check('Y la ficha ya no ofrece ponerle responsable',
+    (await page.locator('#assign').count()) === 0);
   check('Muestra el importe en formato español',
     (await page.locator('.kv').innerText()).includes('6.400,50'));
-
-  // Asignar responsable → deja de estar «Por asignar»
-  await page.locator('#assign').selectOption({ label: 'Salvi Plaza (administración)' });
-  await page.waitForTimeout(700);
-  check('Al asignar responsable pasa a «Presupuesto pendiente»',
-    (await page.locator('.page-head').innerText()).includes('Presupuesto pendiente'));
 
   // Recorrer estados hasta aceptado
   for (const estado of ['Presupuesto avanzado', 'Presupuesto por revisar', 'Presupuesto enviado']) {
@@ -258,9 +257,15 @@ try {
   check('El aviso tiene su propia serie: AVI-AAAA-001',
     (await page.locator('.plate').first().innerText()) === `AVI-${YEAR}-001`);
   const estadosAviso = await page.locator('.status-flow button').allInnerTexts();
+  // M2: «Por asignar» ya no se ofrece en un aviso nuevo. Un aviso no
+  // lleva responsable administrativo, así que no hay a dónde volver: el
+  // botón solo sale en las visitas y en las fichas ANTIGUAS que ya están
+  // en ese estado, para no dejarlas atrapadas.
   check('Los estados del aviso son los previstos',
-    ['Por asignar', 'Pendiente', 'Asignado', 'En curso', 'Realizado', 'Cerrado']
+    ['Pendiente', 'Asignado', 'En curso', 'Realizado', 'Cerrado']
       .every((e, i) => estadosAviso[i] === e), estadosAviso.join(' | '));
+  check('Y «Por asignar» ya no se ofrece en un aviso nuevo',
+    !estadosAviso.includes('Por asignar'), estadosAviso.join(' | '));
   check('Un aviso no ofrece convertirse en proyecto',
     (await page.locator('body').innerText()).includes('convertirse en proyecto') === false);
 

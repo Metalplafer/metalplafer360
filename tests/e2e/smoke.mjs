@@ -14,28 +14,21 @@
  * también el formulario y los mensajes de error.
  */
 import { chromium } from 'playwright';
-import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
+// La construcción se comparte con el resto de las pruebas de navegador.
+// Antes estaba copiada aquí, con la misma llamada a «npx» que fallaba en
+// Windows: dos copias del mismo fallo son dos sitios donde corregirlo.
+import { buildApp } from './fake-supabase.mjs';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const DIST = join(ROOT, 'dist');
 const PORT = 4178;
 
-console.log('   Construyendo la aplicación para la prueba…');
-execFileSync(process.execPath, ['node_modules/vite/bin/vite.js', 'build', '--logLevel', 'error'], {
-  cwd: ROOT,
-  stdio: 'inherit',
-  env: {
-    ...process.env,
-    VITE_SUPABASE_URL: 'https://ejemplo.supabase.co',
-    VITE_SUPABASE_ANON_KEY: 'clave-de-ejemplo-solo-para-la-prueba',
-    VITE_LOGIN_DOMAIN: 'metalplafer.com',
-  },
-});
+buildApp();
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css',

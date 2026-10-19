@@ -70,12 +70,19 @@ export default function FichaDetail() {
   async function changeStatus(next: string) {
     if (next === f.status) return;
     const label = fichaStatus(f.type, next).label;
-    const needsConfirm = ['cancelado', 'cancelada', 'aceptado', 'cerrado'].includes(next);
+    const needsConfirm = ['cancelado', 'cancelada', 'aceptado', 'cerrado',
+                          'pendiente_senal'].includes(next);
     if (needsConfirm) {
       const ok = await confirm({
         title: `Cambiar a «${label}»`,
         message: next === 'aceptado'
           ? <>El presupuesto quedará como aceptado. Después podrá convertirse en proyecto.</>
+          : next === 'pendiente_senal'
+          ? (
+            <>El cliente ha aceptado el presupuesto pero todavía no ha pagado la paga y
+              señal. Mientras esté así <strong>no se podrá convertir en proyecto</strong>:
+              cuando cobréis la señal, pásalo a «Presupuesto aceptado».</>
+          )
           : <>La ficha {f.code} pasará a «{label}».</>,
         confirmLabel: 'Cambiar estado',
         danger: next.startsWith('cancel'),
@@ -239,6 +246,22 @@ export default function FichaDetail() {
         </div>
       )}
 
+      {/* Pendiente de paga y señal: se dice que falta cobrar y NO se
+          ofrece el botón. Si alguien forzara la llamada, la base de datos
+          la rechaza igual con el mismo motivo. */}
+      {f.type === 'presupuesto' && f.status === 'pendiente_senal' && !archived && (
+        <div style={{ marginBottom: 16 }}>
+          <Alert kind="warn">
+            <strong>Falta cobrar la paga y señal.</strong>
+            <div style={{ marginTop: 2 }}>
+              El cliente ya ha aceptado el presupuesto, así que el trabajo está dado por
+              bueno, pero todavía no se puede convertir en proyecto. Cuando entre la
+              señal, pásalo a «Presupuesto aceptado».
+            </div>
+          </Alert>
+        </div>
+      )}
+
       {f.type === 'presupuesto' && f.status === 'aceptado' && !archived && (
         <div style={{ marginBottom: 16 }}>
           {project.data ? (
@@ -263,8 +286,15 @@ export default function FichaDetail() {
         <div className="stack">
           <Panel title="Estado">
             <div className="stack">
+              {/* «Por asignar» ya no se ofrece en presupuestos ni avisos:
+                  no nacen ahí. Pero SÍ se pinta si la ficha lo tiene,
+                  porque hay fichas antiguas en ese estado y esconderlo
+                  dejaría su propia situación fuera del recorrido. */}
               <div className="status-flow" role="group" aria-label="Cambiar estado">
-                {FICHA_STATUSES[f.type].map((s) => (
+                {FICHA_STATUSES[f.type]
+                  .filter((s) => s.key !== 'por_asignar'
+                    || f.type === 'visita' || f.status === 'por_asignar')
+                  .map((s) => (
                   <button key={s.key} aria-current={s.key === f.status}
                           disabled={saving || archived || s.key === 'por_asignar'}
                           onClick={() => changeStatus(s.key)}>
@@ -273,37 +303,43 @@ export default function FichaDetail() {
                 ))}
               </div>
               <p className="hint" style={{ margin: 0 }}>
-                «Por asignar» se deja atrás automáticamente al elegir responsable.
+                {f.type === 'visita'
+                  ? '«Por asignar» se deja atrás automáticamente al elegir quién la hace.'
+                  : f.type === 'aviso'
+                  ? 'Un aviso pasa a «Asignado» al repartirlo entre operarios, ahí abajo.'
+                  : 'El presupuesto empieza en «Pendiente» y avanza desde aquí.'}
               </p>
 
-              <div className="field" style={{ maxWidth: 340 }}>
-                <label htmlFor="assign">
-                  {f.type === 'presupuesto' ? 'Quién lo prepara'
-                    : f.type === 'visita' ? 'Quién la hace'
-                    : 'Trabajador responsable'}
-                </label>
-                {/* UNA VISITA ES DE ADMINISTRACIÓN. Aquí solo se ofrecen
-                    perfiles de administración; la base de datos rechaza
-                    cualquier otro, así que la regla NO depende de que esta
-                    lista esté bien hecha. */}
-                <select id="assign" className="select" value={f.assigned_to ?? ''} disabled={saving || archived}
-                        onChange={(e) => assign(e.target.value)}>
-                  <option value="">Sin asignar</option>
-                  {(people.data ?? [])
-                    .filter((p) => f.type !== 'visita' || p.role === 'admin')
-                    .map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.full_name}{p.role === 'admin' ? ' (administración)' : ''}
-                      </option>
-                    ))}
-                </select>
-                {f.type === 'visita' && (
+              {/* EL RESPONSABLE SOLO EXISTE EN LAS VISITAS.
+                  Un presupuesto lo prepara quien lo prepare, y eso es
+                  gestión interna. Un aviso necesita OPERARIOS, que se
+                  reparten en el panel de abajo.
+                  «fichas.assigned_to» no se borra: las visitas la usan y
+                  las fichas antiguas conservan su valor. */}
+              {f.type === 'visita' && (
+                <div className="field" style={{ maxWidth: 340 }}>
+                  <label htmlFor="assign">Quién la hace</label>
+                  {/* UNA VISITA ES DE ADMINISTRACIÓN. Aquí solo se ofrecen
+                      perfiles de administración; la base de datos rechaza
+                      cualquier otro, así que la regla NO depende de que esta
+                      lista esté bien hecha. */}
+                  <select id="assign" className="select" value={f.assigned_to ?? ''} disabled={saving || archived}
+                          onChange={(e) => assign(e.target.value)}>
+                    <option value="">Sin asignar</option>
+                    {(people.data ?? [])
+                      .filter((p) => p.role === 'admin')
+                      .map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.full_name}{p.role === 'admin' ? ' (administración)' : ''}
+                        </option>
+                      ))}
+                  </select>
                   <p className="hint" style={{ marginBottom: 0 }}>
                     Las visitas las lleva administración. Si el trabajo lo tiene que hacer
                     un trabajador, créalo como aviso.
                   </p>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           </Panel>
 

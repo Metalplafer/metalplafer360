@@ -1,6 +1,6 @@
 import {
   BarChart3, Boxes, Building2, CalendarDays, ClipboardList, FileStack, FileText, FolderKanban,
-  HardHat, Home, LayoutDashboard, Receipt, Settings, Siren, UserRound, Users,
+  HardHat, Home, LayoutDashboard, Receipt, Settings, Siren, Truck, UserRound, Users,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -30,6 +30,7 @@ export const ADMIN_NAV: NavItem[] = [
   // App.tsx). Las órdenes que haya en la base de datos NO se borran:
   // siguen saliendo, como histórico, en la ficha de su proyecto.
   { path: '/admin/material', label: 'Material pendiente', icon: Boxes },
+  { path: '/admin/proveedores', label: 'Proveedores', icon: Truck },
   { path: '/admin/calendario', label: 'Calendario', icon: CalendarDays },
   { path: '/admin/avisos', label: 'Avisos', icon: Siren },
   { path: '/admin/clientes', label: 'Clientes', icon: Building2 },

@@ -81,7 +81,11 @@ export default function FichaForm() {
    */
   function cambiarTipo(t: FichaType) {
     setType(t);
-    if (t !== 'visita' || !form.assigned_to) return;
+    // El responsable solo existe en las visitas, así que al salir de
+    // visita se limpia: si no, un presupuesto se guardaría con un
+    // responsable que su formulario ya no enseña.
+    if (t !== 'visita') { set({ assigned_to: '' }); return; }
+    if (!form.assigned_to) return;
     const elegido = (people.data ?? []).find((p) => p.id === form.assigned_to);
     if (elegido && elegido.role !== 'admin') set({ assigned_to: '' });
   }
@@ -263,31 +267,32 @@ export default function FichaForm() {
               </>
             )}
 
-            {/* UNA VISITA ES DE ADMINISTRACIÓN: en una visita esta lista
-                solo ofrece perfiles de administración. La base de datos
-                rechaza cualquier otro, de modo que la regla no depende de
-                que esta lista esté bien filtrada. */}
-            <Field
-              label={type === 'presupuesto' ? 'Quién lo prepara'
-                : type === 'visita' ? 'Quién la hace'
-                : 'Trabajador responsable'}
-              htmlFor="f-assigned" span
-              hint={type === 'visita'
-                ? 'Las visitas las lleva administración. Si el trabajo lo tiene que hacer un '
-                  + 'trabajador, créalo como aviso.'
-                : 'Si lo dejas sin asignar, la ficha queda «Por asignar».'}>
-              <select id="f-assigned" className="select" value={form.assigned_to}
-                      onChange={(e) => set({ assigned_to: e.target.value })}>
-                <option value="">Sin asignar</option>
-                {(people.data ?? [])
-                  .filter((p) => type !== 'visita' || p.role === 'admin')
-                  .map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.full_name}{p.role === 'admin' ? ' (administración)' : ''}
-                    </option>
-                  ))}
-              </select>
-            </Field>
+            {/* EL RESPONSABLE SOLO EXISTE EN LAS VISITAS.
+                Un presupuesto lo prepara quien lo prepare y eso es
+                gestión interna, no un dato de la ficha. Un aviso lo que
+                necesita es saber qué OPERARIOS van, y eso se reparte
+                desde la propia ficha una vez creada.
+                Y una visita es de administración: la lista solo ofrece
+                perfiles de administración, y la base de datos rechaza
+                cualquier otro, así que la regla no depende de que esta
+                lista esté bien filtrada. */}
+            {type === 'visita' && (
+              <Field label="Quién la hace" htmlFor="f-assigned" span
+                     hint="Las visitas las lleva administración. Si el trabajo lo tiene que
+                           hacer un trabajador, créalo como aviso.">
+                <select id="f-assigned" className="select" value={form.assigned_to}
+                        onChange={(e) => set({ assigned_to: e.target.value })}>
+                  <option value="">Sin asignar</option>
+                  {(people.data ?? [])
+                    .filter((p) => p.role === 'admin')
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.full_name} (administración)
+                      </option>
+                    ))}
+                </select>
+              </Field>
+            )}
           </div>
         </Panel>
 

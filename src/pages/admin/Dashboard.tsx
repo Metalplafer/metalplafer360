@@ -120,8 +120,13 @@ export default function Dashboard() {
     // propia pantalla y en «Producción».
     { n: d.alertas.material_retrasado, label: 'materiales que no han llegado a tiempo', to: '/admin/material' },
     { n: d.alertas.avisos_taller, label: 'avisos de material del taller por revisar', to: '/admin/material' },
-    { n: d.alertas.fichas_por_asignar, label: 'fichas por asignar', to: '/admin/fichas' },
+    { n: d.alertas.fichas_por_asignar, label: 'visitas por asignar', to: '/admin/fichas' },
     { n: d.alertas.presupuestos_enviados, label: 'presupuestos enviados esperando respuesta', to: '/admin/fichas' },
+    // Aceptado por el cliente y sin cobrar la señal: no sale en
+    // «esperando respuesta» y todavía no es un proyecto, así que sin
+    // este aviso no sale por ningún lado.
+    { n: d.alertas.presupuestos_pendientes_senal,
+      label: 'presupuestos pendientes de paga y señal', to: '/admin/fichas' },
   ].filter((a) => a.n > 0);
 
   const porFase = d.proyectos.por_fase ?? {};

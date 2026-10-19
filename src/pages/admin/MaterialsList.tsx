@@ -13,6 +13,8 @@ import {
   setReceived, updateMaterial,
 } from '@/services/materials';
 import { listProjects } from '@/services/projects';
+import { listSuppliers } from '@/services/suppliers';
+import { suggestSuppliers } from '@/services/materials';
 import { MaterialNeedButton } from '@/components/shared/MaterialNeedButton';
 import { REQUEST_STATUS_LABEL, REQUEST_STATUS_TONE } from '@/config/constants';
 import { fmtDate, fmtDateTime, fmtNumber, todayMadrid } from '@/lib/format';
@@ -32,6 +34,16 @@ export default function MaterialsList() {
   const [tab, setTab] = useState<Tab>('pendiente');
   const [search, setSearch] = useState('');
   const [archived, setArchived] = useState(false);
+  /**
+   * EL FILTRO DE PROVEEDOR.
+   *
+   * Dos clases de valor, porque hay dos clases de material: los que
+   * apuntan a un proveedor de la lista («id:…») y los que solo tienen el
+   * nombre escrito a mano («texto:…»), que son los que ya había. Se
+   * ofrecen los dos y se filtra por el que se elija, así que no se
+   * esconde ningún material mientras no se hayan vinculado todos.
+   */
+  const [supplierFilter, setSupplierFilter] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
 
   const [editing, setEditing] = useState<Material | null>(null);
@@ -43,14 +55,20 @@ export default function MaterialsList() {
 
   const debounced = useDebounce(search, 300);
   const projects = useAsync(() => listProjects({ phase: 'activos', pageSize: 200 }), []);
+  const suppliers = useAsync(() => listSuppliers(true), [reloadKey]);
+  // Los nombres que solo están escritos a mano, para no perderlos de
+  // vista mientras no se hayan vinculado a un proveedor de la lista.
+  const textNames = useAsync(() => suggestSuppliers(''), [reloadKey]);
 
   const materials = useAsync(
     () => listMaterials({
       state: tab === 'avisos' ? 'todos' : tab,
       search: debounced,
       archived,
+      supplierId: supplierFilter.startsWith('id:') ? supplierFilter.slice(3) : undefined,
+      supplier: supplierFilter.startsWith('texto:') ? supplierFilter.slice(6) : undefined,
     }, today),
-    [tab, debounced, archived, reloadKey],
+    [tab, debounced, archived, supplierFilter, reloadKey],
   );
 
   const requests = useAsync(() => listRequests(), [reloadKey]);
@@ -89,6 +107,7 @@ export default function MaterialsList() {
       name: draft.name.trim(),
       units: draft.units,
       supplier: draft.supplier,
+      supplier_id: draft.supplier_id,
       ordered_on: draft.ordered_on || null,
       expected_on: draft.expected_on || null,
       notes: draft.notes,
@@ -105,6 +124,7 @@ export default function MaterialsList() {
       name: draft.name.trim(),
       units: draft.units,
       supplier: draft.supplier,
+      supplier_id: draft.supplier_id,
       ordered_on: draft.ordered_on || null,
       expected_on: draft.expected_on || null,
       notes: draft.notes,
@@ -122,6 +142,7 @@ export default function MaterialsList() {
       name: draft.name.trim(),
       units: draft.units,
       supplier: draft.supplier || null,
+      supplierId: draft.supplier_id,
       orderedOn: draft.ordered_on || null,
       expectedOn: draft.expected_on || null,
       notes: draft.notes || null,
@@ -145,6 +166,12 @@ export default function MaterialsList() {
   }
 
   const rows = materials.data?.rows ?? [];
+
+  // Solo los nombres a mano que NO están ya dados de alta: si el
+  // proveedor está en la lista, es mejor filtrar por él que por el texto.
+  const yaEnLista = new Set((suppliers.data ?? []).map((s) => s.name.toLowerCase()));
+  const nombresSueltos = (textNames.data ?? [])
+    .filter((n) => !yaEnLista.has(n.supplier.toLowerCase()));
 
   return (
     <>
@@ -234,6 +261,30 @@ export default function MaterialsList() {
                        placeholder="Buscar por material, proveedor o comentario"
                        value={search} onChange={(e) => setSearch(e.target.value)} />
               </div>
+              <label htmlFor="mat-supplier-filter" className="sr-only">
+                Filtrar por proveedor
+              </label>
+              <select id="mat-supplier-filter" className="select" style={{ maxWidth: 260 }}
+                      value={supplierFilter}
+                      onChange={(e) => setSupplierFilter(e.target.value)}>
+                <option value="">Todos los proveedores</option>
+                {(suppliers.data ?? []).length > 0 && (
+                  <optgroup label="Proveedores">
+                    {(suppliers.data ?? []).map((s) => (
+                      <option key={s.id} value={`id:${s.id}`}>
+                        {s.name}{s.active ? '' : ' (de baja)'}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {nombresSueltos.length > 0 && (
+                  <optgroup label="Escritos a mano">
+                    {nombresSueltos.map((n) => (
+                      <option key={n.supplier} value={`texto:${n.supplier}`}>{n.supplier}</option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
               <button className="chip" aria-pressed={archived} onClick={() => setArchived((v) => !v)}>
                 Archivados
               </button>

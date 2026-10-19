@@ -38,8 +38,11 @@ select test.ok('b5_aviso', 'El trabajo de mostrador es un AVISO, no una tabla nu
   (select type = 'aviso' and code like 'AVI-%'
      from public.fichas where id = test.id('b5_aviso')));
 
-select test.ok('b5_aviso', 'Empieza en «Por asignar», como cualquier ficha',
-  (select status = 'por_asignar' from public.fichas where id = test.id('b5_aviso')));
+-- Nace en «Pendiente», no en «Por asignar» (archivo 43): un aviso ya no
+-- tiene responsable administrativo a quien asignárselo, y lo que importa
+-- es qué operarios van a hacerlo.
+select test.ok('b5_aviso', 'Empieza en «Pendiente», que es donde empieza su trabajo',
+  (select status = 'pendiente' from public.fichas where id = test.id('b5_aviso')));
 
 select test.ok('b5_aviso', 'Recoge cliente, trabajo, teléfono y correo',
   (select client_id = test.id('cli_laura')
@@ -58,9 +61,11 @@ select test.ok('b5_aviso', 'Las horas de un aviso no pueden ser cero ni negativa
 select test.err('b5_aviso', 'Unas horas imposibles se rechazan',
   format($$update public.fichas set hours = -3 where id = %L$$, test.id('b5_aviso')), '23514');
 
--- Sigue recorriendo sus seis estados de siempre. No se ha tocado nada.
-update public.fichas set assigned_to = test.id('juan') where id = test.id('b5_aviso');
-select test.ok('b5_aviso', 'Al asignarlo pasa a «Asignado», como siempre',
+-- Sigue recorriendo sus estados de siempre. Lo que cambia (archivo 43)
+-- es que lo que lo pone «Asignado» es repartirlo entre operarios, no
+-- elegir un responsable administrativo que ya no existe.
+select public.assign_ficha_workers(test.id('b5_aviso'), array[test.id('juan')]::uuid[]);
+select test.ok('b5_aviso', 'Al repartirlo entre operarios pasa a «Asignado»',
   (select status = 'asignado' from public.fichas where id = test.id('b5_aviso')));
 
 update public.fichas set status = 'realizado' where id = test.id('b5_aviso');

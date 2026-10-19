@@ -126,7 +126,11 @@ try {
   await page.locator('#f-hours').fill('0,75');
   await page.locator('#f-amount').fill('35');
   await page.locator('#f-date').fill(HOY);
-  await page.locator('#f-assigned').selectOption(WORKER.id);
+  // M2: el formulario de un aviso YA NO pide responsable administrativo.
+  // Lo que asigna un aviso es repartirlo entre operarios, y eso se hace
+  // desde su ficha, más abajo.
+  check('El formulario del aviso ya no pide responsable administrativo',
+    (await page.locator('#f-assigned').count()) === 0);
   await page.locator('button:has-text("Crear aviso")').click();
   await page.waitForTimeout(1400);
 
@@ -138,8 +142,16 @@ try {
   check('Y las horas y el importe, que es lo que hacía falta para facturar',
     Number(aviso?.hours) === 0.75 && Number(aviso?.amount) === 35,
     `${aviso?.hours} h · ${aviso?.amount} €`);
-  check('Al asignarlo a alguien pasa a «Asignado», como siempre',
-    aviso?.status === 'asignado', aviso?.status);
+  // M2: nace «Pendiente», y lo que lo pone «Asignado» es repartirlo.
+  check('Nace «Pendiente»: ya no pasa por un responsable administrativo',
+    aviso?.status === 'pendiente', aviso?.status);
+
+  const equipo = page.locator('.panel:has(h2:has-text("Trabajadores del aviso"))');
+  check('El aviso tiene su panel de trabajadores', await equipo.count() === 1);
+  await equipo.locator(`label:has-text("${WORKER.full_name}") input[type="checkbox"]`).check();
+  await page.waitForTimeout(1300);
+  check('Y repartirlo entre operarios lo pone «Asignado»',
+    db.fichas[0]?.status === 'asignado', db.fichas[0]?.status);
 
   const ficha = await page.locator('main').innerText();
   // El teléfono se muestra con espacios («644 555 666»), como en el resto
@@ -392,10 +404,15 @@ try {
   // ADMINISTRACIÓN · revisa lo que ha llegado
   // ===================================================================
   await page.goto(`http://localhost:${PORT}/#/admin/material`, { waitUntil: 'networkidle' });
-  await page.waitForTimeout(1100);
+  // Se ESPERA a que la pantalla esté pintada en lugar de dar por hecho que
+  // 1,1 s bastan. «count()» no espera a nada, así que con una espera fija
+  // esta comprobación fallaba de vez en cuando —y falló— por llegar antes
+  // de tiempo, no porque hubiera nada roto.
+  await page.locator('.tabs').waitFor({ state: 'visible', timeout: 15000 });
 
   check('Administración también tiene «Solicitar material»',
-    await page.locator('button:has-text("Solicitar material")').count() === 1);
+    await page.locator('button:has-text("Solicitar material")').count() === 1,
+    `url=${page.url()} · errores=${errores.join(' /// ').slice(0, 300)}`);
 
   await page.locator('.tabs button:has-text("Avisos del taller")').click();
   await page.waitForTimeout(900);

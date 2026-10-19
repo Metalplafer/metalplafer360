@@ -15,6 +15,7 @@ import {
 } from '@/config/constants';
 import { fmtDate, fmtHours } from '@/lib/format';
 import { listReports, projectTeam, workerProject } from '@/services/partes';
+import { workerProjectProducts } from '@/services/projects';
 
 /**
  * EL PROYECTO EN EL MÓVIL DEL TRABAJADOR.
@@ -29,6 +30,15 @@ export default function WorkerProjectDetail() {
 
   const proyecto = useAsync(() => workerProject(id), [id]);
   const equipo = useAsync(() => projectTeam(id), [id]);
+  /**
+   * LAS PIEZAS DEL PROYECTO.
+   *
+   * Hace falta porque «worker_projects» trae UNA descripción, unas
+   * medidas y un acabado —los del primer producto—, así que un proyecto
+   * de tres piezas se vería a medias. Esta vista las trae todas, y sin
+   * nada económico, igual que el resto de lo que ve un trabajador.
+   */
+  const piezas = useAsync(() => workerProjectProducts(id), [id]);
   const mios = useAsync(
     async () => (profile
       ? listReports({ projectId: id, workerId: profile.id, pageSize: 50 })
@@ -87,10 +97,28 @@ export default function WorkerProjectDetail() {
       {/* ------------------------------------------------------- EL TRABAJO */}
       <div className="w-block">
         <h3><ClipboardList aria-hidden />El trabajo</h3>
+        {(piezas.data ?? []).length > 1 && (
+          <p className="w-note" style={{ marginTop: 0 }}>
+            Este proyecto son {(piezas.data ?? []).length} piezas.
+          </p>
+        )}
+        {(piezas.data ?? []).map((pr, i) => (
+          <div key={pr.id ?? `heredado-${i}`} style={{ marginBottom: 10 }}>
+            {(piezas.data ?? []).length > 1 && (
+              <strong style={{ display: 'block', marginBottom: 4 }}>
+                {pr.name?.trim() || `Pieza ${i + 1}`}
+              </strong>
+            )}
+            <dl className="kv tight">
+              {(piezas.data ?? []).length === 1 && pr.name?.trim()
+                && <><dt>Qué es</dt><dd>{pr.name}</dd></>}
+              {pr.description && <><dt>Descripción</dt><dd className="pre">{pr.description}</dd></>}
+              {pr.measures && <><dt>Medidas</dt><dd>{pr.measures}</dd></>}
+              {pr.finish && <><dt>Acabado</dt><dd>{pr.finish}</dd></>}
+            </dl>
+          </div>
+        ))}
         <dl className="kv tight">
-          {p.description && <><dt>Descripción</dt><dd className="pre">{p.description}</dd></>}
-          {p.measures && <><dt>Medidas</dt><dd>{p.measures}</dd></>}
-          {p.finish && <><dt>Acabado</dt><dd>{p.finish}</dd></>}
           {p.location && <><dt>Ubicación</dt><dd>{p.location}</dd></>}
           {p.address && (
             <>

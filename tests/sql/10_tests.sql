@@ -52,6 +52,29 @@ exception when others then
   perform test.ok(p_area, p_name, sqlstate like p_state);
 end $$;
 
+/**
+ * Como «test.err», pero comprobando ADEMÁS el mensaje.
+ *
+ * Hace falta cuando una comprobación del código y una restricción de la
+ * base de datos dan el MISMO código de error: ahí el código no distingue
+ * si el aviso que ve la persona se entiende o es el error crudo de
+ * PostgreSQL. Se encontró rompiendo el código a propósito: quitar la
+ * comprobación de nombres repetidos de los proveedores no hacía fallar
+ * ninguna prueba, porque saltaba el índice único con el mismo 23505.
+ */
+create or replace function test.errlike(
+  p_area text, p_name text, p_sql text, p_state text, p_msg text) returns void
+language plpgsql as $$
+begin
+  execute p_sql;
+  perform test.ok(p_area, p_name || ' (se esperaba el error ' || p_state || ')', false);
+exception when others then
+  if sqlstate = 'P0001' and sqlerrm like 'FALLO%' then raise; end if;
+  perform test.ok(p_area, p_name,
+                  sqlstate like p_state and sqlerrm like p_msg,
+                  sqlstate || ' · ' || sqlerrm);
+end $$;
+
 create or replace function test.as_user(p uuid) returns void language sql as $$
   select set_config('request.jwt.claims',
                     json_build_object('sub', p, 'role', 'authenticated')::text, false) $$;

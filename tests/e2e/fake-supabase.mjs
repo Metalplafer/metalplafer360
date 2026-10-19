@@ -13,7 +13,8 @@ import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
-import { extname, join, normalize } from 'node:path';
+import { createRequire } from 'node:module';
+import { dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const ROOT = fileURLToPath(new URL('../../', import.meta.url));
@@ -36,9 +37,53 @@ export const WORKER = {
 // ---------------------------------------------------------------------
 // Construir y servir la aplicación
 // ---------------------------------------------------------------------
+/**
+ * DÓNDE ESTÁ EL VITE DE ESTE PROYECTO.
+ *
+ * Antes se llamaba a «npx vite», y en Windows eso REVIENTA: el ejecutable
+ * se llama «npx.cmd», y «execFileSync» sin shell no resuelve las
+ * extensiones de Windows, así que falla con «spawnSync npx ENOENT».
+ *
+ * La salida no es pasar por un shell —eso trae comillas, rutas con
+ * espacios y diferencias entre cmd y bash— sino ejecutar el propio
+ * archivo de Vite con el MISMO Node que está corriendo estas pruebas.
+ * Así no depende de ningún «npx» global, ni de la variable PATH, ni de
+ * cómo se llamen los ejecutables en cada sistema.
+ *
+ * Se resuelve desde «vite/package.json» y NO desde «vite/bin/vite.js»,
+ * aunque sea ese el archivo que se quiere: Vite 5 declara un mapa
+ * «exports» que no incluye la carpeta «bin», así que resolverlo
+ * directamente falla con ERR_PACKAGE_PATH_NOT_EXPORTED. El
+ * «package.json» sí está exportado, y de ahí se calcula la ruta.
+ *
+ * Resolverlo así —y no con una ruta fija a «node_modules»— también
+ * aguanta que las dependencias estén colocadas de otra manera, como pasa
+ * con pnpm o con un monorepo.
+ */
+function rutaDeVite() {
+  const require = createRequire(import.meta.url);
+  let paquete;
+  try {
+    paquete = require.resolve('vite/package.json');
+  } catch {
+    throw new Error(
+      'No encuentro Vite en este proyecto. Instala las dependencias antes '
+      + 'de ejecutar las pruebas:\n\n  npm install\n',
+    );
+  }
+  const bin = join(dirname(paquete), 'bin', 'vite.js');
+  if (!existsSync(bin)) {
+    throw new Error(
+      `Vite está instalado pero no encuentro su ejecutable en ${bin}. `
+      + 'Prueba a reinstalar las dependencias: npm install\n',
+    );
+  }
+  return bin;
+}
+
 export function buildApp() {
   console.log('   Construyendo la aplicación para la prueba…');
-  execFileSync(process.execPath, ['node_modules/vite/bin/vite.js', 'build', '--logLevel', 'error'], {
+  execFileSync(process.execPath, [rutaDeVite(), 'build', '--logLevel', 'error'], {
     cwd: ROOT, stdio: 'inherit',
     env: {
       ...process.env,
@@ -105,6 +150,18 @@ export function createChecker() {
 export const norm = (s) =>
   (s ?? '').toString().normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
+/**
+ * El nombre reducido a lo COMPARABLE, igual que «norm_client_name» en la
+ * base de datos: sin acentos, los puntos y apóstrofos se QUITAN y el
+ * resto de signos pasa a espacio. Por eso «Aceros Vallès, S.L.» y
+ * «ACEROS VALLES SL» son el mismo.
+ */
+export const normProveedor = (s) => norm(s)
+  .replace(/[.'´`·]/g, '')
+  .replace(/[^a-z0-9ñ ]/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim() || null;
+
 export function createDb(seed = {}) {
   return {
     clients: [], client_contacts: [], fichas: [], projects: [], project_substatuses: [],
@@ -120,6 +177,16 @@ export function createDb(seed = {}) {
     non_working_days: [], calendar_notes: [],
     works: [], work_extras: [],
     materials: [], material_requests: [], payments: [],
+    // LAS PIEZAS de un proyecto. Un proyecto SIN filas aquí enseña sus
+    // propias columnas como un único producto «heredado», igual que la
+    // vista de verdad: así nada depende de migrar los datos viejos.
+    project_products: [],
+    // PROVEEDORES. Son de administración: un trabajador no los ve.
+    suppliers: [], material_suppliers: [],
+    // A QUIÉN se ha mencionado en cada comentario. El texto del
+    // comentario conserva su «@Nombre Apellido» legible; esto es el
+    // vínculo con la persona, que es lo que decide a quién avisar.
+    comment_mentions: [],
     documents: [], comments: [], audit_log: [], backups: [],
     counters: { PRES: 0, VIS: 0, AVI: 0, PROY: 0, OT: 0, PT: 0, OBRA: 0 },
     code_counters: [
@@ -181,6 +248,24 @@ export function diaLaborable(iso = today()) {
     const dow = new Date(`${d}T00:00:00Z`).getUTCDay();   // 0 domingo, 6 sábado
     if (dow !== 0 && dow !== 6) return d;
     d = addDays(d, -1);
+  }
+  return iso;
+}
+
+/**
+ * El PRÓXIMO día laborable, contando desde hoy hacia DELANTE.
+ *
+ * Hace falta para lo que se tiene que ver en la AGENDA, que va de hoy en
+ * adelante. «diaLaborable» camina hacia atrás, así que en sábado o
+ * domingo devuelve el viernes pasado: un evento ahí no sale en la agenda,
+ * y una prueba que lo esperase fallaría solo los fines de semana.
+ */
+export function proximoLaborable(iso = today()) {
+  let d = iso;
+  for (let i = 0; i < 7; i++) {
+    const dow = new Date(`${d}T00:00:00Z`).getUTCDay();   // 0 domingo, 6 sábado
+    if (dow !== 0 && dow !== 6) return d;
+    d = addDays(d, 1);
   }
   return iso;
 }
@@ -448,6 +533,26 @@ export async function stubSupabase(context, {
       user_id: userId, kind, title, body: body ?? null, order_id: orderId ?? null,
       read_at: null, is_demo: false, created_at: new Date().toISOString(),
     });
+  };
+
+  /**
+   * ¿PUEDE ESTA PERSONA COMENTAR AQUÍ?
+   *
+   * La misma regla que «can_comment_on» en la base de datos y que la
+   * política «comments_insert»: administración, o estar asignado a ese
+   * proyecto, aviso, orden o parte. Una obra solo la comenta
+   * administración.
+   */
+  const puedeComentar = (user, b) => {
+    if (user.role === 'admin') return true;
+    if (b.p_project) return assignedProjects(user).has(b.p_project);
+    if (b.p_ficha) return assignedFichas(user).has(b.p_ficha);
+    if (b.p_order) {
+      return db.work_order_workers.some(
+        (ow) => ow.order_id === b.p_order && ow.worker_id === user.id);
+    }
+    if (b.p_report) return canReadReport(user, b.p_report);
+    return false;
   };
 
   const orderCaption = (order) => {
@@ -815,6 +920,10 @@ export async function stubSupabase(context, {
     // BLOQUE 4: las obras, sus extras y sus cuentas, lo mismo.
     if (table === 'payments' || table === 'backups' || table === 'code_counters'
         || table === 'works' || table === 'work_extras') return [];
+    // Los PROVEEDORES, lo mismo: llevan teléfonos, correos y condiciones
+    // de compra. El trabajador sigue viendo el material de su proyecto
+    // por «materials», que es por donde lo veía antes.
+    if (table === 'suppliers' || table === 'material_suppliers') return [];
     return rows;
   };
 
@@ -925,6 +1034,51 @@ export async function stubSupabase(context, {
 
     // ---- BLOQUE 1 · asignar trabajadores y mover partes --------------
 
+    /**
+     * «save_project_products»: pone las piezas de un proyecto.
+     *
+     * Se manda la lista COMPLETA. Los bloques que vengan enteros en
+     * blanco se descartan, y tiene que quedar al menos uno. El PRIMERO
+     * se copia a las columnas del proyecto, porque es por ahí por donde
+     * leen el móvil del trabajador y los informes.
+     */
+    if (path === '/rest/v1/rpc/save_project_products') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const { p_project: proyecto, p_products: lista = [] } = body() ?? {};
+      const pr = db.projects.find((x) => x.id === proyecto);
+      if (!pr) return fail('No se encuentra el proyecto', 'P0002');
+
+      const limpio = (v) => {
+        const s = String(v ?? '').trim();
+        return s === '' ? null : s;
+      };
+      const utiles = (lista ?? []).filter((x) =>
+        limpio(x?.name) || limpio(x?.description) || limpio(x?.measures) || limpio(x?.finish));
+      if (!utiles.length) {
+        return fail('Un proyecto tiene que tener al menos un producto. '
+                    + 'Rellena el primero antes de guardar.', '22023');
+      }
+
+      db.project_products = db.project_products.filter((x) => x.project_id !== proyecto);
+      const creados = utiles.map((x, i) => ({
+        id: `pp-${Math.random().toString(36).slice(2, 10)}`,
+        project_id: proyecto, posicion: i + 1,
+        name: limpio(x?.name), description: limpio(x?.description),
+        measures: limpio(x?.measures), finish: limpio(x?.finish),
+        is_demo: Boolean(pr.is_demo),
+        created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+      }));
+      db.project_products.push(...creados);
+
+      // El primero se copia al proyecto. El NOMBRE no se toca: es su título.
+      pr.description = limpio(utiles[0]?.description);
+      pr.measures = limpio(utiles[0]?.measures);
+      pr.finish = limpio(utiles[0]?.finish);
+      pr.updated_at = new Date().toISOString();
+
+      return json(creados);
+    }
+
     if (path === '/rest/v1/rpc/assign_project_workers') {
       if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
       const { p_project: proyecto, p_workers: ids = [] } = body() ?? {};
@@ -978,6 +1132,14 @@ export async function stubSupabase(context, {
         avisar(id, 'aviso_asignado', 'Aviso asignado',
           `${f.code}${f.title ? ` · ${f.title}` : ''}`, null);
       });
+      // REPARTIRLO lo pone «Asignado», que es lo que mueve un aviso desde
+      // que ya no tiene responsable administrativo (migración 43). Y NO
+      // lo hace retroceder si ya va por delante: cambiar el equipo de un
+      // aviso en curso no deshace el trabajo hecho.
+      if (ids.length && ['por_asignar', 'pendiente'].includes(f.status)) {
+        f.status = 'asignado';
+        f.updated_at = new Date().toISOString();
+      }
       return json(ids.map((id) => people.find((x) => x.id === id)).filter(Boolean));
     }
 
@@ -1877,6 +2039,18 @@ export async function stubSupabase(context, {
     }
 
     // ---------------- Datos de ejemplo ----------------
+    //
+    // Las funciones se dejan aquí a propósito: en la base de datos siguen
+    // existiendo hasta que se ejecute «50_retirar_demo.sql», que está
+    // pendiente de aprobación. Lo que se ha retirado es el botón.
+    //
+    // El contador permite comprobar que NINGUNA pantalla las llama ya.
+    if (path.startsWith('/rest/v1/rpc/demo_status')
+        || path.startsWith('/rest/v1/rpc/seed_demo')
+        || path.startsWith('/rest/v1/rpc/clear_demo')) {
+      db.demo_llamadas = (db.demo_llamadas ?? 0) + 1;
+    }
+
     if (path === '/rest/v1/rpc/demo_status') {
       if (soloAdmin()) return json(null);
       return json(demoResumen(db, people));
@@ -2153,6 +2327,272 @@ export async function stubSupabase(context, {
         changed++;
       });
       return json(changed);
+    }
+
+    // ---------------------------------------------------------------
+    // MENCIONAR A ALGUIEN EN UN COMENTARIO CON @
+    // ---------------------------------------------------------------
+
+    /**
+     * «comment_mention_candidates»: a quién se puede mencionar.
+     *
+     * La administración y quien está asignado a ese sitio. A quien no
+     * tiene nada que ver con él, la lista vacía, igual que la función de
+     * verdad: así la prueba comprueba el permiso y no que la pantalla
+     * esconda nombres.
+     */
+    if (path === '/rest/v1/rpc/comment_mention_candidates') {
+      const user = getUser() ?? ADMIN;
+      const b2 = body() ?? {};
+      if (!puedeComentar(user, b2)) return json([]);
+      const puede = (p) => {
+        if (p.role === 'admin') return true;
+        if (b2.p_project) {
+          return db.project_workers.some(
+            (pw) => pw.project_id === b2.p_project && pw.worker_id === p.id);
+        }
+        if (b2.p_ficha) {
+          return db.ficha_workers.some(
+            (fw) => fw.ficha_id === b2.p_ficha && fw.worker_id === p.id)
+            || db.fichas.some((f) => f.id === b2.p_ficha && f.assigned_to === p.id);
+        }
+        if (b2.p_order) {
+          return db.work_order_workers.some(
+            (ow) => ow.order_id === b2.p_order && ow.worker_id === p.id);
+        }
+        if (b2.p_report) {
+          return db.work_reports.some((r) => r.id === b2.p_report && r.worker_id === p.id)
+            || db.work_report_workers.some(
+              (rw) => rw.report_id === b2.p_report && rw.worker_id === p.id);
+        }
+        return false;
+      };
+      return json(people
+        .filter((p) => p.active !== false && p.id !== user.id && puede(p))
+        .map((p) => ({ id: p.id, full_name: p.full_name, role: p.role }))
+        .sort((a2, b3) => (b3.role === 'admin') - (a2.role === 'admin')
+          || a2.full_name.localeCompare(b3.full_name)));
+    }
+
+    /**
+     * «post_comment»: guarda el comentario y sus menciones de una vez.
+     *
+     * Un comentario CON menciones avisa SOLO a los mencionados: si
+     * avisara además a todo el mundo, el aviso de la mención se perdería
+     * entre el ruido. Es la misma idea que ya había para los
+     * comentarios dirigidos a una persona.
+     */
+    if (path === '/rest/v1/rpc/post_comment') {
+      const user = getUser() ?? ADMIN;
+      const b2 = body() ?? {};
+      const texto = String(b2.p_body ?? '').trim();
+      if (!texto) return fail('Escribe un comentario antes de enviarlo', '22023');
+      if (texto.length > 4000) {
+        return fail('El comentario es demasiado largo (máximo 4.000 caracteres)', '22023');
+      }
+      const cuantos = ['p_ficha', 'p_project', 'p_order', 'p_report', 'p_work']
+        .filter((k) => b2[k]).length;
+      if (cuantos !== 1) return fail('Un comentario cuelga de una sola cosa', '22023');
+      if (!puedeComentar(user, b2)) {
+        return fail('No tienes permisos para comentar aquí', '42501');
+      }
+
+      const ids = [...new Set((b2.p_mentions ?? []).filter((x) => x && x !== user.id))];
+      if (ids.length) {
+        // Se vuelve a calcular quién es candidato, igual que la función
+        // de verdad: la lista de la pantalla no decide nada.
+        const permitidos = new Set(people
+          .filter((p) => p.active !== false && p.id !== user.id)
+          .filter((p) => {
+            if (p.role === 'admin') return true;
+            if (b2.p_project) {
+              return db.project_workers.some(
+                (pw) => pw.project_id === b2.p_project && pw.worker_id === p.id);
+            }
+            if (b2.p_ficha) {
+              return db.ficha_workers.some(
+                (fw) => fw.ficha_id === b2.p_ficha && fw.worker_id === p.id)
+                || db.fichas.some((f) => f.id === b2.p_ficha && f.assigned_to === p.id);
+            }
+            if (b2.p_order) {
+              return db.work_order_workers.some(
+                (ow) => ow.order_id === b2.p_order && ow.worker_id === p.id);
+            }
+            if (b2.p_report) {
+              return db.work_reports.some((r) => r.id === b2.p_report && r.worker_id === p.id)
+                || db.work_report_workers.some(
+                  (rw) => rw.report_id === b2.p_report && rw.worker_id === p.id);
+            }
+            return false;
+          })
+          .map((p) => p.id));
+        if (ids.some((id) => !permitidos.has(id))) {
+          return fail('Solo puedes mencionar a quien puede ver este comentario', '42501');
+        }
+      }
+
+      const fila = {
+        id: `c-${Math.random().toString(36).slice(2, 8)}`,
+        ficha_id: b2.p_ficha ?? null, project_id: b2.p_project ?? null,
+        order_id: b2.p_order ?? null, report_id: b2.p_report ?? null,
+        work_id: b2.p_work ?? null, target_worker_id: b2.p_target_worker ?? null,
+        author_id: user.id, body: texto, is_demo: false,
+        created_at: new Date().toISOString(),
+      };
+      db.comments.push(fila);
+
+      const donde = db.projects.find((x) => x.id === b2.p_project)?.code
+        ?? db.work_reports.find((x) => x.id === b2.p_report)?.code
+        ?? db.work_orders.find((x) => x.id === b2.p_order)?.code
+        ?? db.fichas.find((x) => x.id === b2.p_ficha)?.code
+        ?? db.works.find((x) => x.id === b2.p_work)?.code ?? null;
+
+      if (ids.length) {
+        ids.forEach((id) => {
+          db.comment_mentions.push({
+            comment_id: fila.id, user_id: id, created_at: new Date().toISOString(),
+          });
+          avisar(id, 'comentario',
+            `${actorName()} te ha mencionado${donde ? ` en ${donde}` : ''}`,
+            texto.slice(0, 160), b2.p_order ?? null);
+        });
+      }
+      // UN COMENTARIO SIN MENCIONES avisa a los asignados, y eso aquí NO
+      // se imita: este falso Supabase nunca ha modelado ese aviso, y
+      // añadirlo ahora cambiaría lo que esperan pruebas que ya pasan.
+      //
+      // Ese camino está probado contra PostgreSQL de verdad en
+      // tests/sql/97_tests_menciones.sql, que comprueba las dos cosas:
+      // que un comentario sin menciones sigue avisando a los asignados y
+      // que uno CON menciones avisa solo a los mencionados.
+      return json(fila);
+    }
+
+    // ---------------------------------------------------------------
+    // PROVEEDORES
+    //
+    // Son de ADMINISTRACIÓN: llevan teléfonos y condiciones de compra.
+    // Todas estas funciones empiezan comprobando quién llama, igual que
+    // las de verdad, para que la prueba compruebe el permiso y no que la
+    // pantalla esconda el botón.
+    // ---------------------------------------------------------------
+
+    /** «save_supplier»: crea o corrige. No duplica por la forma de escribirlo. */
+    if (path === '/rest/v1/rpc/save_supplier') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const b2 = body() ?? {};
+      const nombre = String(b2.p_name ?? '').trim();
+      if (!nombre) return fail('El proveedor necesita un nombre', '22023');
+
+      const limpio = (v) => {
+        const s = String(v ?? '').trim();
+        return s === '' ? null : s;
+      };
+      const clave = normProveedor(nombre);
+      const choca = db.suppliers.find((s) => s.name_norm === clave && s.id !== b2.p_id);
+
+      // Si ya está y se estaba CREANDO, se devuelve el que hay: no se
+      // duplica y no se le pisan los datos.
+      if (choca && !b2.p_id) return json(choca);
+      if (choca && b2.p_id) {
+        return fail(`Ya existe otro proveedor que se llama igual: ${choca.name}`, '23505');
+      }
+
+      const campos = {
+        name: nombre, name_norm: clave,
+        phone: limpio(b2.p_phone),
+        email: limpio(String(b2.p_email ?? '').toLowerCase()),
+        notes: limpio(b2.p_notes),
+        updated_at: new Date().toISOString(),
+      };
+
+      if (b2.p_id) {
+        const s = db.suppliers.find((x) => x.id === b2.p_id);
+        if (!s) return fail('No se encuentra el proveedor', 'P0002');
+        Object.assign(s, campos);
+        return json(s);
+      }
+      const nuevo = {
+        id: `pv-${Math.random().toString(36).slice(2, 10)}`,
+        ...campos, active: true, is_demo: false, created_by: actor().id,
+        created_at: new Date().toISOString(),
+      };
+      db.suppliers.push(nuevo);
+      return json(nuevo);
+    }
+
+    /** «set_supplier_active»: de baja o reactivar. NUNCA borra. */
+    if (path === '/rest/v1/rpc/set_supplier_active') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const { p_supplier: id, p_active: activo } = body() ?? {};
+      const s = db.suppliers.find((x) => x.id === id);
+      if (!s) return fail('No se encuentra el proveedor', 'P0002');
+      s.active = activo !== false;
+      s.updated_at = new Date().toISOString();
+      return json(s);
+    }
+
+    /**
+     * «save_material_suppliers»: los habituales de un material. Se manda
+     * la lista completa. Un proveedor que YA era habitual y luego se dio
+     * de baja se sigue admitiendo, para no bloquear la lista.
+     */
+    if (path === '/rest/v1/rpc/save_material_suppliers') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const { p_material_name: nombre, p_suppliers: ids = [] } = body() ?? {};
+      const clave = normProveedor(nombre ?? '');
+      if (!clave) return fail('Hace falta el nombre del material', '22023');
+
+      const malo = (ids ?? []).some((id) => {
+        const s = db.suppliers.find((x) => x.id === id);
+        if (!s) return true;
+        if (s.active) return false;
+        return !db.material_suppliers.some(
+          (ms) => ms.supplier_id === id && ms.material_norm === clave);
+      });
+      if (malo) {
+        return fail('Alguno de los proveedores no existe o está desactivado', '22023');
+      }
+
+      db.material_suppliers = db.material_suppliers.filter(
+        (ms) => ms.material_norm !== clave || ids.includes(ms.supplier_id));
+      (ids ?? []).forEach((id) => {
+        if (db.material_suppliers.some(
+          (ms) => ms.material_norm === clave && ms.supplier_id === id)) return;
+        db.material_suppliers.push({
+          material_norm: clave, material_name: String(nombre ?? '').trim(),
+          supplier_id: id, added_at: new Date().toISOString(), added_by: actor().id,
+        });
+      });
+      return json(db.material_suppliers
+        .filter((ms) => ms.material_norm === clave)
+        .map((ms) => db.suppliers.find((s) => s.id === ms.supplier_id))
+        .filter(Boolean));
+    }
+
+    /**
+     * «suppliers_for_material»: primero los habituales de ESE material;
+     * si no tiene ninguno, los activos más usados. A un trabajador le
+     * devuelve la lista vacía, igual que la función de verdad.
+     */
+    if (path === '/rest/v1/rpc/suppliers_for_material') {
+      if (soloAdmin()) return json([]);
+      const clave = normProveedor(body()?.p_material_name ?? '');
+      const veces = (id) => db.materials.filter((m) => m.supplier_id === id).length;
+      const suyos = db.material_suppliers
+        .filter((ms) => ms.material_norm === clave)
+        .map((ms) => db.suppliers.find((s) => s.id === ms.supplier_id))
+        .filter((s) => s && s.active)
+        .map((s) => ({ id: s.id, name: s.name, phone: s.phone ?? null,
+                       habitual: true, veces: veces(s.id) }));
+      if (suyos.length) {
+        return json(suyos.sort((a, b) => b.veces - a.veces || a.name.localeCompare(b.name)));
+      }
+      return json(db.suppliers
+        .filter((s) => s.active)
+        .map((s) => ({ id: s.id, name: s.name, phone: s.phone ?? null,
+                       habitual: false, veces: veces(s.id) }))
+        .sort((a, b) => b.veces - a.veces || a.name.localeCompare(b.name)));
     }
 
     // ---------------- Material, cobros y calendario (fase 5) ----------------
@@ -2611,6 +3051,45 @@ export async function stubSupabase(context, {
       return json(applyOrder(applyFilters(rows, url), url));
     }
 
+    /**
+     * «project_product_list»: las piezas de un proyecto CON RESPALDO.
+     *
+     * Si el proyecto no tiene ninguna guardada devuelve una construida
+     * con sus columnas de siempre y marcada «heredado», exactamente como
+     * la vista de verdad. Es lo que hace que un proyecto antiguo no
+     * aparezca en blanco.
+     */
+    if (path === '/rest/v1/project_product_list'
+        || path === '/rest/v1/worker_project_products') {
+      const user = getUser() ?? ADMIN;
+      const visibles = user.role === 'admin'
+        ? new Set(db.projects.map((x) => x.id))
+        : assignedProjects(user);
+      const rows = [];
+      for (const pr of db.projects) {
+        if (!visibles.has(pr.id)) continue;
+        const propios = db.project_products
+          .filter((x) => x.project_id === pr.id)
+          .sort((a, b) => a.posicion - b.posicion);
+        if (propios.length) {
+          propios.forEach((x) => rows.push({
+            id: x.id, project_id: x.project_id, posicion: x.posicion,
+            name: x.name ?? null, description: x.description ?? null,
+            measures: x.measures ?? null, finish: x.finish ?? null,
+            heredado: false,
+          }));
+        } else {
+          rows.push({
+            id: null, project_id: pr.id, posicion: 1,
+            name: pr.name ?? null, description: pr.description ?? null,
+            measures: pr.measures ?? null, finish: pr.finish ?? null,
+            heredado: true,
+          });
+        }
+      }
+      return json(applyOrder(applyFilters(rows, url), url));
+    }
+
     if (path === '/rest/v1/worker_projects') {
       const user = getUser() ?? ADMIN;
       const ids = user.role === 'admin'
@@ -2928,8 +3407,19 @@ export async function stubSupabase(context, {
           ordenes_por_revisar: vivas.filter((o) => o.status === 'realizada').length,
           material_retrasado: db.materials.filter((m) => !m.archived_at && retrasoDe(m) > 0).length,
           avisos_taller: db.material_requests.filter((r) => r.status === 'pendiente').length,
-          fichas_por_asignar: db.fichas.filter((f) => !f.archived_at && f.status === 'por_asignar').length,
+          // M2: cuenta SOLO las visitas. Los presupuestos y los avisos ya
+          // no nacen «Por asignar», así que contar las tres clases
+          // dejaría el aviso encendido para siempre por fichas antiguas
+          // que nadie va a asignar.
+          fichas_por_asignar: db.fichas.filter(
+            (f) => !f.archived_at && f.type === 'visita' && f.status === 'por_asignar').length,
           presupuestos_enviados: db.fichas.filter((f) => !f.archived_at && f.status === 'enviado').length,
+          // M1: aceptado por el cliente y sin cobrar la señal. No sale en
+          // «esperando respuesta» y todavía no es un proyecto, así que sin
+          // este aviso no saldría por ningún lado.
+          presupuestos_pendientes_senal: db.fichas.filter(
+            (f) => !f.archived_at && f.type === 'presupuesto'
+              && f.status === 'pendiente_senal').length,
         },
         economico: {
           presupuestado, cobrado, pendiente: Math.max(0, presupuestado - cobrado),
@@ -3462,7 +3952,14 @@ export async function stubSupabase(context, {
           const prefix = PREFIX[row.type];
           db.counters[prefix] += 1;
           row.code = `${prefix}-${YEAR}-${String(db.counters[prefix]).padStart(3, '0')}`;
-          row.status = row.assigned_to ? NEXT_WHEN_ASSIGNED[row.type] : 'por_asignar';
+          // Igual que «trg_fichas_before» tras la migración 43: solo las
+          // VISITAS nacen «Por asignar», porque son las únicas que
+          // llevan responsable administrativo. Un presupuesto o un aviso
+          // nacen «Pendiente», donde empieza su trabajo de verdad.
+          row.status = row.type === 'visita' ? 'por_asignar' : 'pendiente';
+          if (row.status === 'por_asignar' && row.assigned_to) {
+            row.status = NEXT_WHEN_ASSIGNED[row.type];
+          }
           registrar(`Salvi Plaza creó la ficha de ${row.type} ${row.code}`, row.code, 'fichas');
         }
 

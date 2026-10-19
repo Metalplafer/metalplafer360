@@ -124,19 +124,33 @@ select test.err('av_equipo', 'Ni asignar una ficha que no existe',
 
 \echo '== AVISOS · LAS ASIGNACIONES DE ANTES SIGUEN VALIENDO'
 
--- «avi1» es el aviso de la fase 2, asignado a Juan por el camino de
--- siempre («assigned_to») y SIN ninguna fila en la tabla nueva. Tiene que
--- seguir funcionando exactamente igual: es el requisito de compatibilidad.
-select test.ok('av_viejo', 'El aviso de antes no tiene filas en la tabla nueva',
-  (select count(*) = 0 from public.ficha_workers where ficha_id = test.id('avi1')));
+-- UN AVISO HEREDADO: asignado a Juan por el camino de siempre
+-- («assigned_to») y SIN ninguna fila en la tabla nueva. Así son los que
+-- hay en producción, y tienen que seguir funcionando exactamente igual.
+--
+-- Se crea aquí uno propio en lugar de reutilizar «avi1»: desde el
+-- archivo 43 los avisos se reparten entre operarios, así que «avi1» ya
+-- tiene equipo y no serviría para medir la compatibilidad.
+reset role; select test.as_server();
+with v as (insert into public.fichas (type, client_id, title, assigned_to, status)
+           values ('aviso', test.id('cli_laura'), 'Aviso heredado de Juan',
+                   test.id('juan'), 'asignado') returning id)
+select test.put('av_heredado', (select id from v));
 
-reset role; set role authenticated; select test.as_user(test.id('juan'));
+select test.ok('av_viejo', 'El aviso heredado no tiene filas en la tabla nueva',
+  (select count(*) = 0 from public.ficha_workers where ficha_id = test.id('av_heredado')));
 
-select test.ok('av_viejo', 'Y Juan lo sigue viendo, por «assigned_to» de siempre',
-  exists (select 1 from public.worker_fichas where id = test.id('avi1')));
+select test.ok('av_viejo', 'Y conserva su responsable de siempre',
+  (select assigned_to = test.id('juan')
+     from public.fichas where id = test.id('av_heredado')));
+
+set role authenticated; select test.as_user(test.id('juan'));
+
+select test.ok('av_viejo', 'Juan lo sigue viendo, por «assigned_to» de siempre',
+  exists (select 1 from public.worker_fichas where id = test.id('av_heredado')));
 
 select test.ok('av_viejo', 'La función de acceso le sigue diciendo sí',
-  public.worker_has_ficha(test.id('avi1')));
+  public.worker_has_ficha(test.id('av_heredado')));
 
 select test.ok('av_nuevo', 'Y el aviso nuevo le llega por el camino nuevo',
   public.worker_has_ficha(test.id('av_aviso')));
@@ -338,8 +352,16 @@ select test.ok('av_ver', 'Pero no ve el equipo de un aviso en el que no está',
 select test.ok('av_ver', 'Y preguntando a la tabla a pelo, tampoco',
   not exists (select 1 from public.ficha_workers where ficha_id = test.id('av_otro')));
 
-select test.ok('av_ver', 'De la tabla solo le llegan las filas de sus avisos',
-  (select bool_and(ficha_id = test.id('av_aviso')) from public.ficha_workers));
+-- Juan está en más de un aviso (el archivo 20 le reparte también «avi1»),
+-- así que lo que se exige no es un identificador concreto sino el
+-- invariante: TODA fila que reciba es de un aviso al que él entra. Si la
+-- política se abriera, le llegarían filas de avisos ajenos y aquí se
+-- vería.
+select test.ok('av_ver', 'De la tabla solo le llegan las filas de avisos suyos',
+  (select bool_and(public.worker_has_ficha(ficha_id)) from public.ficha_workers));
+
+select test.ok('av_ver', 'Y no le llega ninguna del aviso que no es suyo',
+  (select count(*) = 0 from public.ficha_workers where ficha_id = test.id('av_otro')));
 
 reset role; select test.as_server();
 

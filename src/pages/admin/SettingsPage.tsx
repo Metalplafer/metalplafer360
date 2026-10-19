@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import {
-  Building2, CalendarRange, CloudUpload, Database, Download, FlaskConical, HardDrive, Hash,
-  RefreshCw, Save, Smartphone, Trash2, TriangleAlert, Upload,
+  Building2, CalendarRange, CloudUpload, Database, Download, HardDrive, Hash,
+  RefreshCw, Save, Smartphone, TriangleAlert, Upload,
 } from 'lucide-react';
 import { useAsync } from '@/hooks/useAsync';
 import { useAuth } from '@/auth/AuthProvider';
@@ -18,7 +18,6 @@ import {
   getSettings, listCounters, saveStorageQuota, setBackupSettings, setCompany, setCounter,
   setGapDays, setMaxFileMb, storageSummary, storageUsage,
 } from '@/services/settings';
-import { clearDemo, demoStatus, seedDemo } from '@/services/demo';
 import { RESTORE_SCOPES, tablesForScopes, type BackupContents } from '@/lib/export/backup';
 import { MIME, downloadBytes } from '@/lib/download';
 import { fmtBytes, fmtDate, fmtDateTime, fmtNumber } from '@/lib/format';
@@ -932,46 +931,30 @@ function PlanningTab({ settings, onSaved }: { settings: AppSettings; onSaved: ()
 // ---------------------------------------------------------------------
 // APLICACIÓN (PWA)
 // ---------------------------------------------------------------------
+/**
+ * APLICACIÓN (PWA).
+ *
+ * AQUÍ ESTABAN LOS DATOS DE EJEMPLO.
+ *
+ * Se retiran porque la aplicación ya está en uso con datos reales, y un
+ * botón que siembra un taller inventado en la base de datos de verdad es
+ * un accidente esperando a pasar.
+ *
+ * Lo que NO se ha tocado: las columnas «is_demo» de las tablas. Siguen
+ * ahí, con su valor, porque son el único sitio donde queda constancia de
+ * qué se creó como ejemplo. Borrarlas impediría distinguirlo para
+ * siempre, y eso no se arregla luego.
+ *
+ * Las funciones del servidor —«seed_demo», «clear_demo» y
+ * «demo_status»— se retiran en «50_retirar_demo.sql», que está PENDIENTE
+ * DE APROBACIÓN y no se ejecuta solo. Mientras no se ejecute, siguen
+ * existiendo en la base de datos y se pueden llamar desde Supabase si
+ * hiciera falta limpiar algo; lo que ya no hay es un botón para
+ * llamarlas sin querer.
+ */
 function AppTab() {
   const { canInstall, installed, isApple, install } = useInstallPrompt();
-  const { confirm, toast } = useDialogs();
-  const [busy, setBusy] = useState(false);
-  const [reloadKey, setReloadKey] = useState(0);
-  const demo = useAsync(() => demoStatus(), [reloadKey]);
-  const d = demo.data;
-
-  async function poner() {
-    setBusy(true);
-    try {
-      const r = await seedDemo();
-      toast.success(`Datos de ejemplo puestos: ${r.clientes} clientes, `
-        + `${r.proyectos} proyectos y ${r.ordenes} órdenes`);
-      setReloadKey((n) => n + 1);
-    } catch (e) { toast.error(e); } finally { setBusy(false); }
-  }
-
-  async function limpiar() {
-    const ok = await confirm({
-      title: 'Limpiar los datos de ejemplo',
-      message: <>
-        Se borrará <strong>únicamente</strong> lo que se creó como ejemplo: los
-        {' '}{d?.clientes ?? 0} clientes, {d?.proyectos ?? 0} proyectos,
-        {' '}{d?.ordenes ?? 0} órdenes y {d?.trabajadores ?? 0} trabajadores de prueba.
-        <div style={{ marginTop: 6 }}>
-          Lo que hayáis creado vosotros <strong>no se toca</strong>.
-        </div>
-      </>,
-      confirmLabel: 'Limpiar el ejemplo',
-      danger: true,
-    });
-    if (!ok) return;
-    setBusy(true);
-    try {
-      const r = await clearDemo();
-      toast.success(`Datos de ejemplo limpiados (${fmtNumber(r.total)} registros)`);
-      setReloadKey((n) => n + 1);
-    } catch (e) { toast.error(e); } finally { setBusy(false); }
-  }
+  const { toast } = useDialogs();
 
   return (
     <>
@@ -1006,50 +989,6 @@ function AppTab() {
             )}
           </>
         )}
-      </Panel>
-
-      <Panel title={<span className="row" style={{ gap: 7 }}><FlaskConical size={17} />Datos de ejemplo</span>}>
-        <p style={{ marginTop: 0 }}>
-          Un taller inventado con 10 clientes, 15 fichas, 8 proyectos, 6 trabajadores,
-          20 órdenes, material y documentos, para aprender a usar la aplicación o
-          enseñarla sin tocar nada de verdad.
-        </p>
-
-        {demo.loading && !d ? <Loading />
-          : d?.hay_datos ? (
-            <>
-              <Alert kind="warn">
-                Ahora mismo hay datos de ejemplo mezclados con los vuestros.
-                Cuando empecéis a trabajar en serio, límpialos.
-              </Alert>
-              <div className="figure-row" style={{ marginTop: 12 }}>
-                <span className="figure"><b>{fmtNumber(d.clientes)}</b><span>Clientes</span></span>
-                <span className="figure"><b>{fmtNumber(d.fichas)}</b><span>Fichas</span></span>
-                <span className="figure"><b>{fmtNumber(d.proyectos)}</b><span>Proyectos</span></span>
-                <span className="figure"><b>{fmtNumber(d.ordenes)}</b><span>Órdenes</span></span>
-                <span className="figure"><b>{fmtNumber(d.trabajadores)}</b><span>Trabajadores</span></span>
-                <span className="figure"><b>{fmtNumber(d.materiales)}</b><span>Materiales</span></span>
-              </div>
-              <div className="row" style={{ marginTop: 14 }}>
-                <button className="btn btn-danger" onClick={limpiar} disabled={busy}>
-                  <Trash2 />{busy ? 'Limpiando…' : 'Limpiar datos demo'}
-                </button>
-              </div>
-            </>
-          ) : (
-            <div className="row">
-              <button className="btn btn-primary" onClick={poner} disabled={busy}>
-                <FlaskConical />{busy ? 'Poniendo…' : 'Poner datos de ejemplo'}
-              </button>
-            </div>
-          )}
-
-        <p className="hint" style={{ marginBottom: 0 }}>
-          Los trabajadores de ejemplo se llaman <code>demo.jordi</code>, <code>demo.marc</code>…
-          y nacen sin contraseña. Si quieres entrar como uno para ver el móvil, pónsela
-          en Trabajadores. Los documentos del ejemplo son solo la ficha del archivo:
-          aparecen en los listados, pero no hay nada que descargar.
-        </p>
       </Panel>
 
       <Panel title={<span className="row" style={{ gap: 7 }}><TriangleAlert size={17} />La aplicación necesita Internet</span>}>

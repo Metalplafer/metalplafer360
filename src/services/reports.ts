@@ -28,7 +28,12 @@ export interface DashboardData {
   material: { pendientes: number; retrasados: number; recibidos: number };
   alertas: {
     ordenes_atrasadas: number; ordenes_por_revisar: number; material_retrasado: number;
-    avisos_taller: number; fichas_por_asignar: number; presupuestos_enviados: number;
+    avisos_taller: number;
+    /** Solo VISITAS: son las únicas que nacen «Por asignar». */
+    fichas_por_asignar: number;
+    presupuestos_enviados: number;
+    /** Aceptados por el cliente y SIN cobrar la señal: lo que más se olvida. */
+    presupuestos_pendientes_senal: number;
   };
   economico: { presupuestado: number; cobrado: number; pendiente: number; por_facturar: number };
   cobrado_periodo: number;

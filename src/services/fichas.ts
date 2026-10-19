@@ -91,10 +91,18 @@ export async function fichaCounts() {
   return Object.fromEntries(results) as Record<FichaType, number>;
 }
 
-/** Fichas sin responsable asignado. */
+/**
+ * VISITAS sin asignar.
+ *
+ * Solo visitas: desde que los presupuestos y los avisos no tienen
+ * responsable administrativo, son las únicas que nacen «Por asignar».
+ * Contar las tres clases dejaría el contador encendido para siempre por
+ * presupuestos antiguos que ya nadie va a asignar.
+ */
 export async function unassignedCount() {
   const { count, error } = await supabase.from('fichas')
     .select('id', { count: 'exact', head: true })
+    .eq('type', 'visita')
     .eq('status', 'por_asignar').is('archived_at', null);
   if (error) throw error;
   return count ?? 0;

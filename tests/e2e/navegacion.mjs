@@ -99,6 +99,14 @@ const db = createDb({
       contact_id: null, title: 'Puerta de garaje', description: null, address: null, phone: '600111222',
       scheduled_date: null, scheduled_time: null, assigned_to: WORKER.id, amount: null,
       archived_at: null, is_demo: false, created_at: `${esteMes(2)}T11:00:00Z`, updated_at: `${esteMes(2)}T11:00:00Z` },
+    // M2: una VISITA sin asignar. Es la única clase de ficha que sigue
+    // naciendo «Por asignar», y por tanto la única que el panel avisa.
+    // El presupuesto de arriba se queda también en ese estado a
+    // propósito: así se comprueba que NO lo cuenta.
+    { id: 'f3', code: 'VIS-2026-001', type: 'visita', status: 'por_asignar', client_id: 'c1',
+      contact_id: null, title: 'Medir el hueco', description: null, address: 'Rambla, 45', phone: null,
+      scheduled_date: null, scheduled_time: null, assigned_to: null, amount: null,
+      archived_at: null, is_demo: false, created_at: `${esteMes(2)}T12:00:00Z`, updated_at: `${esteMes(2)}T12:00:00Z` },
   ],
   projects: [
     { id: 'p1', code: 'PROY-2026-001', client_id: 'c1', contact_id: null, source_ficha_id: null,
@@ -145,9 +153,10 @@ try {
   check('El administrador entra y llega a su panel', page.url().includes('#/admin'));
   check('Se le saluda por su nombre',
     (await page.locator('h1').first().innerText()).includes('Salvi'));
-  // FASE 4 · eran 14; se retiró «Órdenes de trabajo» y quedan 13.
-  check('El menú de administración tiene las 13 secciones',
-    (await page.locator('.sidebar nav a').count()) === 13,
+  // FASE 4 · eran 14; se retiró «Órdenes de trabajo» y quedaron 13.
+  // M6 · entra «Proveedores» y vuelven a ser 14.
+  check('El menú de administración tiene las 14 secciones',
+    (await page.locator('.sidebar nav a').count()) === 14,
     String(await page.locator('.sidebar nav a').count()));
 
   // ---------------------------------------------------------------------
@@ -243,8 +252,10 @@ try {
   // BLOQUE 4: «Obras» entra delante de Proyectos, porque es su contenedor.
   // FASE 4: «Órdenes de trabajo» SE RETIRA. El trabajo se organiza con
   // los partes, y la sección antigua ya no aparece en el menú.
+  // M6: «Proveedores» entra justo detrás de «Material pendiente», que es
+  // desde donde se usan.
   const expected = ['Dashboard', 'Fichas', 'Obras', 'Proyectos', 'Partes de trabajo',
-    'Material pendiente', 'Calendario', 'Avisos', 'Clientes',
+    'Material pendiente', 'Proveedores', 'Calendario', 'Avisos', 'Clientes',
     'Trabajadores', 'Facturación', 'Informes', 'Configuración'];
   check('Las secciones son exactamente las previstas',
     menu.length === expected.length
@@ -264,8 +275,17 @@ try {
     porFase.slice(0, 4).join(' ') === '1 1 0 0', porFase.join(' '));
 
   const alertas = await page.locator('.alert-list').innerText();
-  check('Avisa de las fichas que están sin asignar',
-    alertas.includes('fichas por asignar'), alertas.replace(/\n/g, ' · '));
+  // M2: el aviso cuenta SOLO las visitas, porque desde entonces los
+  // presupuestos y los avisos ya no nacen «Por asignar» y contar las tres
+  // clases dejaría el aviso encendido para siempre.
+  check('Avisa de las visitas que están sin asignar',
+    alertas.includes('visitas por asignar'), alertas.replace(/\n/g, ' · '));
+  check('Y ya no habla de «fichas» por asignar, que incluiría presupuestos antiguos',
+    !alertas.includes('fichas por asignar'), alertas.replace(/\n/g, ' · '));
+  // Y es UNA: hay un presupuesto en «Por asignar» que NO tiene que contar.
+  check('Cuenta solo la visita, no el presupuesto antiguo en ese estado',
+    /1\s+visitas por asignar/.test(alertas.replace(/\s+/g, ' ')),
+    alertas.replace(/\s+/g, ' ').match(/\d+ visitas por asignar/)?.[0] ?? 'no sale');
 
   const panel = await page.locator('main').innerText();
   check('Reúne en un mismo sitio producción, material y economía',

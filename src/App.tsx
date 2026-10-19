@@ -26,6 +26,7 @@ const ProjectDetail = lazy(() => import('@/pages/admin/ProjectDetail'));
 // repositorio porque el lado del TRABAJADOR sigue usando su pantalla de
 // órdenes para terminar lo que esté a medias.
 const MaterialsList = lazy(() => import('@/pages/admin/MaterialsList'));
+const SuppliersPage = lazy(() => import('@/pages/admin/SuppliersPage'));
 const CalendarPage = lazy(() => import('@/pages/admin/CalendarPage'));
 const BillingPage = lazy(() => import('@/pages/admin/BillingPage'));
 const ReportsPage = lazy(() => import('@/pages/admin/ReportsPage'));
@@ -107,6 +108,7 @@ export function App() {
                 terminar. */}
 
             <Route path="material" element={<Lazy><MaterialsList /></Lazy>} />
+            <Route path="proveedores" element={<Lazy><SuppliersPage /></Lazy>} />
             <Route path="calendario" element={<Lazy><CalendarPage /></Lazy>} />
             <Route path="facturacion" element={<Lazy><BillingPage /></Lazy>} />
 

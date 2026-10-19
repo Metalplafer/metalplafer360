@@ -10,7 +10,7 @@ const REQUEST_SELECT =
   'project:projects(id, code, name), order:work_orders(id, code)';
 
 export type MaterialInput = Partial<Pick<Material,
-  'project_id' | 'order_id' | 'name' | 'units' | 'supplier' |
+  'project_id' | 'order_id' | 'name' | 'units' | 'supplier' | 'supplier_id' |
   'ordered_on' | 'expected_on' | 'received' | 'notes'>>;
 
 function clean(o: MaterialInput) {
@@ -22,7 +22,13 @@ function clean(o: MaterialInput) {
 export interface MaterialFilters {
   state?: 'pendiente' | 'retrasado' | 'recibido' | 'todos';
   projectId?: string;
+  /**
+   * El proveedor EN TEXTO, exacto. Sigue valiendo: hay material que solo
+   * tiene el nombre escrito a mano.
+   */
   supplier?: string;
+  /** El proveedor de la lista. */
+  supplierId?: string;
   search?: string;
   archived?: boolean;
   page?: number;
@@ -43,7 +49,15 @@ export async function listMaterials(f: MaterialFilters = {}, today?: string) {
   else if (f.state === 'retrasado' && today) q = q.eq('received', false).lt('expected_on', today);
 
   if (f.projectId) q = q.eq('project_id', f.projectId);
-  if (f.supplier) q = q.eq('supplier', f.supplier);
+
+  // Los dos filtros de proveedor son EXCLUYENTES y cada uno mira una
+  // columna distinta. No se combinan en un «o» a propósito: apilar dos
+  // condiciones «or» en PostgREST junto con la búsqueda de texto no se
+  // puede comprobar aquí, y preferimos un filtro que se entienda a uno
+  // que a lo mejor devuelve de más. El selector de la pantalla ofrece
+  // las dos cosas por separado, así que no se pierde ningún material.
+  if (f.supplierId) q = q.eq('supplier_id', f.supplierId);
+  else if (f.supplier) q = q.eq('supplier', f.supplier);
 
   if (f.search?.trim()) {
     const s = f.search.trim().replace(/[,()*]/g, ' ');
@@ -124,15 +138,26 @@ export async function submitRequest(orderId: string, body: string) {
   ) as MaterialRequest;
 }
 
-/** Administración la acepta: ahora sí se crea el material pendiente. */
+/**
+ * Administración la acepta: ahora sí se crea el material pendiente.
+ *
+ * El proveedor DE LA LISTA se pone en un segundo paso, a propósito: la
+ * función «accept_material_request» es de las que ya estaban y recibe el
+ * proveedor en texto. Añadirle un parámetro crearía una sobrecarga y
+ * PostgREST dejaría de saber a cuál llamar, así que se crea el material
+ * como siempre y se le ata el proveedor después. Si ese segundo paso
+ * fallara, el material YA está anotado con su proveedor en texto, que es
+ * lo que de verdad importa.
+ */
 export async function acceptRequest(requestId: string, material: {
   name: string; units?: number | null; supplier?: string | null;
+  supplierId?: string | null;
   orderedOn?: string | null; expectedOn?: string | null; notes?: string | null;
   /** Obligatorio solo si la petición llegó sin proyecto. */
   projectId?: string | null;
 }) {
   if (!material.name.trim()) throw new Aviso('Escribe el nombre del material.');
-  return unwrap(await supabase.rpc('accept_material_request', {
+  const creado = unwrap(await supabase.rpc('accept_material_request', {
     p_request: requestId,
     p_name: material.name.trim(),
     p_units: material.units ?? null,
@@ -142,6 +167,11 @@ export async function acceptRequest(requestId: string, material: {
     p_notes: material.notes ?? null,
     p_project: material.projectId ?? null,
   })) as unknown as Material;
+
+  if (material.supplierId && creado?.id) {
+    return await updateMaterial(creado.id, { supplier_id: material.supplierId });
+  }
+  return creado;
 }
 
 export async function discardRequest(requestId: string, note: string) {

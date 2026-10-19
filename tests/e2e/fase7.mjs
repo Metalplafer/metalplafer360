@@ -145,14 +145,19 @@ try {
 
   check('La ficha recibe su código del año automáticamente',
     db.fichas[0]?.code === `PRES-${YEAR}-001`, db.fichas[0]?.code);
-  check('Y nace «Por asignar», porque todavía no tiene responsable',
-    db.fichas[0]?.status === 'por_asignar');
+  // M2: un presupuesto YA NO nace «Por asignar». No tiene responsable
+  // administrativo, así que nace donde empieza su trabajo de verdad.
+  check('Y nace «Pendiente», porque ya no lleva responsable',
+    db.fichas[0]?.status === 'pendiente', db.fichas[0]?.status);
   check('El importe se guarda bien escrito en español',
     Number(db.fichas[0]?.amount) === 6400);
 
   // ============================ ACEPTACIÓN ============================
-  await page.locator('#assign').selectOption({ label: 'Salvi Plaza (administración)' });
-  await page.waitForTimeout(700);
+  // Y ya no hay que asignarle a nadie para poder avanzarlo: antes había
+  // que pasar por el selector de responsable, que ya no existe para los
+  // presupuestos.
+  check('Un presupuesto ya no pide responsable para poder avanzar',
+    (await page.locator('#assign').count()) === 0);
   for (const estado of ['Presupuesto avanzado', 'Presupuesto por revisar', 'Presupuesto enviado']) {
     await page.locator(`.status-flow button:has-text("${estado}")`).click();
     await page.waitForTimeout(500);
@@ -555,40 +560,45 @@ try {
     !m.url().includes('/admin/configuracion'));
   await movil.close();
 
-  // ============================ DATOS DE EJEMPLO ============================
-  console.log('\n   ── DATOS DE EJEMPLO ──');
-  const realesAntes = {
-    clientes: db.clients.length, proyectos: db.projects.length,
-    ordenes: db.work_orders.length, cobros: db.payments.length,
-  };
+  // ==================== LOS DATOS DE EJEMPLO SE HAN RETIRADO ====================
+  //
+  // La aplicación ya está en uso con datos reales, y un botón que siembra
+  // un taller inventado en la base de datos de verdad es un accidente
+  // esperando a pasar. Lo que se comprueba aquí es que ya no hay por
+  // dónde llamarlo.
+  //
+  // Lo que NO se ha tocado son las columnas «is_demo»: son el único sitio
+  // donde queda constancia de qué se creó como ejemplo.
+  console.log('\n   ── LOS DATOS DE EJEMPLO SE HAN RETIRADO ──');
+
+  const llamadasAntes = db.demo_llamadas ?? 0;
 
   await page.goto(`http://localhost:${PORT}/#/admin/configuracion`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(900);
   await page.locator('.tabs button:has-text("Aplicación")').click();
   await page.waitForTimeout(900);
-  check('Hay un apartado de datos de ejemplo',
-    (await page.locator('main').innerText()).includes('Datos de ejemplo'));
 
-  await page.locator('button:has-text("Poner datos de ejemplo")').click();
-  await page.waitForTimeout(1600);
-  check('Se ponen los datos de ejemplo',
-    db.clients.some((c) => c.is_demo) && db.projects.some((p) => p.is_demo));
-  check('Y se avisa de que están puestos',
-    (await page.locator('main').innerText()).includes('datos de ejemplo mezclados'));
+  const aplicacion = await page.locator('main').innerText();
+  check('Ya no hay apartado de datos de ejemplo',
+    !aplicacion.includes('Datos de ejemplo'),
+    aplicacion.slice(0, 160).replace(/\n/g, ' · '));
+  check('Ni botón para ponerlos',
+    (await page.locator('button:has-text("Poner datos de ejemplo")').count()) === 0);
+  check('Ni botón para limpiarlos',
+    (await page.locator('button:has-text("Limpiar datos demo")').count()) === 0);
 
-  await page.locator('button:has-text("Limpiar datos demo")').click();
-  await page.waitForTimeout(600);
-  await page.locator('.modal-foot button:has-text("Limpiar")').click();
-  await page.waitForTimeout(1600);
+  // LA COMPROBACIÓN QUE IMPORTA: la pantalla no llama a esas funciones.
+  // Si alguna quedara llamándolas, aquí se vería, porque el falso
+  // Supabase las sigue sirviendo.
+  check('Y ninguna pantalla llama ya a las funciones de datos de ejemplo',
+    (db.demo_llamadas ?? 0) === llamadasAntes,
+    `${llamadasAntes} → ${db.demo_llamadas ?? 0}`);
 
-  check('Limpiar los datos demo se lleva TODO lo de ejemplo',
-    !db.clients.some((c) => c.is_demo) && !db.projects.some((p) => p.is_demo)
-    && !db.work_orders.some((o) => o.is_demo) && !db.materials.some((mt) => mt.is_demo));
-  check('Y NO toca ni un solo dato de verdad',
-    db.clients.length === realesAntes.clientes
-    && db.projects.length === realesAntes.proyectos
-    && db.work_orders.length === realesAntes.ordenes
-    && db.payments.length === realesAntes.cobros);
+  // Y lo que sí tiene que seguir estando en esa pestaña.
+  check('La pestaña sigue sirviendo para instalar la aplicación',
+    aplicacion.includes('Instalar la aplicación'));
+  check('Y sigue avisando de que la aplicación necesita Internet',
+    aplicacion.includes('necesita Internet'));
 
   // ============================ CAPTURAS ============================
   await page.goto(`http://localhost:${PORT}/#/admin`, { waitUntil: 'networkidle' });

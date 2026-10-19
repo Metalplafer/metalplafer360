@@ -12,16 +12,25 @@
  * en tests/sql/50_tests_fase5.sql.
  */
 import {
-  ADMIN, WORKER, YEAR, addDays, buildApp, createChecker, createDb, diaLaborable,
-  launchBrowser, mondayOf, serveApp, signIn, startOfMonth, stubSupabase, today,
+  ADMIN, WORKER, YEAR, addDays, buildApp, createChecker, createDb,
+  launchBrowser, mondayOf, proximoLaborable, serveApp, signIn, startOfMonth,
+  stubSupabase, today,
 } from './fake-supabase.mjs';
 
 const PORT = 4183;
 const HOY = today();
-const LABORABLE = diaLaborable(HOY);
+// El próximo día laborable, HACIA DELANTE. La agenda del trabajador va
+// de hoy en adelante, así que la planificación tiene que caer hoy o
+// después: con «diaLaborable», que camina hacia atrás, esta prueba
+// fallaba los sábados y los domingos.
+const LABORABLE = proximoLaborable(HOY);
 const AYER = addDays(HOY, -3);
 const PROXIMO = addDays(HOY, 4);
-const MANANA = addDays(HOY, 1);
+// EL DESTINO DEL ARRASTRE. Tiene que ser un día DISTINTO de donde está
+// la fabricación: si coincidieran, arrastrar no cambiaría nada y la
+// prueba fallaría sin que hubiera ningún fallo. Pasaba en domingo, donde
+// el próximo laborable es justo mañana.
+const MANANA = proximoLaborable(addDays(LABORABLE, 1));
 
 buildApp();
 const server = await serveApp(PORT);

@@ -7,7 +7,7 @@ import {
 import { toUserMessage } from '@/lib/errors';
 import { whatsappLink } from '@/lib/whatsapp';
 import { categoryFor, safeStorageName, validateFileSize } from '@/lib/files';
-import { FICHA_STATUSES, fichaStatus } from '@/config/constants';
+import { FICHA_STATUSES, SUBSTATUSES, fichaStatus, substatusLabel } from '@/config/constants';
 
 describe('fechas en hora de Madrid', () => {
   it('formatea en DD/MM/YYYY', () => {
@@ -212,9 +212,13 @@ describe('archivos', () => {
 
 describe('estados de las fichas', () => {
   it('cada tipo tiene exactamente los estados acordados', () => {
+    // «Pendiente de paga y señal» va DESPUÉS de «enviado» y ANTES de
+    // «aceptado», y el orden importa: es el recorrido que sigue un
+    // presupuesto, y la pantalla lo enseña en este orden.
     expect(FICHA_STATUSES.presupuesto.map((s) => s.label)).toEqual([
       'Por asignar', 'Presupuesto pendiente', 'Presupuesto avanzado', 'Presupuesto por revisar',
-      'Presupuesto enviado', 'Presupuesto aceptado', 'Presupuesto cancelado',
+      'Presupuesto enviado', 'Pendiente de paga y señal',
+      'Presupuesto aceptado', 'Presupuesto cancelado',
     ]);
     expect(FICHA_STATUSES.visita.map((s) => s.label)).toEqual([
       'Por asignar', 'Asignada', 'Realizada', 'Cancelada',
@@ -222,6 +226,22 @@ describe('estados de las fichas', () => {
     expect(FICHA_STATUSES.aviso.map((s) => s.label)).toEqual([
       'Por asignar', 'Pendiente', 'Asignado', 'En curso', 'Realizado', 'Cerrado',
     ]);
+  });
+
+  it('«Pendiente de paga y señal» solo existe en los presupuestos', () => {
+    // Es un estado del presupuesto, no del trabajo. Si se colara en las
+    // visitas o en los avisos, la base de datos lo rechazaría y la
+    // pantalla ofrecería un estado imposible de guardar.
+    expect(FICHA_STATUSES.presupuesto.map((s) => s.key)).toContain('pendiente_senal');
+    expect(FICHA_STATUSES.visita.map((s) => s.key)).not.toContain('pendiente_senal');
+    expect(FICHA_STATUSES.aviso.map((s) => s.key)).not.toContain('pendiente_senal');
+  });
+
+  it('«Lacado-Zincado» es un subestado de fabricación y de ninguna otra fase', () => {
+    expect(SUBSTATUSES.fabricacion.map((s) => s.key)).toContain('lacado_zincado');
+    expect(substatusLabel('fabricacion', 'lacado_zincado')).toBe('Lacado-Zincado');
+    expect(SUBSTATUSES.preparacion.map((s) => s.key)).not.toContain('lacado_zincado');
+    expect(SUBSTATUSES.montaje.map((s) => s.key)).not.toContain('lacado_zincado');
   });
 
   it('no existen los estados «rechazado» ni «perdido»', () => {

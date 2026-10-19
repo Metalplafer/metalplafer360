@@ -39,7 +39,7 @@ export default function FichasList({ fixedType }: { fixedType?: FichaType }) {
         title={fixedType ? FICHA_TYPE_PLURAL[fixedType] : 'Fichas'}
         sub={fixedType === 'aviso'
           ? 'Incidencias y reparaciones de clientes.'
-          : 'Presupuestos, visitas y avisos. Toda ficha nueva empieza en «Por asignar».'}
+          : 'Presupuestos, visitas y avisos.'}
         actions={
           <Link className="btn btn-primary" to={`/admin/fichas/nueva?tipo=${type}`}>
             <Plus />{FICHA_NEW_LABEL[type]}

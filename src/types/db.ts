@@ -258,6 +258,39 @@ export interface CommentRow {
 export type ProjectPhase = 'preparacion' | 'fabricacion' | 'montaje' | 'facturacion' | 'finalizado';
 export type BillingStatus = 'por_facturar' | 'pendiente_cobro' | 'cobrado_parcial' | 'cobrado';
 
+/**
+ * UN PRODUCTO DE UN PROYECTO.
+ *
+ * Un proyecto puede ser varias piezas: una barandilla Y dos rejas, cada
+ * una con sus medidas y su acabado. Por producto va la descripción, las
+ * medidas y el acabado; el nombre del proyecto, el presupuesto y las
+ * horas siguen siendo del proyecto.
+ */
+export interface ProjectProduct {
+  /** Falta cuando el producto es heredado: no existe como fila. */
+  id: string | null;
+  project_id: string;
+  posicion: number;
+  name: string | null;
+  description: string | null;
+  measures: string | null;
+  finish: string | null;
+  /**
+   * TRUE cuando el proyecto no tiene productos guardados y lo que se
+   * enseña viene de sus propias columnas de siempre. No es un error: es
+   * lo que permite que nada dependa de migrar los datos viejos.
+   */
+  heredado: boolean;
+}
+
+/** Lo que se manda al guardar. Sin «id»: la lista se manda completa. */
+export interface ProjectProductDraft {
+  name: string;
+  description: string;
+  measures: string;
+  finish: string;
+}
+
 export interface Project {
   id: string;
   code: string;
@@ -417,7 +450,14 @@ export interface Material {
   order_id: string | null;
   name: string;
   units: number | null;
+  /**
+   * El proveedor EN TEXTO. Sigue siendo la columna de siempre y la que
+   * leen los informes. No se retira: hay material real que solo tiene
+   * esto.
+   */
   supplier: string | null;
+  /** El proveedor de la lista, cuando se ha elegido uno. Puede faltar. */
+  supplier_id: string | null;
   ordered_on: string | null;
   expected_on: string | null;
   received: boolean;
@@ -428,6 +468,51 @@ export interface Material {
   updated_at: string;
   project?: Pick<Project, 'id' | 'code' | 'name'> | null;
   order?: Pick<WorkOrder, 'id' | 'code'> | null;
+}
+
+/**
+ * UN PROVEEDOR.
+ *
+ * No se borran: se desactivan, porque hay materiales que les apuntan y
+ * borrarlos dejaría el histórico sin explicación.
+ */
+export interface Supplier {
+  id: string;
+  name: string;
+  /** El nombre reducido a lo comparable. Lo calcula la base de datos. */
+  name_norm: string;
+  phone: string | null;
+  email: string | null;
+  notes: string | null;
+  active: boolean;
+  is_demo: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Un proveedor propuesto para un material concreto. */
+export interface SupplierSuggestion {
+  id: string;
+  name: string;
+  phone: string | null;
+  /** Si es uno de los habituales de ESE material o una propuesta general. */
+  habitual: boolean;
+  /** En cuántos materiales se ha usado. */
+  veces: number;
+}
+
+/**
+ * A QUIÉN SE PUEDE MENCIONAR en un comentario.
+ *
+ * La lista la decide el servidor: la administración y quien está
+ * asignado a ese proyecto, aviso, orden o parte. No es la pantalla la
+ * que esconde nombres.
+ */
+export interface MentionCandidate {
+  id: string;
+  full_name: string;
+  role: 'admin' | 'worker';
 }
 
 /** Lo que comunica un trabajador. Nunca se convierte solo en material. */

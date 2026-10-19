@@ -3,7 +3,7 @@ import { Save } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { Field } from '@/components/ui/Layout';
 import { Alert } from '@/components/ui/Feedback';
-import { SupplierInput } from '@/components/shared/SupplierInput';
+import { SupplierPicker } from '@/components/shared/SupplierPicker';
 import { parseDecimal } from '@/lib/format';
 import { toUserMessage } from '@/lib/errors';
 import type { Material } from '@/types/db';
@@ -11,7 +11,13 @@ import type { Material } from '@/types/db';
 export interface MaterialDraft {
   name: string;
   units: string;
+  /** El proveedor EN TEXTO. Es lo que se guarda siempre. */
   supplier: string;
+  /**
+   * El proveedor de la lista, si se ha elegido uno. Puede faltar: se
+   * sigue pudiendo escribir el nombre a mano, como siempre.
+   */
+  supplier_id: string | null;
   ordered_on: string;
   expected_on: string;
   notes: string;
@@ -23,7 +29,8 @@ export interface MaterialValues extends Omit<MaterialDraft, 'units'> {
 }
 
 export const emptyMaterial: MaterialDraft = {
-  name: '', units: '', supplier: '', ordered_on: '', expected_on: '', notes: '',
+  name: '', units: '', supplier: '', supplier_id: null,
+  ordered_on: '', expected_on: '', notes: '',
 };
 
 export function draftFrom(m: Material): MaterialDraft {
@@ -31,6 +38,7 @@ export function draftFrom(m: Material): MaterialDraft {
     name: m.name,
     units: m.units != null ? String(m.units).replace('.', ',') : '',
     supplier: m.supplier ?? '',
+    supplier_id: m.supplier_id ?? null,
     ordered_on: m.ordered_on ?? '',
     expected_on: m.expected_on ?? '',
     notes: m.notes ?? '',
@@ -122,8 +130,9 @@ export function MaterialModal({ title, initial, projects, projectId, onProject, 
           </Field>
 
           <Field label="Proveedor" htmlFor="mat-supplier">
-            <SupplierInput id="mat-supplier" value={form.supplier}
-                           onChange={(v) => set({ supplier: v })} />
+            <SupplierPicker id="mat-supplier" materialName={form.name}
+                            value={form.supplier} supplierId={form.supplier_id}
+                            onChange={(v) => set(v)} />
           </Field>
 
           <Field label="Fecha de pedido" htmlFor="mat-ordered">

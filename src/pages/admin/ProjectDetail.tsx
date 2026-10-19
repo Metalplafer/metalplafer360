@@ -15,8 +15,8 @@ import { documentPaths, removeStoredFiles } from '@/services/documents';
 import { CommentsPanel } from '@/components/shared/CommentsPanel';
 import { HistoryPanel } from '@/components/shared/HistoryPanel';
 import {
-  changePhase, deleteProject, finalizeProject, getProject, phaseSuggestion, reopenProject,
-  setBillingStatus, setSubstatuses, updateProject,
+  changePhase, deleteProject, finalizeProject, getProject, phaseSuggestion,
+  projectProducts, reopenProject, setBillingStatus, setSubstatuses, updateProject,
 } from '@/services/projects';
 import {
   BILLING_LABEL, BILLING_STATUSES, BILLING_TONE, PHASE_LABEL, PHASE_TONE, SUBSTATUSES,
@@ -48,6 +48,9 @@ export default function ProjectDetail() {
   const orders = useAsync(() => listOrders({ projectId: id, pageSize: 50 }), [id, historyKey]);
   const materials = useAsync(() => listMaterials({ projectId: id, state: 'todos' }), [id, historyKey]);
   const money = useAsync(() => billing(id), [id, historyKey]);
+  // Las piezas del proyecto. Depende de «project.data?.updated_at» para
+  // que al guardar los productos la ficha los enseñe ya cambiados.
+  const productos = useAsync(() => projectProducts(id), [id, project.data?.updated_at]);
 
   // BLOQUE 1 · trabajadores asignados, partes y horas realizadas.
   const equipo = useAsync(() => projectTeam(id), [id, historyKey]);
@@ -443,9 +446,11 @@ export default function ProjectDetail() {
                 )}
               </dd>
 
-              <dt>Descripción</dt><dd className="pre">{p.description ?? '—'}</dd>
-              <dt>Medidas</dt><dd>{p.measures ?? '—'}</dd>
-              <dt>Acabado</dt><dd>{p.finish ?? '—'}</dd>
+              {/*
+                La descripción, las medidas y el acabado son de cada
+                PRODUCTO: un proyecto puede ser varias piezas. Se enseñan
+                en su propio panel, más abajo.
+              */}
               <dt>Ubicación</dt><dd>{p.location ?? '—'}</dd>
               <dt>Observaciones</dt><dd className="pre">{p.observations ?? '—'}</dd>
 
@@ -573,6 +578,49 @@ export default function ProjectDetail() {
               Lo que escribas a mano aquí, o muevas a mano en el calendario, no se
               vuelve a tocar. La fabricación y el montaje se guardan por separado.
             </p>
+          </Panel>
+
+          {/*
+            QUÉ SE FABRICA.
+            Un proyecto puede ser varias piezas, cada una con sus medidas
+            y su acabado. Un proyecto que todavía no tenga productos
+            guardados enseña aquí lo que ya tenía en sus columnas de
+            siempre, así que nunca sale en blanco.
+          */}
+          <Panel title="Qué se fabrica">
+            {productos.loading && !productos.data ? <Loading />
+              : productos.error
+                ? <ErrorBox message={productos.error} onRetry={productos.reload} />
+                : (
+                  <div className="stack">
+                    {(productos.data ?? []).map((pr, i) => (
+                      <div key={pr.id ?? `heredado-${i}`}>
+                        {(productos.data ?? []).length > 1 && (
+                          <strong style={{ display: 'block', marginBottom: 4 }}>
+                            {pr.name?.trim() || `Producto ${i + 1}`}
+                          </strong>
+                        )}
+                        <dl className="kv">
+                          {(productos.data ?? []).length === 1 && pr.name?.trim() && (
+                            <>
+                              <dt>Qué es</dt><dd>{pr.name}</dd>
+                            </>
+                          )}
+                          <dt>Descripción</dt>
+                          <dd className="pre">{pr.description ?? '—'}</dd>
+                          <dt>Medidas</dt><dd>{pr.measures ?? '—'}</dd>
+                          <dt>Acabado</dt><dd>{pr.finish ?? '—'}</dd>
+                        </dl>
+                      </div>
+                    ))}
+                    {(productos.data ?? []).some((pr) => pr.heredado) && (
+                      <p className="hint" style={{ margin: 0 }}>
+                        Este proyecto se creó cuando solo se podía anotar un producto.
+                        Al editarlo podrás separarlo en varias piezas.
+                      </p>
+                    )}
+                  </div>
+                )}
           </Panel>
 
           <Panel title="Presupuesto y horas previstas">

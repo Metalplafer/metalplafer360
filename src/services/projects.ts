@@ -1,5 +1,8 @@
 import { supabase, unwrap } from '@/lib/supabase';
-import type { BillingStatus, PhaseSuggestion, Project, ProjectPhase } from '@/types/db';
+import type {
+  BillingStatus, PhaseSuggestion, Project, ProjectPhase, ProjectProduct,
+  ProjectProductDraft,
+} from '@/types/db';
 
 const SELECT =
   '*, client:clients(id, name, phone, kind, address), ' +
@@ -24,15 +27,48 @@ export interface ProjectFilters {
   clientId?: string;
   search?: string;
   state?: 'activos' | 'archivados';
+  /**
+   * Un SUBESTADO concreto, por ejemplo «falta_material». Un proyecto
+   * puede tener varios a la vez, así que esto pregunta «¿lo tiene?», no
+   * «¿es el suyo?».
+   */
+  substatus?: string;
   page?: number;
   pageSize?: number;
 }
 
 export async function listProjects(f: ProjectFilters = {}) {
   const { page = 0, pageSize = 25 } = f;
+
+  /**
+   * EL FILTRO POR SUBESTADO, EN DOS PASOS.
+   *
+   * Los subestados viven en otra tabla («project_substatuses») y un
+   * proyecto puede tener varios. Se podría intentar filtrar desde la
+   * consulta del proyecto, pero filtrar por una tabla relacionada tiene
+   * trampa: según cómo se escriba, devuelve el proyecto con los
+   * subestados RECORTADOS en lugar de descartar el proyecto, y entonces
+   * la pantalla enseñaría de menos sin avisar.
+   *
+   * Así que se pregunta primero QUÉ proyectos tienen ese subestado y
+   * después se piden esos. Son dos viajes en lugar de uno, y a cambio se
+   * sabe exactamente qué devuelve. La paginación y el total siguen
+   * siendo correctos porque el segundo paso es una consulta normal.
+   */
+  let ids: string[] | null = null;
+  if (f.substatus) {
+    const marcados = unwrap(await supabase.from('project_substatuses')
+      .select('project_id').eq('substatus', f.substatus)) as { project_id: string }[];
+    ids = [...new Set(marcados.map((r) => r.project_id))];
+    // Ninguno lo tiene: no hace falta el segundo viaje.
+    if (!ids.length) return { rows: [] as Project[], count: 0 };
+  }
+
   let q = supabase.from('projects').select(SELECT, { count: 'exact' })
     .order('created_at', { ascending: false })
     .range(page * pageSize, page * pageSize + pageSize - 1);
+
+  if (ids) q = q.in('id', ids);
 
   if (f.state === 'archivados') q = q.not('archived_at', 'is', null);
   else q = q.is('archived_at', null);
@@ -144,4 +180,48 @@ export async function deleteProject(id: string) {
   return unwrap(await supabase.rpc('delete_project', { p_project: id })) as unknown as {
     ok: boolean; code: string; documentos: number; ordenes: number; partes_desvinculados: number;
   };
+}
+
+// ---------------------------------------------------------------------
+// LOS PRODUCTOS DE UN PROYECTO
+//
+// Un proyecto puede ser varias piezas. Dos cosas que conviene saber
+// antes de tocar esto:
+//
+//   · la LECTURA lleva respaldo. Un proyecto que todavía no tenga
+//     productos guardados devuelve UNO construido con sus columnas de
+//     siempre, marcado «heredado». Así ningún proyecto se queda en
+//     blanco mientras no se migre nada;
+//   · el GUARDADO manda la lista COMPLETA, como en el resto de la
+//     aplicación, y tiene que quedar al menos un producto. Además copia
+//     el primero a las columnas del proyecto, porque el móvil del
+//     trabajador y los informes leen por ahí.
+// ---------------------------------------------------------------------
+
+/** Los productos de un proyecto, en orden. Nunca devuelve una lista vacía. */
+export async function projectProducts(projectId: string) {
+  return unwrap(await supabase.from('project_product_list').select('*')
+    .eq('project_id', projectId)
+    .order('posicion')) as ProjectProduct[];
+}
+
+/**
+ * Pone los productos de un proyecto. Se manda la lista completa.
+ *
+ * Los bloques que queden enteros en blanco los descarta la base de
+ * datos, así que no hace falta limpiarlos aquí. Lo que no acepta es
+ * quedarse sin ninguno.
+ */
+export async function saveProjectProducts(projectId: string, products: ProjectProductDraft[]) {
+  return unwrap(await supabase.rpc('save_project_products', {
+    p_project: projectId,
+    p_products: products,
+  })) as ProjectProduct[];
+}
+
+/** Los productos como los ve un trabajador asignado: sin nada económico. */
+export async function workerProjectProducts(projectId: string) {
+  return unwrap(await supabase.from('worker_project_products').select('*')
+    .eq('project_id', projectId)
+    .order('posicion')) as ProjectProduct[];
 }

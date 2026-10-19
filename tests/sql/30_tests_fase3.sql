@@ -76,7 +76,9 @@ select test.put('proy_sin_montaje', id),
 
 
 \echo '== CONVERTIR UN PRESUPUESTO ACEPTADO'
-select test.err('conversion', 'Un presupuesto cancelado no se convierte',
+-- «pres2» no está cancelado: está sin aceptar. El nombre decía otra cosa
+-- y ahora que su estado inicial cambia, conviene que diga lo que mide.
+select test.err('conversion', 'Un presupuesto que no está aceptado no se convierte',
   $$select public.convert_budget_to_project(test.id('pres2'))$$, '22023');
 
 select test.err('conversion', 'Una visita no se convierte en proyecto',
