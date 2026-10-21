@@ -7,7 +7,9 @@ import { useDialogs } from '@/components/ui/Dialogs';
 import { Modal } from '@/components/ui/Modal';
 import { Badge, PageHeader, Panel, Tabs } from '@/components/ui/Layout';
 import { Empty, ErrorBox, Loading } from '@/components/ui/Feedback';
-import { MaterialModal, draftFrom, emptyMaterial, type MaterialValues } from '@/components/shared/MaterialModal';
+import {
+  MaterialModal, SIN_PROYECTO, draftFrom, emptyMaterial, type MaterialValues,
+} from '@/components/shared/MaterialModal';
 import {
   acceptRequest, createMaterial, discardRequest, listMaterials, listRequests,
   setReceived, updateMaterial,
@@ -103,7 +105,8 @@ export default function MaterialsList() {
 
   async function saveNew(draft: MaterialValues) {
     await createMaterial({
-      project_id: projectId,
+      // «Material de taller» se manda como lo que es: sin proyecto.
+      project_id: projectId === SIN_PROYECTO ? null : projectId,
       name: draft.name.trim(),
       units: draft.units,
       supplier: draft.supplier,
@@ -112,7 +115,8 @@ export default function MaterialsList() {
       expected_on: draft.expected_on || null,
       notes: draft.notes,
     });
-    toast.success('Material anotado');
+    toast.success(projectId === SIN_PROYECTO
+      ? 'Material de taller anotado' : 'Material anotado');
     setCreating(false);
     setProjectId('');
     reload();
@@ -136,8 +140,9 @@ export default function MaterialsList() {
 
   async function accept(draft: MaterialValues) {
     if (!accepting) return;
-    // BLOQUE 5: una petición puede llegar SIN proyecto. El material
-    // pendiente siempre es de un proyecto, así que aquí se dice a cuál.
+    // BLOQUE 5: una petición puede llegar SIN proyecto. Entonces hay que
+    // decir a cuál va... o que no va a ninguno, porque es material de
+    // taller. Las dos cosas se eligen a mano, nunca por omisión.
     await acceptRequest(accepting.id, {
       name: draft.name.trim(),
       units: draft.units,
@@ -146,7 +151,7 @@ export default function MaterialsList() {
       orderedOn: draft.ordered_on || null,
       expectedOn: draft.expected_on || null,
       notes: draft.notes || null,
-      projectId: accepting.project_id ? null : projectId,
+      projectId: accepting.project_id || projectId === SIN_PROYECTO ? null : projectId,
     });
     toast.success('Material anotado a partir del aviso');
     setAccepting(null);
@@ -328,7 +333,7 @@ export default function MaterialsList() {
                               <td>
                                 {m.project
                                   ? <Link to={`/admin/proyectos/${m.project.id}`}>{m.project.code}</Link>
-                                  : '—'}
+                                  : <Badge tone="neutral" plain>Taller</Badge>}
                               </td>
                               <td className="nowrap">{m.ordered_on ? fmtDate(m.ordered_on) : <span className="faint">—</span>}</td>
                               <td className="nowrap">
@@ -404,7 +409,8 @@ export default function MaterialsList() {
                 <p className="pre" style={{ margin: '4px 0 0' }}>{accepting.body}</p>
                 {!accepting.project_id && (
                   <p className="hint" style={{ marginBottom: 0 }}>
-                    Llegó sin proyecto. Elige abajo a cuál va el material.
+                    Llegó sin proyecto. Elige abajo a cuál va, o márcalo como material
+                    de taller si no es de ningún trabajo.
                   </p>
                 )}
               </div>

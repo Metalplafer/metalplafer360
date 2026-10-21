@@ -28,6 +28,16 @@ export interface MaterialValues extends Omit<MaterialDraft, 'units'> {
   units: number | null;
 }
 
+/**
+ * MATERIAL DE TALLER: el que no es de ningún proyecto.
+ *
+ * Se elige a propósito en el mismo desplegable de los proyectos, en vez
+ * de dejarlo vacío, porque «sin proyecto» tiene que ser una DECISIÓN y
+ * no un despiste: si bastara con no elegir nada, el material de un
+ * trabajo acabaría apuntado como consumible del taller.
+ */
+export const SIN_PROYECTO = 'taller';
+
 export const emptyMaterial: MaterialDraft = {
   name: '', units: '', supplier: '', supplier_id: null,
   ordered_on: '', expected_on: '', notes: '',
@@ -111,10 +121,17 @@ export function MaterialModal({ title, initial, projects, projectId, onProject, 
               <select id="mat-project" className="select" value={projectId ?? ''}
                       onChange={(e) => onProject?.(e.target.value)}>
                 <option value="">Elige un proyecto…</option>
+                <option value={SIN_PROYECTO}>Sin proyecto · material de taller</option>
                 {projects.map((p) => (
                   <option key={p.id} value={p.id}>{p.code} · {p.name}</option>
                 ))}
               </select>
+              {projectId === SIN_PROYECTO && (
+                <span className="hint">
+                  Consumibles del taller: discos, electrodos, guantes. No se cuentan en
+                  ningún proyecto.
+                </span>
+              )}
             </Field>
           )}
 

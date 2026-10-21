@@ -29,10 +29,17 @@ export const emptyClient: ClientDraft = {
  * Al elegir uno se rellenan SOLO sus datos generales; nunca se copia
  * información de presupuestos o proyectos anteriores.
  */
-export function ClientPicker({ value, onChange, required }: {
+export function ClientPicker({ value, onChange, required, existingOnly }: {
   value: ClientDraft;
   onChange: (v: ClientDraft) => void;
   required?: boolean;
+  /**
+   * Solo elegir entre los clientes que YA existen, sin el formulario de
+   * alta. Es lo que hace falta al CORREGIR el cliente de algo: si el
+   * cliente bueno no estuviera dado de alta, crear uno aquí dejaría dos
+   * fichas del mismo cliente con dos registros distintos.
+   */
+  existingOnly?: boolean;
 }) {
   const [focused, setFocused] = useState<'name' | 'tax' | null>(null);
   const [items, setItems] = useState<ClientSuggestion[]>([]);
@@ -91,12 +98,33 @@ export function ClientPicker({ value, onChange, required }: {
           <small>{[CLIENT_KIND_LABEL[c.kind], c.tax_id, c.city, c.phone].filter(Boolean).join(' · ')}</small>
         </button>
       ))}
-      <button type="button" onMouseDown={(e) => e.preventDefault()}
-              onClick={() => { setDismissed(debounced); setItems([]); }}>
-        <small>No, es un cliente nuevo</small>
-      </button>
+      {!existingOnly && (
+        <button type="button" onMouseDown={(e) => e.preventDefault()}
+                onClick={() => { setDismissed(debounced); setItems([]); }}>
+          <small>No, es un cliente nuevo</small>
+        </button>
+      )}
     </div>
   );
+
+  // SOLO ELEGIR: un buscador y nada más. Sin el formulario de alta, para
+  // que corregir un cliente no pueda acabar creando otro.
+  if (existingOnly) {
+    return (
+      <div className="field suggest" style={{ maxWidth: 420 }}>
+        <label htmlFor="cp-search">Buscar el cliente{required ? ' *' : ''}</label>
+        <input id="cp-search" className="input" value={value.name} autoComplete="off"
+               placeholder="Nombre o CIF/NIF" onFocus={() => setFocused('name')}
+               onBlur={() => setTimeout(() => setFocused(null), 150)}
+               onChange={(e) => set({ name: e.target.value })} />
+        {focused === 'name' && suggestions}
+        <span className="hint">
+          Solo clientes que ya existen. Si el que buscas no está, dalo de alta en Clientes
+          y vuelve aquí: así no quedan dos registros del mismo cliente.
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div className="form-grid">

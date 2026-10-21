@@ -129,9 +129,14 @@ export const SUBSTATUSES: Record<ProjectPhase, { key: string; label: string }[]>
     { key: 'por_finalizar',  label: 'Por finalizar' },
   ],
   montaje: [
+    // «Pendiente de montaje» primero y «Pendiente de rematar» último: es
+    // el recorrido real del trabajo, de lo que espera para montarse a lo
+    // que ya está montado y le faltan remates.
+    { key: 'pendiente_montaje',     label: 'Pendiente de montaje' },
     { key: 'en_montaje',            label: 'En montaje' },
     { key: 'falta_material',        label: 'Falta material' },
     { key: 'por_finalizar_montaje', label: 'Por finalizar montaje' },
+    { key: 'pendiente_rematar',     label: 'Pendiente de rematar' },
   ],
   facturacion: [],
   finalizado: [],

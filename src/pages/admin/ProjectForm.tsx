@@ -8,7 +8,8 @@ import { Alert, ErrorBox, Loading } from '@/components/ui/Feedback';
 import { ClientPicker, emptyClient, type ClientDraft } from '@/components/shared/ClientPicker';
 import { createClient, getClient, listContacts } from '@/services/clients';
 import {
-  createProject, getProject, projectProducts, saveProjectProducts, updateProject,
+  createProject, getProject, projectProducts, saveProjectProducts, setProjectClient,
+  updateProject,
 } from '@/services/projects';
 import {
   ProductBlocks, emptyProduct, productoVacio,
@@ -40,6 +41,11 @@ export default function ProjectForm() {
   const project = useAsync(async () => (id ? getProject(id) : null), [id]);
 
   const [client, setClient] = useState<ClientDraft>(emptyClient);
+  /**
+   * El cliente con el que se abrió el proyecto: para saber si de verdad
+   * se ha cambiado y para poder dejarlo como estaba.
+   */
+  const [clienteOriginal, setClienteOriginal] = useState<ClientDraft | null>(null);
   const [form, setForm] = useState(emptyForm);
   /** Siempre hay al menos un bloque, también al crear un proyecto nuevo. */
   const [products, setProducts] = useState<ProjectProductDraft[]>([{ ...emptyProduct }]);
@@ -143,13 +149,36 @@ export default function ProjectForm() {
     });
     setWorkId(p.work_id ?? '');
     if (p.client) {
-      setClient({
+      const actual: ClientDraft = {
         id: p.client.id, kind: p.client.kind, name: p.client.name, tax_id: '',
         phone: p.client.phone ?? '', email: '', address: p.client.address ?? '',
         city: '', postal_code: '',
-      });
+      };
+      setClient(actual);
+      setClienteOriginal(actual);
     }
   }, [project.data]);
+
+  /**
+   * ¿Se ha cambiado el cliente? Solo cuenta haber ELEGIDO otro de la
+   * lista: dejar el buscador vacío no es quitar el cliente.
+   */
+  const clienteCambiado = editing
+    && Boolean(client.id) && client.id !== (clienteOriginal?.id ?? null);
+
+  /**
+   * Elegir cliente SUELTA la persona de contacto.
+   *
+   * Un contacto es de un cliente concreto. Si se cambia de cliente y el
+   * contacto se queda puesto, el proyecto enseñaría el teléfono de
+   * alguien de otra empresa. La base de datos también lo quita, pero si
+   * el formulario no lo soltara volvería a mandarlo al guardar y lo
+   * dejaría otra vez puesto.
+   */
+  function elegirCliente(siguiente: ClientDraft) {
+    if ((siguiente.id ?? null) !== (client.id ?? null)) set({ contact_id: '' });
+    setClient(siguiente);
+  }
 
   const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
 
@@ -170,6 +199,12 @@ export default function ProjectForm() {
 
     if (!client.id && !client.name.trim()) {
       setError('Un proyecto necesita siempre un cliente.');
+      return;
+    }
+    // Al EDITAR solo se elige entre los que ya existen.
+    if (editing && !client.id && client.name.trim()) {
+      setError('Elige el cliente de la lista que sale al escribir. Si todavía no existe, '
+               + 'dalo de alta en Clientes y vuelve aquí.');
       return;
     }
     if (!form.name.trim()) {
@@ -205,9 +240,10 @@ export default function ProjectForm() {
 
     setBusy(true);
     try {
-      // Cliente nuevo: se da de alta antes que el proyecto.
+      // Cliente nuevo: se da de alta antes que el proyecto. Solo al
+      // CREAR: corrigiendo un proyecto nunca se crea un cliente.
       let clientId = client.id;
-      if (!clientId && client.name.trim()) {
+      if (!editing && !clientId && client.name.trim()) {
         const created = await createClient({
           kind: client.kind, name: client.name, tax_id: client.tax_id, phone: client.phone,
           email: client.email, address: client.address, city: client.city,
@@ -225,7 +261,6 @@ export default function ProjectForm() {
       const primero = products.find((x) => !productoVacio(x)) ?? products[0];
 
       const payload = {
-        client_id: clientId!,
         contact_id: form.contact_id || null,
         name: form.name,
         description: primero.description,
@@ -240,9 +275,19 @@ export default function ProjectForm() {
         budget_hours_mont: hoursMont ?? 0,
       };
 
+      // El cliente va por su propia función —como la obra, unas líneas más
+      // abajo—, para que el historial lo cuente con los dos nombres y para
+      // que no se quede una persona de contacto de la otra empresa.
+      //
+      // Son DOS pasos, no uno: en cuanto esta función responde, el cliente
+      // ya está cambiado, aunque lo de abajo fallara. Se ha puesto delante
+      // porque es el cambio que la persona ha pedido explícitamente; el
+      // resto de los campos los tiene todavía en pantalla para reintentar.
+      if (editing && id && clienteCambiado) await setProjectClient(id, client.id!);
+
       const saved = editing && id
         ? await updateProject(id, payload)
-        : await createProject(payload);
+        : await createProject({ ...payload, client_id: clientId! });
 
       // Los productos van DESPUÉS, con su propia función, que descarta
       // los bloques en blanco y comprueba que quede al menos uno. Si no
@@ -258,7 +303,9 @@ export default function ProjectForm() {
         await setProjectWork(saved.id, workId || null);
       }
 
-      toast.success(editing ? 'Proyecto actualizado' : `Proyecto ${saved.code} creado`);
+      toast.success(editing
+        ? (clienteCambiado ? `Proyecto actualizado · cliente: ${client.name}` : 'Proyecto actualizado')
+        : `Proyecto ${saved.code} creado`);
       navigate(`/admin/proyectos/${saved.id}`);
     } catch (err) {
       setError(toUserMessage(err));
@@ -285,12 +332,22 @@ export default function ProjectForm() {
         {error && <Alert kind="danger">{error}</Alert>}
 
         <Panel title="Cliente">
-          {editing ? (
-            <p className="muted" style={{ margin: 0 }}>
-              {client.name} · el cliente de un proyecto no se cambia una vez creado.
+          <ClientPicker value={client} onChange={elegirCliente} required existingOnly={editing} />
+
+          {editing && !client.id && clienteOriginal?.id && (
+            <div className="row" style={{ marginTop: 10 }}>
+              <button type="button" className="btn btn-sm" id="p-client-keep"
+                      onClick={() => elegirCliente(clienteOriginal)}>
+                Dejar «{clienteOriginal.name}»
+              </button>
+            </div>
+          )}
+
+          {editing && (
+            <p className="hint" style={{ marginTop: 10, marginBottom: 0 }}>
+              Cambiar el cliente aquí NO cambia el del presupuesto del que venga el
+              proyecto, ni el de la obra: cada uno se cambia en su sitio.
             </p>
-          ) : (
-            <ClientPicker value={client} onChange={setClient} required />
           )}
 
           {client.id && (contacts.data?.length ?? 0) > 0 && (

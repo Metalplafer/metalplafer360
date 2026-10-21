@@ -225,3 +225,16 @@ export async function workerProjectProducts(projectId: string) {
     .eq('project_id', projectId)
     .order('posicion')) as ProjectProduct[];
 }
+
+/**
+ * CORREGIR EL CLIENTE de un proyecto.
+ *
+ * Como en las fichas: por su propia función, para que el historial lo
+ * cuente con nombres y para que no se quede una persona de contacto de
+ * otra empresa. El presupuesto del que venga el proyecto NO se toca.
+ */
+export async function setProjectClient(projectId: string, clientId: string) {
+  unwrap(await supabase.rpc('set_project_client', {
+    p_project: projectId, p_client: clientId,
+  }));
+}

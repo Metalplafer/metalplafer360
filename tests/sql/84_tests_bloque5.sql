@@ -329,10 +329,26 @@ select test.ok('b5_material', 'Y la petición queda marcada como aceptada, con s
       and reviewed_by = test.id('salvi')
      from public.material_requests where id = test.id('b5_sol_proy')));
 
--- Una petición SIN proyecto necesita que administración diga a cuál va.
-select test.err('b5_material', 'Una petición sin proyecto no se acepta a ciegas',
-  format($$select public.accept_material_request(%L, 'Discos de corte 125', 10)$$,
-         test.id('b5_sol_suelta')), '22023');
+-- Una petición SIN proyecto se puede aceptar de DOS maneras: diciendo a
+-- qué proyecto va, o dejándola sin proyecto porque es material de
+-- taller (consumibles que no son de ningún trabajo).
+--
+-- ESTA COMPROBACIÓN CAMBIÓ con el bloque de mejoras. Antes exigía un
+-- proyecto a la fuerza y aceptarla sin él daba error 22023; eso es justo
+-- lo que impedía anotar los consumibles del taller. Lo que no puede
+-- pasar —que se quede sin proyecto por despiste— ya no lo guarda este
+-- error, sino el formulario, que obliga a elegir una de las dos cosas y
+-- no trae ninguna puesta: se comprueba en el navegador, en
+-- tests/e2e/mejoras2.mjs.
+select test.put('b5_sol_taller',
+  (public.submit_material_need(null, 'Guantes de soldador')).id);
+
+select test.put('b5_mat_consumible', (select id from public.accept_material_request(
+  test.id('b5_sol_taller'), 'Guantes de soldador', 6)));
+
+select test.ok('b5_material', 'Una petición sin proyecto se acepta como material de taller',
+  (select project_id is null and name = 'Guantes de soldador' and units = 6
+     from public.materials where id = test.id('b5_mat_consumible')));
 
 select test.put('b5_mat_taller', (select id from public.accept_material_request(
   test.id('b5_sol_suelta'), 'Discos de corte 125', 10, null, null, null, null,
@@ -351,8 +367,14 @@ select test.ok('b5_material', 'Descartar sigue funcionando igual',
   (select status = 'descartada' and review_note = 'Ya estaba pedido.'
      from public.material_requests where id = test.id('b5_sol_admin')));
 
-select test.ok('b5_material', 'El material pendiente sigue siendo SIEMPRE de un proyecto',
-  not exists (select 1 from public.materials where project_id is null));
+-- También cambió: antes el material era SIEMPRE de un proyecto. Ahora
+-- hay una excepción, y solo una: el material de taller, y únicamente
+-- cuando alguien lo pide así a propósito.
+select test.ok('b5_material', 'Lo único que va sin proyecto es el material de taller',
+  not exists (select 1 from public.materials
+               where project_id is null and id <> test.id('b5_mat_consumible')),
+  (select string_agg(name, ' | ') from public.materials
+    where project_id is null and id <> test.id('b5_mat_consumible')));
 
 -- Y el trabajador no puede escribir material por su cuenta ni revisar.
 reset role; select test.as_server();

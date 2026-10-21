@@ -198,8 +198,15 @@ try {
   await page.waitForTimeout(800);
   check('De Fabricación se pasa a Montaje',
     (await page.locator('.page-head').innerText()).includes('Montaje'));
-  check('Montaje ofrece sus tres subestados',
-    (await page.locator('.substatus-grid .chip').count()) === 3);
+  // Eran tres; con el bloque de mejoras son CINCO: «Pendiente de
+  // montaje» abre y «Pendiente de rematar» cierra. Se comprueban por su
+  // nombre y en orden, que dice más que contarlos.
+  check('Montaje ofrece sus cinco subestados, en orden',
+    JSON.stringify((await page.locator('.substatus-grid .chip').allInnerTexts())
+      .map((c) => c.trim()))
+      === JSON.stringify(['Pendiente de montaje', 'En montaje', 'Falta material',
+        'Por finalizar montaje', 'Pendiente de rematar']),
+    (await page.locator('.substatus-grid .chip').allInnerTexts()).join(' | '));
 
   await page.locator('.rail-step:has-text("Facturación")').click();
   await page.waitForTimeout(300);

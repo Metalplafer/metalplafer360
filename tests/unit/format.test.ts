@@ -244,6 +244,34 @@ describe('estados de las fichas', () => {
     expect(SUBSTATUSES.montaje.map((s) => s.key)).not.toContain('lacado_zincado');
   });
 
+  it('el montaje empieza por «Pendiente de montaje» y acaba por «Pendiente de rematar»', () => {
+    // El ORDEN es la mejora: lo que espera para montarse va primero y lo
+    // que ya está montado y le faltan remates, al final. La pantalla los
+    // enseña en este orden, así que está aquí escrito entero.
+    expect(SUBSTATUSES.montaje.map((s) => s.label)).toEqual([
+      'Pendiente de montaje', 'En montaje', 'Falta material',
+      'Por finalizar montaje', 'Pendiente de rematar',
+    ]);
+  });
+
+  it('los dos subestados nuevos son de montaje y de ninguna otra fase', () => {
+    for (const fase of ['preparacion', 'fabricacion', 'facturacion', 'finalizado'] as const) {
+      expect(SUBSTATUSES[fase].map((s) => s.key)).not.toContain('pendiente_montaje');
+      expect(SUBSTATUSES[fase].map((s) => s.key)).not.toContain('pendiente_rematar');
+    }
+    expect(substatusLabel('montaje', 'pendiente_montaje')).toBe('Pendiente de montaje');
+    expect(substatusLabel('montaje', 'pendiente_rematar')).toBe('Pendiente de rematar');
+  });
+
+  it('y los tres de montaje de antes siguen ahí, en el mismo orden entre ellos', () => {
+    // Lo que NO hay que romper: añadir no puede reordenar lo que ya
+    // usaban, porque la pantalla se lee de memoria.
+    const claves = SUBSTATUSES.montaje.map((s) => s.key);
+    const antes = claves.filter((k) =>
+      ['en_montaje', 'falta_material', 'por_finalizar_montaje'].includes(k));
+    expect(antes).toEqual(['en_montaje', 'falta_material', 'por_finalizar_montaje']);
+  });
+
   it('no existen los estados «rechazado» ni «perdido»', () => {
     const todos = Object.values(FICHA_STATUSES).flat().map((s) => s.key);
     expect(todos).not.toContain('rechazado');

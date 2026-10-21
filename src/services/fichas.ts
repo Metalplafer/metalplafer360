@@ -149,3 +149,20 @@ export async function assignFichaWorkers(fichaId: string, workerIds: string[]) {
     p_ficha: fichaId, p_workers: workerIds,
   })) as unknown as Profile[];
 }
+
+/**
+ * CORREGIR EL CLIENTE de un presupuesto, una visita o un aviso.
+ *
+ * Va por su propia función de la base de datos y no por un «update»
+ * suelto, porque hay dos cosas que tienen que pasar siempre: que el
+ * cambio quede en el historial con los dos nombres, y que la persona de
+ * contacto se quite si era del cliente anterior.
+ *
+ * NO crea clientes: el identificador que se manda es el de uno que ya
+ * existe, elegido de la lista.
+ */
+export async function setFichaClient(fichaId: string, clientId: string | null) {
+  unwrap(await supabase.rpc('set_ficha_client', {
+    p_ficha: fichaId, p_client: clientId,
+  }));
+}

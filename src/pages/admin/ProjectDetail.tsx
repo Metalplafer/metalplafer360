@@ -817,6 +817,15 @@ export default function ProjectDetail() {
               <span className="figure"><b>{fmtEur(money.data?.cobrado ?? 0)}</b><span>Cobrado</span></span>
               <span className="figure"><b>{fmtEur(money.data?.pendiente ?? p.budget_amount)}</b><span>Pendiente</span></span>
             </div>
+            {Number(money.data?.anticipo ?? 0) > 0 && (
+              <p className="hint" style={{ marginTop: 10, marginBottom: 0 }}>
+                {Number(money.data?.anticipo_cobrado ?? 0) > 0
+                  ? `Incluye el anticipo: ${fmtEur(money.data?.anticipo_cobrado)} cobrados `
+                    + `de los ${fmtEur(money.data?.anticipo)} previstos.`
+                  : `El anticipo de ${fmtEur(money.data?.anticipo)} todavía NO está cobrado. `
+                    + 'Se apunta como cobro desde Facturación.'}
+              </p>
+            )}
             <p className="hint" style={{ marginTop: 10, marginBottom: 0 }}>
               El pendiente se calcula solo: total − cobrado. Los cobros se apuntan en Facturación.
             </p>

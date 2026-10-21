@@ -371,6 +371,28 @@ const FICHA_STATUS_ES = {
   asignado: 'Asignado', en_curso: 'En curso', realizado: 'Realizado', cerrado: 'Cerrado',
 };
 
+/**
+ * Los subestados en castellano, como los escribe «label_es» en el
+ * historial de verdad. Que esta lista sea la misma que la de la
+ * aplicación y la de la base de datos lo vigila
+ * tests/unit/catalogos.test.ts: aquí una copia que se quede atrás haría
+ * que la prueba del navegador dijera que todo va bien.
+ */
+const SUBSTATUS_ES = {
+  pendiente_visita_tecnica: 'Pendiente visita técnica',
+  pendiente_planos: 'Pendiente planos',
+  pendiente_material: 'Pendiente material',
+  por_empezar: 'Por empezar',
+  en_fabricacion: 'En fabricación',
+  falta_material: 'Falta material',
+  lacado_zincado: 'Lacado-Zincado',
+  por_finalizar: 'Por finalizar',
+  pendiente_montaje: 'Pendiente de montaje',
+  en_montaje: 'En montaje',
+  por_finalizar_montaje: 'Por finalizar montaje',
+  pendiente_rematar: 'Pendiente de rematar',
+};
+
 /** Apartados que se pueden restaurar por separado (igual que en la aplicación). */
 const RESTORE_SCOPES = {
   clientes: ['clients', 'client_contacts'],
@@ -1863,6 +1885,65 @@ export async function stubSupabase(context, {
       return json(embed('projects', pr));
     }
 
+    /**
+     * CORREGIR EL CLIENTE de una ficha o de un proyecto.
+     *
+     * Reproduce las funciones de verdad, con lo que no es evidente: que
+     * se quita la persona de contacto si era del cliente anterior, que
+     * el cliente de antes NO se toca, y que no se cambia nada de lo
+     * relacionado.
+     */
+    const cambiarCliente = (registro, clienteId, tipo) => {
+      const esFicha = tipo === 'fichas';
+      if (clienteId === null) {
+        if (esFicha && registro.type !== 'visita') {
+          return fail('Un presupuesto o un aviso necesita siempre un cliente.');
+        }
+        if (!esFicha) return fail('Un proyecto necesita siempre un cliente.');
+      }
+      let nombreAhora = null;
+      if (clienteId !== null) {
+        const destino = db.clients.find((c) => c.id === clienteId);
+        if (!destino) return fail('No se encuentra el cliente', 'P0002');
+        if (destino.archived_at) {
+          return fail('Ese cliente está archivado. Recupéralo antes de usarlo.');
+        }
+        nombreAhora = destino.name;
+      }
+      if ((registro.client_id ?? null) === clienteId) return json(embed(tipo, registro));
+
+      const nombreAntes = db.clients.find((c) => c.id === registro.client_id)?.name ?? null;
+      const contacto = db.client_contacts.find((c) => c.id === registro.contact_id);
+      const quitarContacto = Boolean(registro.contact_id)
+        && (!contacto || contacto.client_id !== clienteId);
+
+      registro.client_id = clienteId;
+      if (quitarContacto) registro.contact_id = null;
+      registro.updated_at = new Date().toISOString();
+
+      registrar(
+        `${actorName()} cambió el cliente de ${registro.code}: `
+        + `${nombreAntes ?? 'sin cliente'} → ${nombreAhora ?? 'sin cliente'}`
+        + (quitarContacto
+          ? '. Se quitó la persona de contacto, que era del cliente anterior.' : ''),
+        registro.code, tipo);
+      return json(embed(tipo, registro));
+    };
+
+    if (path === '/rest/v1/rpc/set_ficha_client') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const f = db.fichas.find((x) => x.id === body()?.p_ficha);
+      if (!f) return fail('No se encuentra la ficha', 'P0002');
+      return cambiarCliente(f, body()?.p_client ?? null, 'fichas');
+    }
+
+    if (path === '/rest/v1/rpc/set_project_client') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const pr = db.projects.find((x) => x.id === body()?.p_project);
+      if (!pr) return fail('No se encuentra el proyecto', 'P0002');
+      return cambiarCliente(pr, body()?.p_client ?? null, 'projects');
+    }
+
     if (path === '/rest/v1/rpc/archive_work') {
       if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
       const obra = db.works.find((x) => x.id === body()?.p_work);
@@ -2159,10 +2240,28 @@ export async function stubSupabase(context, {
       const project = db.projects.find((p) => p.id === body()?.p_project);
       const list = body()?.p_substatuses ?? [];
       if (!project) return fail('No se encuentra el proyecto', 'P0002');
-      db.project_substatuses = db.project_substatuses.filter((s) => s.project_id !== project.id);
+      // Como la función de verdad: solo se quitan los que ya no están (y
+      // los de otra fase), y los que YA estaban no se vuelven a apuntar
+      // en el historial. Antes se borraba todo y se reinsertaba, así que
+      // el historial se llenaba de «añadió» falsos.
+      const antes = db.project_substatuses.filter((s) => s.project_id === project.id);
+      const sobran = antes.filter((s) => s.phase !== project.phase || !list.includes(s.substatus));
+      db.project_substatuses = db.project_substatuses.filter((s) => !sobran.includes(s));
+      const etiqueta = (s) => SUBSTATUS_ES[s] ?? s;
+
+      sobran.forEach((s) => registrar(
+        `${actorName()} quitó el subestado «${etiqueta(s.substatus)}» en ${project.code}`,
+        project.code, 'project_substatuses'));
+
       list.forEach((substatus) => {
-        db.project_substatuses.push({ project_id: project.id, phase: project.phase, substatus });
-        registrar(`Salvi Plaza añadió el subestado «${substatus}» en ${project.code}`, project.code, 'project_substatuses');
+        if (antes.some((s) => s.phase === project.phase && s.substatus === substatus)) return;
+        db.project_substatuses.push({
+          project_id: project.id, phase: project.phase, substatus,
+          is_demo: false, created_at: new Date().toISOString(),
+        });
+        registrar(
+          `${actorName()} añadió el subestado «${etiqueta(substatus)}» en ${project.code}`,
+          project.code, 'project_substatuses');
       });
       return json(null);
     }
@@ -2669,12 +2768,12 @@ export async function stubSupabase(context, {
       if (request.status !== 'pendiente') return fail('Esta comunicación ya está revisada');
       if (!nombre) return fail('Escribe el nombre del material');
 
-      // BLOQUE 5: la petición puede venir sin proyecto; el material
-      // pendiente siempre es de uno, así que se dice al aceptarla.
+      // La petición puede venir sin proyecto, y ahora puede ACEPTARSE
+      // sin proyecto: entonces es material de taller. Si la petición sí
+      // trae proyecto, manda el de la petición.
       const destino = request.project_id ?? body()?.p_project ?? null;
-      if (!destino) {
-        return fail('Esta petición no trae proyecto. Elige a qué proyecto va el material '
-          + 'antes de aceptarla');
+      if (destino && !db.projects.some((p) => p.id === destino)) {
+        return fail('No se encuentra el proyecto', 'P0002');
       }
 
       const material = {
@@ -2744,6 +2843,49 @@ export async function stubSupabase(context, {
         id: `pay-${Math.random().toString(36).slice(2, 8)}`,
         project_id: project.id, amount, paid_on: body()?.p_paid_on ?? today(),
         notes: body()?.p_notes ?? null, is_demo: false, created_at: new Date().toISOString(),
+        voided_at: null, voided_by: null, is_advance: false,
+      };
+      db.payments.push(pay);
+      recomputeBilling(project);
+      registrar(`${actorName()} apuntó un cobro en ${project.code}`, project.code, 'payments');
+      return json(pay);
+    }
+
+    /**
+     * El anticipo apuntado como el cobro que es.
+     *
+     * Reproduce la función de verdad, incluidas las dos cosas que no
+     * puede hacer: registrarlo dos veces y registrarlo a ciegas cuando
+     * nadie ha anotado el importe.
+     */
+    if (path === '/rest/v1/rpc/register_advance_payment') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const project = db.projects.find((p) => p.id === body()?.p_project);
+      if (!project) return fail('No se encuentra el proyecto', 'P0002');
+
+      const pedido = body()?.p_amount;
+      let amount;
+      if (pedido !== null && pedido !== undefined) {
+        amount = Math.round(Number(pedido) * 100) / 100;
+        if (!(amount > 0)) return fail('El importe del anticipo tiene que ser mayor que cero.');
+      } else {
+        amount = Math.round(Number(project.advance_amount ?? 0) * 100) / 100;
+        if (!(amount > 0)) {
+          return fail('Este proyecto no tiene anticipo anotado. Escribe el importe en el '
+                      + 'proyecto, o indícalo al registrar el cobro.');
+        }
+      }
+
+      if (db.payments.some((p) => p.project_id === project.id && p.is_advance && !p.voided_at)) {
+        return fail('El anticipo de este proyecto ya está registrado como cobro.');
+      }
+
+      const pay = {
+        id: `pay-${Math.random().toString(36).slice(2, 8)}`,
+        project_id: project.id, amount, paid_on: body()?.p_paid_on ?? today(),
+        notes: body()?.p_notes ?? 'Anticipo / paga y señal',
+        is_demo: false, created_at: new Date().toISOString(),
+        voided_at: null, voided_by: null, is_advance: true,
       };
       db.payments.push(pay);
       recomputeBilling(project);
@@ -2774,7 +2916,14 @@ export async function stubSupabase(context, {
         return {
           project_id: p.id, total, cobrado,
           pendiente: Math.max(total - cobrado, 0),
-          cobros: db.payments.filter((x) => x.project_id === p.id).length,
+          // Los anulados no cuentan, igual que en la vista de verdad.
+          cobros: db.payments.filter((x) => x.project_id === p.id && !x.voided_at).length,
+          // Lo cobrado como anticipo sale de los MISMOS cobros, con un
+          // filtro más: es una parte de «cobrado», nunca un añadido.
+          anticipo: Number(p.advance_amount ?? 0),
+          anticipo_cobrado: db.payments
+            .filter((x) => x.project_id === p.id && !x.voided_at && x.is_advance)
+            .reduce((t, x) => t + Number(x.amount), 0),
         };
       });
       return json(applyFilters(rows, url));

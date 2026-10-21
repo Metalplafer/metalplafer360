@@ -39,6 +39,30 @@ export async function registerPayment(
 }
 
 /**
+ * Apunta el anticipo (o la paga y señal) como el cobro que es.
+ *
+ * El importe por defecto es el anticipo previsto del proyecto; se puede
+ * indicar otro cuando se cobró una señal distinta de la acordada.
+ *
+ * No hay forma de contarlo dos veces: la base de datos solo admite un
+ * anticipo sin anular por proyecto, y el importe vive en «payments» como
+ * el de cualquier otro cobro.
+ */
+export async function registerAdvancePayment(
+  projectId: string, amount?: number | null, paidOn?: string | null, notes?: string | null,
+) {
+  if (amount != null && (!Number.isFinite(amount) || amount <= 0)) {
+    throw new Aviso('El importe del anticipo tiene que ser mayor que cero.');
+  }
+  return unwrap(await supabase.rpc('register_advance_payment', {
+    p_project: projectId,
+    p_amount: amount ?? null,
+    p_paid_on: paidOn ?? null,
+    p_notes: notes?.trim() || null,
+  })) as unknown as Payment;
+}
+
+/**
  * Anula un cobro apuntado por error. NO se borra: se queda a la vista,
  * tachado, porque los importes cuadran con el programa de facturación.
  */
@@ -53,6 +77,9 @@ export interface BillingRow {
   cobrado: number;
   pendiente: number;
   cobros: number;
+  /** Anticipo previsto, y cuánto de él se ha cobrado ya. */
+  anticipo: number;
+  anticipoCobrado: number;
 }
 
 /**
@@ -92,6 +119,8 @@ export async function listBilling(
       cobrado: Number(a?.cobrado ?? 0),
       pendiente: Number(a?.pendiente ?? project.budget_amount ?? 0),
       cobros: Number(a?.cobros ?? 0),
+      anticipo: Number(a?.anticipo ?? 0),
+      anticipoCobrado: Number(a?.anticipo_cobrado ?? 0),
     };
   }) as BillingRow[];
 }

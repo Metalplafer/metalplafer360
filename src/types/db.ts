@@ -446,7 +446,12 @@ export type RequestStatus = 'pendiente' | 'aceptada' | 'descartada';
 
 export interface Material {
   id: string;
-  project_id: string;
+  /**
+   * El proyecto al que va el material. VACÍO = material de TALLER:
+   * consumibles que no son de ningún trabajo (discos, electrodos,
+   * guantes). Es un dato de verdad, no un hueco por rellenar.
+   */
+  project_id: string | null;
   order_id: string | null;
   name: string;
   units: number | null;
@@ -544,6 +549,12 @@ export interface Payment {
   /** Un cobro apuntado por error se anula: se queda a la vista, tachado. */
   voided_at: string | null;
   voided_by: string | null;
+  /**
+   * Este cobro es el anticipo o la paga y señal del proyecto. Es una
+   * MARCA, no un importe: el dinero está en «amount» y se cuenta una
+   * sola vez. Solo puede haber uno sin anular por proyecto.
+   */
+  is_advance: boolean;
 }
 
 export interface ProjectBilling {
@@ -552,6 +563,14 @@ export interface ProjectBilling {
   cobrado: number;
   pendiente: number;
   cobros: number;
+  /** El anticipo PREVISTO del proyecto. Previsto no es cobrado. */
+  anticipo: number;
+  /**
+   * Cuánto de ese anticipo se ha cobrado de verdad. Sale de la misma
+   * suma que «cobrado», con un filtro más: es una PARTE de él, nunca
+   * algo que se le sume aparte.
+   */
+  anticipo_cobrado: number;
 }
 
 export interface ProjectMaterials {

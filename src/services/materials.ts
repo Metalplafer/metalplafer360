@@ -71,7 +71,11 @@ export async function listMaterials(f: MaterialFilters = {}, today?: string) {
 
 export async function createMaterial(input: MaterialInput) {
   if (!input.name?.trim()) throw new Aviso('Escribe qué material falta.');
-  if (!input.project_id) throw new Aviso('Elige el proyecto al que pertenece.');
+  // El proyecto puede ir VACÍO —material de taller—, pero tiene que
+  // venir decidido: «null» es una respuesta, no haberlo puesto no.
+  if (input.project_id === undefined) {
+    throw new Aviso('Di a qué proyecto va el material, o márcalo como material de taller.');
+  }
   return unwrap(
     await supabase.from('materials').insert(clean(input)).select(SELECT).single(),
   ) as unknown as Material;

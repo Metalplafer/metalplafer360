@@ -7,7 +7,8 @@ import { Modal } from '@/components/ui/Modal';
 import { Badge, Field, PageHeader, Stat } from '@/components/ui/Layout';
 import { Empty, ErrorBox, Loading } from '@/components/ui/Feedback';
 import {
-  listBilling, listPayments, registerPayment, voidPayment, type BillingRow,
+  listBilling, listPayments, registerAdvancePayment, registerPayment, voidPayment,
+  type BillingRow,
 } from '@/services/billing';
 import { setBillingStatus } from '@/services/projects';
 import { BILLING_LABEL, BILLING_STATUSES, BILLING_TONE } from '@/config/constants';
@@ -171,10 +172,19 @@ function PaymentsModal({ row, today, onClose, onStatus, confirm, toast }: {
   const [error, setError] = useState<string | null>(null);
 
   // Los cobros anulados siguen viéndose, pero no suman.
-  const cobrado = (payments.data ?? [])
-    .filter((p) => !p.voided_at)
-    .reduce((sum, p) => sum + Number(p.amount), 0);
+  const vivos = (payments.data ?? []).filter((p) => !p.voided_at);
+  const cobrado = vivos.reduce((sum, p) => sum + Number(p.amount), 0);
   const pendiente = Math.max(row.total - cobrado, 0);
+
+  // Lo cobrado como anticipo sale de los MISMOS cobros, filtrando: es una
+  // parte de «cobrado», nunca algo que se le sume aparte.
+  const anticipoCobrado = vivos
+    .filter((p) => p.is_advance)
+    .reduce((sum, p) => sum + Number(p.amount), 0);
+  const faltaElAnticipo = row.anticipo > 0 && anticipoCobrado === 0;
+  const estadoAnticipo = anticipoCobrado === 0 ? 'sin cobrar'
+    : anticipoCobrado >= row.anticipo ? 'cobrado'
+      : `cobrado ${fmtEur(anticipoCobrado)}`;
 
   async function add() {
     setError(null);
@@ -187,6 +197,28 @@ function PaymentsModal({ row, today, onClose, onStatus, confirm, toast }: {
     try {
       await registerPayment(row.project.id, value, paidOn || null, notes);
       toast.success(`Cobro de ${fmtEur(value)} apuntado`);
+      setAmount(''); setNotes('');
+      setReloadKey((n) => n + 1);
+    } catch (e) { setError(toUserMessage(e)); }
+    finally { setBusy(false); }
+  }
+
+  /**
+   * Apunta el anticipo como cobro. Si hay un importe escrito se usa ese
+   * —a veces la señal que se cobra no es la que se había acordado—; si
+   * no, el previsto del proyecto.
+   */
+  async function addAdvance() {
+    setError(null);
+    const escrito = amount.trim() ? parseDecimal(amount) : null;
+    if (amount.trim() && (escrito === null || escrito <= 0)) {
+      setError('Escribe el importe cobrado. Por ejemplo: 2.000 o 1.500,50');
+      return;
+    }
+    setBusy(true);
+    try {
+      const pay = await registerAdvancePayment(row.project.id, escrito, paidOn || null, notes);
+      toast.success(`Anticipo de ${fmtEur(Number(pay.amount))} apuntado`);
       setAmount(''); setNotes('');
       setReloadKey((n) => n + 1);
     } catch (e) { setError(toUserMessage(e)); }
@@ -223,6 +255,11 @@ function PaymentsModal({ row, today, onClose, onStatus, confirm, toast }: {
           <span className="figure"><b>{fmtEur(row.total)}</b><span>Total</span></span>
           <span className="figure"><b>{fmtEur(cobrado)}</b><span>Cobrado</span></span>
           <span className="figure"><b>{fmtEur(pendiente)}</b><span>Pendiente</span></span>
+          {row.anticipo > 0 && (
+            <span className="figure">
+              <b>{fmtEur(row.anticipo)}</b><span>Anticipo · {estadoAnticipo}</span>
+            </span>
+          )}
         </div>
 
         <div className="status-flow" role="group" aria-label="Estado de facturación">
@@ -253,11 +290,21 @@ function PaymentsModal({ row, today, onClose, onStatus, confirm, toast }: {
         {error && <div className="alert alert-danger" role="alert">{error}</div>}
 
         <div>
-          <button className="btn btn-primary" onClick={add} disabled={busy}>
-            <Plus />{busy ? 'Apuntando…' : 'Apuntar cobro'}
-          </button>
+          <div className="row">
+            <button className="btn btn-primary" onClick={add} disabled={busy}>
+              <Plus />{busy ? 'Apuntando…' : 'Apuntar cobro'}
+            </button>
+            {faltaElAnticipo && (
+              <button className="btn" id="pay-advance" onClick={addAdvance} disabled={busy}>
+                Apuntar el anticipo de {fmtEur(row.anticipo)}
+              </button>
+            )}
+          </div>
           <p className="hint" style={{ marginTop: 8, marginBottom: 0 }}>
-            No se guarda el número de factura: esto es solo el seguimiento interno.
+            {faltaElAnticipo
+              ? `El anticipo previsto de este proyecto es de ${fmtEur(row.anticipo)}. `
+                + 'Mientras no se apunte como cobro no cuenta en el total: previsto no es cobrado.'
+              : 'No se guarda el número de factura: esto es solo el seguimiento interno.'}
           </p>
         </div>
 
@@ -275,6 +322,7 @@ function PaymentsModal({ row, today, onClose, onStatus, confirm, toast }: {
                       {p.voided_at ? ` · anulado el ${fmtDate(p.voided_at)}` : ''}
                     </small>
                   </span>
+                  {p.is_advance && <Badge tone="blue" plain>Anticipo</Badge>}
                   {!p.voided_at && (
                     <button className="btn btn-ghost icon-btn" onClick={() => annul(p.id, Number(p.amount))}
                             aria-label={`Anular el cobro de ${fmtEur(p.amount)}`}>

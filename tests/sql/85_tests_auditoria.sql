@@ -514,8 +514,12 @@ select test.ok('rev_borrado', 'No queda NI UNA referencia huérfana en toda la b
           where c.report_id is not null
             and not exists (select 1 from public.work_reports r where r.id = c.report_id)
         union all
+        -- Vacío es válido desde el bloque de mejoras: es el material de
+        -- taller. La guarda es la misma que llevan las demás columnas
+        -- que admiten vacío, dos líneas más arriba y más abajo.
         select 'materials.project_id' from public.materials m
-          where not exists (select 1 from public.projects p where p.id = m.project_id)
+          where m.project_id is not null
+            and not exists (select 1 from public.projects p where p.id = m.project_id)
         union all
         select 'material_requests.project_id' from public.material_requests q
           where q.project_id is not null

@@ -7,7 +7,7 @@ import { Field, PageHeader, Panel } from '@/components/ui/Layout';
 import { Alert, ErrorBox, Loading } from '@/components/ui/Feedback';
 import { ClientPicker, emptyClient, type ClientDraft } from '@/components/shared/ClientPicker';
 import { createClient, getClient } from '@/services/clients';
-import { createFicha, getFicha, updateFicha } from '@/services/fichas';
+import { createFicha, getFicha, setFichaClient, updateFicha } from '@/services/fichas';
 import { listPeople } from '@/services/people';
 import { FICHA_CODE_PREFIX, FICHA_NEW_TITLE, FICHA_TYPE_LABEL } from '@/config/constants';
 import { parseDecimal, parseHours } from '@/lib/format';
@@ -30,6 +30,13 @@ export default function FichaForm() {
 
   const [type, setType] = useState<FichaType>(isType(params.get('tipo')) ? params.get('tipo') as FichaType : 'presupuesto');
   const [client, setClient] = useState<ClientDraft>(emptyClient);
+  /**
+   * El cliente con el que se abrió la ficha. Hace falta para dos cosas:
+   * para saber si de verdad se ha cambiado —y no escribir en el
+   * historial un cambio que no ha pasado— y para poder volver a dejarlo
+   * como estaba si quien lo abrió se arrepiente.
+   */
+  const [clienteOriginal, setClienteOriginal] = useState<ClientDraft | null>(null);
   const [form, setForm] = useState({
     title: '', description: '', address: '', phone: '', email: '',
     scheduled_date: '', scheduled_time: '', assigned_to: '', amount: '', hours: '',
@@ -61,12 +68,26 @@ export default function FichaForm() {
       hours: f.hours != null ? String(f.hours).replace('.', ',') : '',
     });
     if (f.client) {
-      setClient({
+      const actual: ClientDraft = {
         id: f.client.id, kind: f.client.kind, name: f.client.name, tax_id: '',
         phone: f.client.phone ?? '', email: '', address: '', city: '', postal_code: '',
-      });
+      };
+      setClient(actual);
+      setClienteOriginal(actual);
+    } else {
+      setClienteOriginal({ ...emptyClient });
     }
   }, [ficha.data]);
+
+  /**
+   * ¿Se ha cambiado el cliente?
+   *
+   * Solo cuenta haber ELEGIDO otro de la lista. Dejar el buscador vacío
+   * no es «quitar el cliente»: eso borraría un dato que nadie ha pedido
+   * borrar, así que no se toca.
+   */
+  const clienteCambiado = editing
+    && Boolean(client.id) && client.id !== (clienteOriginal?.id ?? null);
 
   const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
 
@@ -99,6 +120,14 @@ export default function FichaForm() {
       setError('Un presupuesto o un aviso necesitan siempre un cliente.');
       return;
     }
+    // Al EDITAR solo se elige entre los que ya existen. Si se ha escrito
+    // un nombre sin elegir de la lista, se para aquí: guardar sin más
+    // dejaría el cliente de antes y haría creer que se ha cambiado.
+    if (editing && !client.id && client.name.trim()) {
+      setError('Elige el cliente de la lista que sale al escribir. Si todavía no existe, '
+               + 'dalo de alta en Clientes y vuelve aquí.');
+      return;
+    }
     if (!form.description.trim() && !form.title.trim()) {
       setError('Describe brevemente de qué se trata.');
       return;
@@ -116,9 +145,10 @@ export default function FichaForm() {
 
     setBusy(true);
     try {
-      // Si el cliente es nuevo, se da de alta primero.
+      // Si el cliente es nuevo, se da de alta primero. Solo al CREAR:
+      // corrigiendo una ficha nunca se crea un cliente.
       let clientId = client.id;
-      if (!clientId && client.name.trim()) {
+      if (!editing && !clientId && client.name.trim()) {
         const created = await createClient({
           kind: client.kind, name: client.name, tax_id: client.tax_id, phone: client.phone,
           email: client.email, address: client.address, city: client.city,
@@ -129,7 +159,6 @@ export default function FichaForm() {
 
       const payload = {
         type,
-        client_id: clientId,
         title: form.title,
         description: form.description,
         address: form.address,
@@ -142,8 +171,20 @@ export default function FichaForm() {
         hours,
       };
 
-      const saved = editing && id ? await updateFicha(id, payload) : await createFicha(payload);
-      toast.success(editing ? 'Ficha actualizada' : `Ficha ${saved.code} creada`);
+      // El cliente va por su propia función: así el historial lo cuenta
+      // con los dos nombres y la persona de contacto del cliente
+      // anterior no se queda puesta.
+      //
+      // Son DOS pasos, no uno: en cuanto responde, el cliente ya está
+      // cambiado, aunque el guardado de abajo fallara.
+      if (editing && id && clienteCambiado) await setFichaClient(id, client.id);
+
+      const saved = editing && id
+        ? await updateFicha(id, payload)
+        : await createFicha({ ...payload, client_id: clientId });
+      toast.success(editing
+        ? (clienteCambiado ? `Ficha actualizada · cliente: ${client.name}` : 'Ficha actualizada')
+        : `Ficha ${saved.code} creada`);
       navigate(`/admin/fichas/${saved.id}`);
     } catch (err) {
       setError(toUserMessage(err));
@@ -190,12 +231,24 @@ export default function FichaForm() {
         )}
 
         <Panel title={type === 'visita' ? 'Cliente (opcional)' : 'Cliente'}>
-          {editing ? (
-            <p className="muted" style={{ margin: 0 }}>
-              {client.name || 'Sin cliente'} · el cliente de una ficha no se cambia una vez creada.
+          <ClientPicker value={client} onChange={setClient}
+                        required={type !== 'visita'} existingOnly={editing} />
+
+          {editing && !client.id && clienteOriginal?.id && (
+            <div className="row" style={{ marginTop: 10 }}>
+              <button type="button" className="btn btn-sm" id="f-client-keep"
+                      onClick={() => setClient(clienteOriginal)}>
+                Dejar «{clienteOriginal.name}»
+              </button>
+            </div>
+          )}
+
+          {editing && (
+            <p className="hint" style={{ marginTop: 10, marginBottom: 0 }}>
+              Cambiar el cliente aquí NO cambia el de nada más: si este presupuesto ya se
+              convirtió en proyecto, el proyecto se queda con el suyo y hay que cambiarlo
+              allí también.
             </p>
-          ) : (
-            <ClientPicker value={client} onChange={setClient} required={type !== 'visita'} />
           )}
         </Panel>
 
