@@ -442,6 +442,38 @@
 .cal-event-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cal-event .cal-dot { display: none; }
 
+/* ---------------------------------------------------------------------
+   LA SEMANA CON BARRAS CONTINUAS
+
+   Dos capas: las casillas de los días abajo —que son las que reciben lo
+   que se suelta encima— y las pastillas arriba, colocadas en carriles.
+   Un tramo de varios días es UNA barra que ocupa varias columnas.
+
+   Mientras se arrastra algo, las pastillas dejan de recibir el ratón:
+   si no, soltar encima de una barra no contaría como soltar en el día
+   que hay debajo.
+   --------------------------------------------------------------------- */
+.cal-semana { position: relative; grid-column: 1 / -1; display: grid; }
+.cal-dias { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 1px; background: var(--line); }
+.cal-pastillas {
+  position: absolute; left: 0; right: 0; bottom: 4px;
+  display: grid; grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-auto-rows: 20px; gap: 2px; padding: 0 3px; align-content: start;
+  pointer-events: none;
+}
+.cal-pastillas .cal-event { pointer-events: auto; min-width: 0; }
+.cal-semana.arrastrando .cal-pastillas .cal-event { pointer-events: none; }
+.cal-semana.arrastrando .cal-pastillas .cal-event.dragging { pointer-events: auto; }
+/* Un tramo que viene de la semana anterior o sigue en la siguiente: se
+   corta el borde por ese lado para que se vea que no se acaba ahí. */
+.cal-event.sigue-antes { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left-style: dashed; }
+.cal-event.sigue-despues { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right-style: dashed; }
+.cal-mas {
+  margin-top: auto; align-self: flex-start; background: none; border: 0; padding: 1px 3px;
+  font-size: .72rem; font-weight: 600; color: var(--muted); cursor: pointer; border-radius: 4px;
+}
+.cal-mas:hover { background: var(--panel-2); color: var(--ink); }
+
 .cal-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; }
 .cal-week .cal-day { min-height: 220px; }
 .cal-day-single .cal-day { min-height: 240px; border: 1px solid var(--line); border-radius: var(--r-md); }
@@ -463,6 +495,10 @@
   .cal-week { grid-template-columns: 1fr; }
   .cal-week .cal-day { min-height: 0; }
   .cal-event-text { white-space: normal; }
+  /* En pantalla pequeña las barras se hacen finas, pero siguen siendo
+     continuas: el mes se lee igual. */
+  .cal-pastillas { grid-auto-rows: 16px; gap: 1px; }
+  .cal-event { padding: 1px 4px; font-size: .68rem; }
 }
 
 /* =====================================================================

@@ -304,6 +304,56 @@ export const CALENDAR_COLOR: Record<CalendarKind, string> = {
   obra: 'var(--ev-obra)',
 };
 
+/**
+ * LAS DOS CATEGORÍAS DE PROYECTO.
+ *
+ * Fabricación y montaje van juntas: son las dos fases del mismo trabajo
+ * y verlas a la vez es lo que dice cómo está de cargada una semana. Por
+ * eso son las únicas que pueden estar activas al mismo tiempo, y por eso
+ * son las que salen al abrir el calendario.
+ */
+export const CALENDAR_PROYECTOS: CalendarKind[] = ['fabricacion', 'montaje'];
+
+/** Lo que se ve al abrir el calendario, sin tocar nada. */
+export const CALENDAR_DEFECTO: CalendarKind[] = [...CALENDAR_PROYECTOS];
+
+const esProyecto = (k: CalendarKind) => CALENDAR_PROYECTOS.includes(k);
+
+/**
+ * QUÉ QUEDA ACTIVO AL PULSAR UNA CATEGORÍA.
+ *
+ * La regla, en una frase: fabricación y montaje son un modo combinado;
+ * las demás son vistas sueltas que se excluyen con todo lo demás.
+ *
+ *   · estando en proyectos, pulsar fabricación o montaje añade o quita
+ *     ESA, y la otra se queda como esté;
+ *   · estando en una vista suelta, pulsar fabricación o montaje vuelve a
+ *     proyectos con la que se ha pulsado;
+ *   · pulsar una vista suelta deja ESA sola, apagando todo lo demás;
+ *   · pulsar la vista suelta que ya está activa vuelve a lo de siempre
+ *     (fabricación y montaje), para no dejar el calendario en blanco;
+ *   · y una pulsación que dejaría el calendario sin NADA no hace nada:
+ *     un calendario vacío no informa de nada y además no se entiende.
+ */
+export function siguienteSeleccion(
+  actual: CalendarKind[], pulsada: CalendarKind,
+): CalendarKind[] {
+  const ordenar = (ks: CalendarKind[]) =>
+    CALENDAR_KINDS.filter((k) => ks.includes(k));
+
+  if (esProyecto(pulsada)) {
+    const soloProyectos = actual.every(esProyecto);
+    if (!soloProyectos || actual.length === 0) return [pulsada];
+    const siguiente = actual.includes(pulsada)
+      ? actual.filter((k) => k !== pulsada)
+      : [...actual, pulsada];
+    return siguiente.length ? ordenar(siguiente) : actual;
+  }
+
+  const soloEsa = actual.length === 1 && actual[0] === pulsada;
+  return soloEsa ? [...CALENDAR_DEFECTO] : [pulsada];
+}
+
 export type CalendarView = 'mes' | 'semana' | 'dia' | 'agenda';
 
 export const CALENDAR_VIEWS: { key: CalendarView; label: string }[] = [

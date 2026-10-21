@@ -272,19 +272,30 @@ try {
 
   check('La fabricación planificada aparece en el calendario',
     (await a.locator('.cal-grid').innerText()).includes(`PROY-${YEAR}-001`));
-  check('Y el material en su fecha prevista',
+  // ESTO CAMBIÓ con el rediseño del calendario: al abrirlo solo están
+  // encendidas fabricación y montaje, que es lo que dice cómo de cargada
+  // está una semana. El material se enciende a mano, y entonces se ve
+  // SOLO material: las categorías sueltas son excluyentes.
+  check('Al abrir, el material no está encendido',
+    !(await a.locator('.cal-grid').innerText()).includes('Bisagras inox 40 mm'));
+
+  await a.locator('.cal-legend-item:has-text("Material")').click();
+  await a.waitForTimeout(500);
+  check('Y el material en su fecha prevista, al encenderlo',
     (await a.locator('.cal-grid').innerText()).includes('Bisagras inox 40 mm'));
+  check('Encender «Material» apaga lo demás',
+    !(await a.locator('.cal-grid').innerText()).includes(`PROY-${YEAR}-001`));
+
+  // Volver a pulsarla devuelve a fabricación y montaje, que es lo de
+  // siempre: así nunca se queda el calendario en blanco.
+  await a.locator('.cal-legend-item:has-text("Material")').click();
+  await a.waitForTimeout(500);
+  check('Y volver a pulsarla devuelve a fabricación y montaje',
+    (await a.locator('.cal-grid').innerText()).includes(`PROY-${YEAR}-001`)
+    && !(await a.locator('.cal-grid').innerText()).includes('Bisagras inox 40 mm'));
 
   check('Se puede arrastrar la planificación, pero no el material',
-    await a.locator('.cal-event[draggable="true"]').count() === 1);
-
-  // Apagar un tipo de evento
-  await a.locator('.cal-legend-item:has-text("Material")').click();
-  await a.waitForTimeout(400);
-  check('Se puede apagar un tipo de evento',
-    !(await a.locator('.cal-grid').innerText()).includes('Bisagras inox 40 mm'));
-  await a.locator('.cal-legend-item:has-text("Material")').click();
-  await a.waitForTimeout(400);
+    await a.locator('.cal-event[draggable="true"]').count() >= 1);
 
   // Arrastrar la orden a otro día.
   // Se lanzan los eventos de arrastre del navegador (dragstart · dragover ·

@@ -1,44 +1,42 @@
 import { supabase, unwrap } from '@/lib/supabase';
 import { Aviso } from '@/lib/errors';
-import type { CalendarEvent, CalendarKind } from '@/types/db';
+import type { CalendarEvent, CalendarKind, CalendarSpan } from '@/types/db';
 
 /**
- * Todo lo que tiene fecha, en una sola consulta.
- * La vista de la base de datos ya aplica los permisos: un trabajador
- * solo recibe lo suyo, sin que la pantalla tenga que filtrar nada.
+ * EL CALENDARIO, POR TRAMOS: una fila por periodo, con su principio y su
+ * final, en lugar de una fila por día.
+ *
+ * La vista «v_calendar» —una fila por día— sigue existiendo en la base
+ * de datos y con sus pruebas, pero la aplicación ya no la lee: desde que
+ * el calendario pinta barras continuas, leerla era pedir seis filas para
+ * dibujar una sola cosa.
+ *
+ * El filtro de fechas es de SOLAPAMIENTO, no de igualdad: un tramo que
+ * empezó el mes pasado y sigue dentro de lo que se está mirando tiene
+ * que salir. Pidiendo por el día —como hace «listCalendar»— eso se
+ * resolvía solo, porque cada día era una fila; aquí hay que decirlo.
  */
-export async function listCalendar(from: string, to: string, opts: {
+export async function listCalendarSpans(from: string, to: string, opts: {
   kinds?: CalendarKind[];
   workerId?: string;
 } = {}) {
-  let q = supabase.from('v_calendar').select('*')
-    .gte('date', from).lte('date', to)
-    .order('date');
+  let q = supabase.from('v_calendar_spans').select('*')
+    .lte('starts', to).gte('ends', from)
+    .order('starts');
 
   if (opts.kinds?.length) q = q.in('kind', opts.kinds);
   if (opts.workerId) q = q.contains('assigned', [opts.workerId]);
 
-  return unwrap(await q) as CalendarEvent[];
+  return unwrap(await q) as CalendarSpan[];
 }
 
 /**
- * LA IDENTIDAD DE UN EVENTO DEL CALENDARIO.
- *
- * «v_calendar» pone en «id» el identificador de LO QUE HAY DETRÁS, y eso
- * no identifica un evento:
- *
- *   · la fabricación y el montaje de un proyecto llevan los dos el id del
- *     PROYECTO, así que son indistinguibles por «id»;
- *   · un tramo de varios días se despliega en una fila POR DÍA, todas con
- *     el mismo «id» y el mismo «kind».
- *
- * Hacen falta las tres cosas —qué es, de quién es y de qué día— para
- * señalar un evento concreto. De no hacerlo salían los dos fallos que se
- * veían al arrastrar: mover la fabricación movía el montaje, y los días
- * que no eran el primero del tramo no se movían.
+ * La identidad de un TRAMO. Como la de un evento, pero con el día de
+ * inicio: un proyecto tiene fabricación y montaje, y los dos llevan el
+ * identificador del proyecto.
  */
-export function eventUid(e: Pick<CalendarEvent, 'kind' | 'id' | 'date'>) {
-  return `${e.kind}|${e.id}|${e.date}`;
+export function spanUid(s: Pick<CalendarSpan, 'kind' | 'id' | 'starts'>) {
+  return `${s.kind}|${s.id}|${s.starts}`;
 }
 
 /**
@@ -79,7 +77,9 @@ export async function moveOrder(orderId: string, date: string) {
  * proyecto la marca como «puesta a mano»: desde ese momento ningún
  * cálculo automático se la vuelve a tocar. Es a propósito.
  */
-export async function moveCalendarItem(e: CalendarEvent, date: string) {
+export async function moveCalendarItem(
+  e: Pick<CalendarEvent, 'kind' | 'id' | 'project_id' | 'title' | 'detail'>, date: string,
+) {
   if (e.kind === 'fabricacion' || e.kind === 'montaje') {
     if (!e.project_id) throw new Aviso('Este evento no está ligado a un proyecto.');
 

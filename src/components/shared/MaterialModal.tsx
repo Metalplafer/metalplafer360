@@ -6,9 +6,18 @@ import { Alert } from '@/components/ui/Feedback';
 import { SupplierPicker } from '@/components/shared/SupplierPicker';
 import { parseDecimal } from '@/lib/format';
 import { toUserMessage } from '@/lib/errors';
-import type { Material } from '@/types/db';
+import type { Material, MaterialOrigin } from '@/types/db';
 
 export interface MaterialDraft {
+  /**
+   * De dónde sale el material:
+   *
+   *   · «pedido»  · hay que comprarlo. Es lo de siempre y lo que sale
+   *     puesto, para que anotar un pedido se haga igual que ayer;
+   *   · «almacen» · ya lo tenemos en el taller y solo se anota en qué
+   *     proyecto se va a usar. No se le pide a nadie.
+   */
+  origin: MaterialOrigin;
   name: string;
   units: string;
   /** El proveedor EN TEXTO. Es lo que se guarda siempre. */
@@ -39,12 +48,14 @@ export interface MaterialValues extends Omit<MaterialDraft, 'units'> {
 export const SIN_PROYECTO = 'taller';
 
 export const emptyMaterial: MaterialDraft = {
+  origin: 'pedido',
   name: '', units: '', supplier: '', supplier_id: null,
   ordered_on: '', expected_on: '', notes: '',
 };
 
 export function draftFrom(m: Material): MaterialDraft {
   return {
+    origin: m.origin ?? 'pedido',
     name: m.name,
     units: m.units != null ? String(m.units).replace('.', ',') : '',
     supplier: m.supplier ?? '',
@@ -59,9 +70,20 @@ export function draftFrom(m: Material): MaterialDraft {
  * Alta y edición de material.
  * A propósito no hay precio, ni número de pedido, ni solicitante.
  */
-export function MaterialModal({ title, initial, projects, projectId, onProject, onClose, onSave, intro }: {
+export function MaterialModal({
+  title, initial, projects, projectId, onProject, onClose, onSave, intro, allowOrigin = true,
+}: {
   title: string;
   initial?: MaterialDraft;
+  /**
+   * Si se puede elegir de dónde sale el material.
+   *
+   * Al revisar un aviso del taller NO se ofrece: el aviso dice que FALTA
+   * algo, así que es material que hay que pedir, y la función que lo
+   * acepta no recibe ningún origen. Ofrecerlo ahí haría creer que se
+   * guarda una elección que no se guarda.
+   */
+  allowOrigin?: boolean;
   projects?: { id: string; code: string; name: string }[];
   projectId?: string;
   onProject?: (id: string) => void;
@@ -135,6 +157,33 @@ export function MaterialModal({ title, initial, projects, projectId, onProject, 
             </Field>
           )}
 
+          {allowOrigin && (
+          <Field label="¿De dónde sale?" htmlFor="mat-origin" span>
+            <div className="segmented" role="group" aria-label="De dónde sale el material">
+              <button type="button" id="mat-origin" aria-pressed={form.origin === 'pedido'}
+                      onClick={() => set({ origin: 'pedido' })}>
+                Hay que pedirlo
+              </button>
+              <button type="button" id="mat-origin-almacen" aria-pressed={form.origin === 'almacen'}
+                      onClick={() => set({
+                        origin: 'almacen',
+                        // Lo que ya tenemos no se le ha pedido a nadie:
+                        // ni proveedor, ni fechas de pedido. Se limpian
+                        // al cambiar para que no se guarde a medias.
+                        supplier: '', supplier_id: null, ordered_on: '', expected_on: '',
+                      })}>
+                Ya lo tenemos en el almacén
+              </button>
+            </div>
+            <span className="hint">
+              {form.origin === 'almacen'
+                ? 'Se anota en el proyecto para dejar constancia de que se usa ahí. '
+                  + 'No genera ningún pedido ni ninguna petición al proveedor.'
+                : 'Entra en la lista de material pendiente y avisa si se pasa la fecha prevista.'}
+            </span>
+          </Field>
+          )}
+
           <Field label="Material" htmlFor="mat-name" span>
             <input id="mat-name" className="input" value={form.name}
                    placeholder="Pletina 40×8 mm"
@@ -146,22 +195,31 @@ export function MaterialModal({ title, initial, projects, projectId, onProject, 
                    placeholder="12" onChange={(e) => set({ units: e.target.value })} />
           </Field>
 
-          <Field label="Proveedor" htmlFor="mat-supplier">
-            <SupplierPicker id="mat-supplier" materialName={form.name}
-                            value={form.supplier} supplierId={form.supplier_id}
-                            onChange={(v) => set(v)} />
-          </Field>
+          {/*
+            Proveedor y fechas solo tienen sentido en lo que hay que
+            pedir. En el material del almacén no se enseñan, y la base de
+            datos tampoco los admite: no se le ha comprado a nadie.
+          */}
+          {form.origin === 'pedido' && (
+            <>
+              <Field label="Proveedor" htmlFor="mat-supplier">
+                <SupplierPicker id="mat-supplier" materialName={form.name}
+                                value={form.supplier} supplierId={form.supplier_id}
+                                onChange={(v) => set(v)} />
+              </Field>
 
-          <Field label="Fecha de pedido" htmlFor="mat-ordered">
-            <input id="mat-ordered" className="input" type="date" value={form.ordered_on}
-                   onChange={(e) => set({ ordered_on: e.target.value })} />
-          </Field>
+              <Field label="Fecha de pedido" htmlFor="mat-ordered">
+                <input id="mat-ordered" className="input" type="date" value={form.ordered_on}
+                       onChange={(e) => set({ ordered_on: e.target.value })} />
+              </Field>
 
-          <Field label="Fecha prevista de llegada" htmlFor="mat-expected"
-                 hint="Si se pasa esta fecha, la aplicación avisa.">
-            <input id="mat-expected" className="input" type="date" value={form.expected_on}
-                   onChange={(e) => set({ expected_on: e.target.value })} />
-          </Field>
+              <Field label="Fecha prevista de llegada" htmlFor="mat-expected"
+                     hint="Si se pasa esta fecha, la aplicación avisa.">
+                <input id="mat-expected" className="input" type="date" value={form.expected_on}
+                       onChange={(e) => set({ expected_on: e.target.value })} />
+              </Field>
+            </>
+          )}
 
           <Field label="Comentarios" htmlFor="mat-notes" span>
             <textarea id="mat-notes" className="textarea" rows={2} value={form.notes}

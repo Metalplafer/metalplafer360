@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { KeyRound, Pencil, Plus, ShieldCheck, Trash2, UserCheck, UserX } from 'lucide-react';
 import { useAsync } from '@/hooks/useAsync';
 import { useAuth } from '@/auth/AuthProvider';
@@ -7,10 +7,11 @@ import { Modal } from '@/components/ui/Modal';
 import { Badge, Field, PageHeader } from '@/components/ui/Layout';
 import { Alert, Empty, ErrorBox, Loading } from '@/components/ui/Feedback';
 import {
-  createWorker, listAllPeople, renamePerson, resetPassword, setActive, setRole,
+  createWorker, listAllPeople, listLastSignIns, renamePerson, resetPassword, setActive,
+  setRole,
 } from '@/services/settings';
 import { deleteWorker } from '@/services/people';
-import { fmtDate, fmtPhone } from '@/lib/format';
+import { fmtDate, fmtDateTime, fmtPhone } from '@/lib/format';
 import { toUserMessage } from '@/lib/errors';
 import type { Profile } from '@/types/db';
 
@@ -26,7 +27,21 @@ export default function WorkersPage() {
   const { toast, confirm } = useDialogs();
 
   const [reloadKey, setReloadKey] = useState(0);
+  /**
+   * La lista y las últimas conexiones, en DOS consultas para toda la
+   * pantalla: una por la gente y otra por las conexiones. No una por
+   * persona.
+   *
+   * Si lo de las conexiones fallara, la pantalla sigue funcionando: la
+   * columna dirá que no se ha podido leer, y el resto —alta, cambio de
+   * contraseña, permisos— no se entera.
+   */
   const people = useAsync(() => listAllPeople(), [reloadKey]);
+  const conexiones = useAsync(() => listLastSignIns(), [reloadKey]);
+  const ultimaConexion = useMemo(
+    () => new Map((conexiones.data ?? []).map((c) => [c.user_id, c.last_sign_in_at])),
+    [conexiones.data],
+  );
   const reload = () => setReloadKey((n) => n + 1);
 
   const [creating, setCreating] = useState(false);
@@ -133,7 +148,7 @@ export default function WorkersPage() {
                   <thead>
                     <tr>
                       <th>Nombre</th><th>Usuario</th><th>Teléfono</th>
-                      <th>Permisos</th><th>Estado</th><th>Alta</th><th />
+                      <th>Permisos</th><th>Estado</th><th>Última conexión</th><th>Alta</th><th />
                     </tr>
                   </thead>
                   <tbody>
@@ -156,6 +171,21 @@ export default function WorkersPage() {
                           {person.active
                             ? <Badge tone="green">Activo</Badge>
                             : <Badge tone="steel">Desactivado</Badge>}
+                        </td>
+                        <td className="nowrap">
+                          {/*
+                            La última vez que ENTRÓ, no la última vez que se
+                            tocó su ficha ni el día que se dio de alta. Si
+                            nunca ha entrado se dice con palabras: una fecha
+                            inventada ahí sería peor que no poner nada.
+                          */}
+                          {conexiones.error
+                            ? <span className="faint" title={conexiones.error}>No se ha podido leer</span>
+                            : conexiones.loading && !conexiones.data
+                              ? <span className="faint">…</span>
+                              : ultimaConexion.get(person.id)
+                                ? fmtDateTime(ultimaConexion.get(person.id))
+                                : <span className="faint">Nunca ha entrado</span>}
                         </td>
                         <td className="nowrap">{fmtDate(person.created_at)}</td>
                         <td className="right nowrap">

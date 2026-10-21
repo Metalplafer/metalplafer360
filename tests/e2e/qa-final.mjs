@@ -527,9 +527,16 @@ try {
   const rejilla = await page.locator('.cal-grid').innerText();
   check('9 · Los dos tramos salen en el calendario',
     rejilla.includes(`PROY-${YEAR}-001`));
-  const diasPintados = await page.locator(`.cal-event:has-text("PROY-${YEAR}-001")`).count();
-  check('9 · Un tramo de 2 días ocupa más de una casilla', diasPintados >= 3,
-    `${diasPintados} casillas`);
+  // ESTO CAMBIÓ con el rediseño del calendario: antes se contaban las
+  // pastillas, una por día (fabricación 2 + montaje 1 = 3). Ahora cada
+  // tramo es UNA barra, así que son dos barras, y lo que dice que la de
+  // fabricación dura dos días son sus columnas.
+  const barras = page.locator(`.cal-event:has-text("PROY-${YEAR}-001")`);
+  const columnasFab = await page.locator('.cal-event[title^="Fabricación"]').first()
+    .evaluate((el) => getComputedStyle(el).gridColumn || el.style.gridColumn);
+  check('9 · Las dos fases son dos barras, y la de 2 días ocupa 2 columnas',
+    await barras.count() === 2 && /span\s*2/.test(columnasFab),
+    `${await barras.count()} barra(s), fabricación: ${columnasFab}`);
   check('9 · No se pinta en sábado ni en domingo',
     await page.locator('.cal-grid .cal-day.fin-de-semana .cal-event').count() === 0 || true);
 

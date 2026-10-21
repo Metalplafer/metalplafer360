@@ -444,8 +444,35 @@ export interface NotificationRow {
 
 export type RequestStatus = 'pendiente' | 'aceptada' | 'descartada';
 
+/**
+ * La última vez que alguien INICIÓ SESIÓN, según Supabase Auth.
+ *
+ * Vacío significa que esa cuenta no ha entrado nunca. No es la última
+ * actividad dentro de la aplicación, ni la fecha de alta de la cuenta.
+ */
+export interface UserLastSignIn {
+  user_id: string;
+  last_sign_in_at: string | null;
+  account_created_at: string | null;
+}
+
+/**
+ * De dónde sale un material:
+ *
+ *   · «pedido»  · hay que comprarlo. Lleva proveedor y fechas, entra en
+ *     el material pendiente y avisa si se retrasa;
+ *   · «almacen» · ya lo tenemos en el taller y solo se anota en qué
+ *     proyecto se usa. Sin proveedor y sin fechas de pedido.
+ *
+ * Cuando exista el catálogo de inventario, el material de almacén podrá
+ * apuntar además a una referencia. El NOMBRE no es esa referencia: es
+ * texto que escribe una persona.
+ */
+export type MaterialOrigin = 'pedido' | 'almacen';
+
 export interface Material {
   id: string;
+  origin: MaterialOrigin;
   /**
    * El proyecto al que va el material. VACÍO = material de TALLER:
    * consumibles que no son de ningún trabajo (discos, electrodos,
@@ -597,6 +624,24 @@ export interface CalendarEvent {
   client_name: string | null;
   assigned: string[];
   movable: boolean;
+}
+
+/**
+ * LO MISMO QUE «CalendarEvent», PERO POR TRAMOS.
+ *
+ * «v_calendar» devuelve una fila por DÍA: un tramo de seis días son seis
+ * filas, y por eso se pintaban seis pastillas sueltas con el mismo
+ * nombre. «v_calendar_spans» devuelve una fila por TRAMO, con su
+ * principio y su final, que es lo que hace falta para pintar UNA barra
+ * que cruza los días.
+ *
+ * Lo que dura un solo día —una visita, un aviso, material, una nota—
+ * viene con «starts» y «ends» iguales, así que la pantalla no necesita
+ * dos caminos.
+ */
+export interface CalendarSpan extends Omit<CalendarEvent, 'date'> {
+  starts: string;
+  ends: string;
 }
 
 // =====================================================================

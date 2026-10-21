@@ -212,24 +212,43 @@ try {
     db.projects[0].mont_start === montAntes,
     `el montaje estaba el ${montAntes} y ha quedado el ${db.projects[0].mont_start}`);
 
-  // --------- Un día que NO es el primero del tramo -------------------
+  // --------- UN TRAMO DE VARIOS DÍAS SE MUEVE ENTERO -----------------
   //
-  // El segundo fallo: en un tramo de varios días todas las filas llevan
-  // el mismo id y el mismo tipo, así que se cogía siempre el día 1. Al
-  // soltar el día 3 sobre el día 1 la comprobación «es el mismo día» daba
-  // verdadera y NO PASABA NADA, en silencio.
+  // Esta comprobación CAMBIÓ con el rediseño del calendario, y el fallo
+  // que vigilaba ya no puede existir.
+  //
+  // Antes, un tramo de tres días eran TRES etiquetas con el mismo id y
+  // el mismo tipo, y al soltar la tercera sobre la primera la
+  // comprobación «es el mismo día» daba verdadera y no pasaba nada, en
+  // silencio. Ahora un tramo es UNA barra continua: no hay «día 3» que
+  // arrastrar por separado, y lo que se suelta es el periodo entero.
+  //
+  // Lo que se comprueba es lo mismo de siempre: que arrastrar un tramo
+  // de varios días lo mueve de verdad.
   // El título de la etiqueta es «tipo · nombre · cliente», sin el código.
   const diasP2 = page.locator('.cal-event[title*="Puerta corredera"]');
-  check('1.2 · El tramo de 3 días ocupa 3 casillas',
-    await diasP2.count() === 3, `${await diasP2.count()} casilla(s)`);
+  check('1.2 · El tramo de 3 días es UNA barra de 3 columnas',
+    await diasP2.count() === 1
+    && /span\s*3/.test(await diasP2.first().evaluate(
+      (el) => getComputedStyle(el).gridColumn || el.style.gridColumn)),
+    `${await diasP2.count()} barra(s), columnas: `
+    + await diasP2.first().evaluate((el) => getComputedStyle(el).gridColumn));
 
-  await arrastrar(page, diasP2.nth(2), LUNES2);
+  // Se suelta en OTRO día: antes se soltaba el «día 3» sobre el día 1 del
+  // propio tramo, que con una barra continua es soltarlo donde ya está y
+  // no es un movimiento. El destino es el martes siguiente.
+  const MARTES2 = addDays(LUNES2, 1);
+  await arrastrar(page, diasP2.first(), MARTES2);
 
-  check('1.2 · Arrastrar el día 3 de un tramo sí hace algo',
+  check('1.2 · Arrastrar un tramo de varios días lo mueve de verdad',
     db.projects[1].fab_manual === true,
     'la fase sigue sin fijar a mano: el arrastre se ha perdido en silencio');
   check('1.2 · Y el tramo queda donde se ha soltado',
-    db.projects[1].fab_start === LUNES2, db.projects[1].fab_start);
+    db.projects[1].fab_start === MARTES2, db.projects[1].fab_start);
+  // Y lo que se venía a arreglar en esta ronda: no encoge.
+  check('1.2 · Conservando sus tres días',
+    db.projects[1].fab_end === addDays(MARTES2, 2),
+    `${db.projects[1].fab_start} → ${db.projects[1].fab_end}`);
 
   // ===================================================================
   // 1.1 · EDITAR LAS FECHAS DESDE LA FICHA DEL PROYECTO
@@ -325,9 +344,12 @@ try {
   await page.waitForTimeout(900);
   await page.locator('.cal-toolbar button[aria-label="Siguiente"]').click();
   await page.waitForTimeout(1100);
+  // Con el rediseño, «Obras» no está encendido al abrir el calendario.
+  await page.locator('.cal-legend-item:has-text("Obras")').click();
+  await page.waitForTimeout(800);
   check('1.3 · Y el calendario pinta la obra en su periodo propio',
     await page.locator('.cal-event[title^="Obras"]').count() > 0,
-    `${await page.locator('.cal-event[title^="Obras"]').count()} día(s) de obra`);
+    `${await page.locator('.cal-event[title^="Obras"]').count()} barra(s) de obra`);
 
   // Dejar las dos en blanco devuelve la obra a seguir a sus proyectos.
   await page.goto(`http://localhost:${PORT}/#/admin/obras/${obraId}`, { waitUntil: 'networkidle' });

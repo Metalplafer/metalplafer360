@@ -124,8 +124,14 @@ try {
   check('El proyecto planificado aparece en el calendario',
     (await page.locator('.cal-grid').innerText()).includes(`PROY-${YEAR}-001`));
 
-  check('Un tramo de 2 días ocupa 2 casillas, no una',
-    await page.locator(`.cal-event:has-text("PROY-${YEAR}-001")`).count() >= 2);
+  // ESTO CAMBIÓ con el rediseño del calendario, y es justo lo que se
+  // pidió: un tramo de dos días ya NO son dos pastillas sueltas con el
+  // mismo nombre, sino UNA barra continua que ocupa dos columnas.
+  const barraFab = page.locator(`.cal-event:has-text("PROY-${YEAR}-001")`).first();
+  const columnasFab = await barraFab.evaluate(
+    (el) => getComputedStyle(el).gridColumn || el.style.gridColumn);
+  check('Un tramo de 2 días es UNA barra que ocupa 2 columnas, no dos pastillas',
+    /span\s*2/.test(columnasFab), columnasFab);
 
   // ================== MOVER A MANO =====================================
   const antes = db.projects[0].fab_start;
@@ -207,7 +213,11 @@ try {
 
   check('Administración crea un evento «Otro» desde el calendario',
     db.calendar_notes.some((n) => n.title === 'Revisión de la plegadora' && n.day === MARTES));
-  check('Y aparece en la rejilla',
+  // Con el rediseño, «Otros» no está encendido al abrir: se enciende
+  // para verlo, como cualquier categoría suelta.
+  await page.locator('.cal-legend-item:has-text("Otros")').click();
+  await page.waitForTimeout(700);
+  check('Y aparece en la rejilla al encender «Otros»',
     (await page.locator('.cal-grid').innerText()).includes('Revisión de la plegadora'));
 
   // ================== EL MARGEN ========================================

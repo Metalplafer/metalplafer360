@@ -1,7 +1,7 @@
-import { memo, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  CalendarDays, CalendarOff, ChevronLeft, ChevronRight, Plus, Trash2,
+  CalendarDays, ChevronLeft, ChevronRight, Plus, Trash2,
 } from 'lucide-react';
 import { useAsync } from '@/hooks/useAsync';
 import { useDialogs } from '@/components/ui/Dialogs';
@@ -9,19 +9,21 @@ import { PageHeader } from '@/components/ui/Layout';
 import { Modal } from '@/components/ui/Modal';
 import { Empty, ErrorBox, Loading } from '@/components/ui/Feedback';
 import {
-  clearNonWorkingDay, deleteCalendarNote, eventUid, listCalendar, listNonWorkingDays,
-  moveCalendarItem, saveCalendarNote, setNonWorkingDay,
+  clearNonWorkingDay, deleteCalendarNote, listCalendarSpans, listNonWorkingDays,
+  moveCalendarItem, saveCalendarNote, setNonWorkingDay, spanUid,
 } from '@/services/calendar';
 import { listPeople } from '@/services/people';
 import {
-  CALENDAR_COLOR, CALENDAR_KINDS, CALENDAR_LABEL, CALENDAR_VIEWS, WORKER_CALENDAR_KINDS,
-  type CalendarView,
+  CALENDAR_COLOR, CALENDAR_DEFECTO, CALENDAR_KINDS, CALENDAR_LABEL, CALENDAR_VIEWS,
+  WORKER_CALENDAR_KINDS, siguienteSeleccion, type CalendarView,
 } from '@/config/constants';
+import { SemanaCalendario, tramosDelDia } from '@/components/shared/CalendarWeek';
+import { diasEntre, masDias, semanasDeLaRejilla } from '@/lib/calendario';
 import {
-  addDays, addMonths, dayNumber, fmtDate, longDate, mondayOf, monthLabel,
-  relativeDay, startOfMonth, todayMadrid, weekdayShort,
+  addDays, addMonths, fmtDate, longDate, mondayOf, monthLabel,
+  relativeDay, startOfMonth, todayMadrid,
 } from '@/lib/format';
-import type { CalendarEvent, CalendarKind } from '@/types/db';
+import type { CalendarKind, CalendarSpan } from '@/types/db';
 
 const WEEKDAY_HEADS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
@@ -47,93 +49,12 @@ function rangeFor(view: CalendarView, anchor: string) {
  */
 
 /**
- * Una etiqueta de evento dentro de un día.
+ * EL CALENDARIO SE PINTA POR TRAMOS, NO POR DÍAS.
  *
- * Va fuera del componente de la página y memorizada A PROPÓSITO: si se
- * declara dentro, en cada render es una función distinta y React
- * desmonta y vuelve a montar todas las etiquetas del mes. Al arrastrar
- * una orden eso ocurría varias veces por segundo.
+ * Antes cada día traía su propia etiqueta, así que un proyecto de seis
+ * días salía seis veces con el mismo nombre. Ahora cada periodo es UNA
+ * barra que recorre sus días, y de eso se encarga «SemanaCalendario».
  */
-const Chip = memo(function Chip({ e, dragging, canDrag, setDragging, setOver, openEvent }: {
-  e: CalendarEvent;
-  dragging: string | null;
-  canDrag: boolean;
-  setDragging: (id: string | null) => void;
-  setOver: (d: string | null) => void;
-  openEvent: (e: CalendarEvent) => void;
-}) {
-  // La identidad COMPLETA del evento: qué es, de quién es y de qué día.
-  // Con solo «e.id» la fabricación y el montaje del mismo proyecto son
-  // la misma cosa, y arrastrar una movía la otra.
-  const uid = eventUid(e);
-  return (
-    <button
-      type="button"
-      className={`cal-event${dragging === uid ? ' dragging' : ''}`}
-      style={{ ['--ev' as string]: CALENDAR_COLOR[e.kind] }}
-      draggable={canDrag && e.movable}
-      onDragStart={() => setDragging(uid)}
-      onDragEnd={() => { setDragging(null); setOver(null); }}
-      onClick={() => openEvent(e)}
-      title={`${CALENDAR_LABEL[e.kind]} · ${e.title}${e.client_name ? ` · ${e.client_name}` : ''}`}
-    >
-      <span className="cal-dot" aria-hidden />
-      <span className="cal-event-text">
-        {e.code ? <strong>{e.code}</strong> : null} {e.title}
-      </span>
-    </button>
-  );
-});
-
-const Day = memo(function Day({
-  date, outside, list, today, over, view, canDrag, setOver, drop, chipProps,
-  festivo, onFestivo,
-}: {
-  date: string; outside?: boolean; list: CalendarEvent[];
-  today: string; over: string | null; view: string; canDrag: boolean;
-  setOver: (fn: string | null | ((d: string | null) => string | null)) => void;
-  drop: (date: string) => void;
-  chipProps: Omit<Parameters<typeof Chip>[0], 'e'>;
-  /** Día marcado como no laborable: la planificación automática lo salta. */
-  festivo?: boolean;
-  onFestivo?: (date: string) => void;
-}) {
-  return (
-    <div
-      className={[
-        'cal-day',
-        outside ? 'outside' : '',
-        date === today ? 'today' : '',
-        over === date ? 'over' : '',
-        festivo ? 'no-laborable' : '',
-      ].filter(Boolean).join(' ')}
-      onDragOver={canDrag ? (ev) => { ev.preventDefault(); setOver(date); } : undefined}
-      onDragLeave={canDrag ? () => setOver((d) => (d === date ? null : d)) : undefined}
-      onDrop={canDrag ? () => drop(date) : undefined}
-    >
-      <div className="cal-day-head">
-        <span className="num">{dayNumber(date)}</span>
-        {view === 'semana' && <span className="faint">{weekdayShort(date)}</span>}
-        {onFestivo && (
-          <button type="button" className="cal-festivo"
-                  aria-pressed={Boolean(festivo)}
-                  title={festivo
-                    ? 'Día no laborable. Pulsa para volver a trabajarlo.'
-                    : 'Marcar como no laborable'}
-                  aria-label={festivo
-                    ? `El ${date} no es laborable. Pulsa para volver a trabajarlo.`
-                    : `Marcar el ${date} como no laborable`}
-                  onClick={() => onFestivo(date)}>
-            <CalendarOff size={13} aria-hidden />
-          </button>
-        )}
-      </div>
-      <div className="cal-day-body">
-        {list.map((e) => <Chip key={eventUid(e)} e={e} {...chipProps} />)}
-      </div>
-    </div>
-  );
-});
 
 export default function CalendarPage({ worker }: { worker?: boolean }) {
   const navigate = useNavigate();
@@ -145,21 +66,40 @@ export default function CalendarPage({ worker }: { worker?: boolean }) {
   // Las categorías de ESTA pantalla. Un trabajador ve su trabajo:
   // fabricación, montaje y sus avisos. Administración las ve todas.
   const disponibles = worker ? WORKER_CALENDAR_KINDS : CALENDAR_KINDS;
-  const [kinds, setKinds] = useState<CalendarKind[]>([...disponibles]);
+  /**
+   * AL ABRIR, SOLO FABRICACIÓN Y MONTAJE.
+   *
+   * Es lo que dice cómo de cargadas están las semanas de taller y de
+   * obra, que es para lo que se mira el calendario. Lo demás se enciende
+   * a mano. El trabajador abre con lo suyo, como hasta ahora.
+   */
+  const [kinds, setKinds] = useState<CalendarKind[]>(
+    worker ? [...WORKER_CALENDAR_KINDS] : [...CALENDAR_DEFECTO],
+  );
   const [workerId, setWorkerId] = useState('');
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   // BLOQUE 3: eventos sueltos («Otros») y días no laborables.
-  const [editandoNota, setEditandoNota] = useState<CalendarEvent | 'nuevo' | null>(null);
+  const [editandoNota, setEditandoNota] = useState<CalendarSpan | 'nuevo' | null>(null);
   const [nota, setNota] = useState({ day: today, title: '', detail: '' });
 
   const { from, to } = rangeFor(view, anchor);
   const people = useAsync(() => (worker ? Promise.resolve([]) : listPeople('worker')), [worker]);
   const events = useAsync(
-    () => listCalendar(from, to, { workerId: workerId || undefined }),
+    () => listCalendarSpans(from, to, { workerId: workerId || undefined }),
     [from, to, workerId, reloadKey],
   );
+
+  /**
+   * LO QUE SE ACABA DE ARRASTRAR, MIENTRAS SE GUARDA.
+   *
+   * La barra se pinta ya en el día nuevo para que se vea que ha ido
+   * donde se soltó. Si el guardado falla, esto se deshace y la barra
+   * vuelve a donde estaba: lo que no puede pasar es que la pantalla
+   * enseñe una fecha que la base de datos no tiene.
+   */
+  const [movidos, setMovidos] = useState<Record<string, { starts: string; ends: string }>>({});
   // Los días que no se trabaja se pintan apagados: así se ve de un
   // vistazo por qué la planificación automática los ha saltado.
   const festivos = useAsync(() => listNonWorkingDays(from, to), [from, to, reloadKey]);
@@ -184,22 +124,23 @@ export default function CalendarPage({ worker }: { worker?: boolean }) {
    * tests/e2e/avisos.mjs con una visita heredada.
    */
   const shown = useMemo(
-    () => (events.data ?? []).filter((e) => kinds.includes(e.kind)),
-    [events.data, kinds],
+    () => (events.data ?? [])
+      .filter((e) => kinds.includes(e.kind))
+      // Lo que se acaba de arrastrar se pinta donde se ha soltado.
+      .map((e) => {
+        const movido = movidos[spanUid(e)];
+        return movido ? { ...e, ...movido } : e;
+      }),
+    [events.data, kinds, movidos],
   );
 
-  const byDay = useMemo(() => {
-    const map = new Map<string, CalendarEvent[]>();
-    shown.forEach((e) => {
-      const list = map.get(e.date) ?? [];
-      list.push(e);
-      map.set(e.date, list);
-    });
-    return map;
-  }, [shown]);
-
+  /**
+   * Las categorías se encienden con una regla, no a capricho:
+   * fabricación y montaje van juntas; las demás, de una en una. Está en
+   * «siguienteSeleccion», con sus pruebas.
+   */
   function toggleKind(kind: CalendarKind) {
-    setKinds((list) => (list.includes(kind) ? list.filter((k) => k !== kind) : [...list, kind]));
+    setKinds((list) => siguienteSeleccion(list, kind));
   }
 
   function step(direction: number) {
@@ -208,7 +149,7 @@ export default function CalendarPage({ worker }: { worker?: boolean }) {
     else setAnchor(addDays(anchor, direction));
   }
 
-  function openEvent(e: CalendarEvent) {
+  function openEvent(e: CalendarSpan) {
     if (worker) {
       // BLOQUE 3: fabricación y montaje son ya el PROYECTO, no la orden.
       if (e.kind === 'fabricacion' || e.kind === 'montaje') navigate(`/t/proyectos/${e.id}`);
@@ -219,7 +160,7 @@ export default function CalendarPage({ worker }: { worker?: boolean }) {
     else if (e.kind === 'obra') navigate(`/admin/obras/${e.id}`);
     else if (e.kind === 'material') navigate('/admin/material');
     else if (e.kind === 'otro') {
-      setNota({ day: e.date, title: e.title, detail: e.detail ?? '' });
+      setNota({ day: e.starts, title: e.title, detail: e.detail ?? '' });
       setEditandoNota(e);
     }
     else navigate(`/admin/fichas/${e.id}`);
@@ -230,15 +171,22 @@ export default function CalendarPage({ worker }: { worker?: boolean }) {
     setDragging(null);
     setOver(null);
     if (!uid) return;
-    // Se busca por la identidad completa. Buscar por «id» devolvía la
-    // PRIMERA fila con ese identificador, que podía ser la otra fase del
-    // proyecto o el primer día de un tramo de varios días.
-    const event = shown.find((e) => eventUid(e) === uid);
+    // Se busca por la identidad completa. Buscar por «id» devolvía el
+    // PRIMER tramo con ese identificador, que podía ser la otra fase del
+    // mismo proyecto.
+    const event = shown.find((e) => spanUid(e) === uid);
     if (!event) return;
     // Un evento que no se puede mover no se mueve ni arrastrándolo: el
     // atributo «draggable» es del navegador y no es una garantía.
     if (!event.movable) return;
-    if (event.date === date) return;
+    if (event.starts === date) return;
+
+    // SE PINTA YA EN EL DÍA NUEVO, conservando la duración: la barra de
+    // seis días sigue siendo de seis días mientras se guarda. Si falla,
+    // esto se deshace unas líneas más abajo.
+    const dura = diasEntre(event.starts, event.ends);
+    setMovidos((m) => ({ ...m, [uid]: { starts: date, ends: masDias(date, dura) } }));
+
     try {
       await moveCalendarItem(event, date);
       // Mover a mano una fase la saca del cálculo automático: desde
@@ -252,8 +200,16 @@ export default function CalendarPage({ worker }: { worker?: boolean }) {
         : '';
       toast.success(`${CALENDAR_LABEL[event.kind]} de ${event.code ?? event.title}`
         + ` pasa al ${fmtDate(date)}${fijado}`);
+      // Se vuelve a leer de la base de datos y se suelta lo pintado a
+      // mano: a partir de aquí manda lo que esté guardado.
+      setMovidos((m) => { const { [uid]: _, ...resto } = m; return resto; });
       setReloadKey((n) => n + 1);
-    } catch (err) { toast.error(err); }
+    } catch (err) {
+      // NO SE HA GUARDADO: la barra vuelve a donde estaba. Dejarla en el
+      // día nuevo haría creer que el taller tiene otra fecha.
+      setMovidos((m) => { const { [uid]: _, ...resto } = m; return resto; });
+      toast.error(err);
+    }
   }
 
   async function guardarNota() {
@@ -312,22 +268,42 @@ export default function CalendarPage({ worker }: { worker?: boolean }) {
 
   const canDrag = !worker;
 
-  const chipProps = { dragging, canDrag, setDragging, setOver, openEvent };
+  /** Lo que necesita cada semana para pintarse. */
+  const semanaProps = {
+    tramos: shown,
+    hoy: today,
+    noLaborables,
+    canDrag,
+    dragging,
+    over,
+    uid: spanUid,
+    onDragStart: setDragging,
+    onOver: setOver,
+    onDrop: drop,
+    onOpen: openEvent,
+    onFestivo: worker ? undefined : alternarFestivo,
+    onVerDia: (d: string) => { setAnchor(d); setView('dia'); },
+  };
 
-  const monthDays = useMemo(() => {
-    const start = mondayOf(startOfMonth(anchor));
-    return Array.from({ length: 42 }, (_, i) => addDays(start, i));
-  }, [anchor]);
+  const semanas = useMemo(
+    () => semanasDeLaRejilla(mondayOf(startOfMonth(anchor))),
+    [anchor],
+  );
 
-  const weekDays = useMemo(() => {
-    const start = mondayOf(anchor);
-    return Array.from({ length: 7 }, (_, i) => addDays(start, i));
-  }, [anchor]);
-
+  /**
+   * Los días de la agenda: los que toca algún tramo, no solo los que
+   * empiezan en ellos. Un montaje que empezó el jueves pasado y sigue
+   * hoy tiene que salir en la agenda de hoy.
+   */
   const agendaDays = useMemo(() => {
-    const days = [...byDay.keys()].sort();
-    return days.filter((d) => d >= from && d <= to);
-  }, [byDay, from, to]);
+    const dias = new Set<string>();
+    shown.forEach((e) => {
+      for (let d = e.starts > from ? e.starts : from; d <= e.ends && d <= to; d = masDias(d, 1)) {
+        dias.add(d);
+      }
+    });
+    return [...dias].sort();
+  }, [shown, from, to]);
 
   const title = view === 'mes' ? monthLabel(anchor)
     : view === 'semana' ? `Semana del ${fmtDate(mondayOf(anchor))}`
@@ -387,32 +363,53 @@ export default function CalendarPage({ worker }: { worker?: boolean }) {
             {view === 'mes' && (
               <div className="cal-grid">
                 {WEEKDAY_HEADS.map((d) => <div key={d} className="cal-head">{d}</div>)}
-                {monthDays.map((d) => (
-                  <Day key={d} date={d} outside={d.slice(0, 7) !== anchor.slice(0, 7)} list={byDay.get(d) ?? []} today={today} over={over} view={view}
-                       canDrag={canDrag} setOver={setOver} drop={drop} chipProps={chipProps}
-                       festivo={noLaborables.has(d)}
-                       onFestivo={worker ? undefined : alternarFestivo} />
+                {semanas.map((lunes) => (
+                  <SemanaCalendario key={lunes} lunes={lunes} mes={anchor} {...semanaProps} />
                 ))}
               </div>
             )}
 
             {view === 'semana' && (
-              <div className="cal-week">
-                {weekDays.map((d) => (
-                  <Day key={d} date={d} list={byDay.get(d) ?? []} today={today} over={over} view={view}
-                       canDrag={canDrag} setOver={setOver} drop={drop} chipProps={chipProps}
-                       festivo={noLaborables.has(d)}
-                       onFestivo={worker ? undefined : alternarFestivo} />
-                ))}
+              // Conserva «cal-week»: es la clase que le da a esta vista
+              // sus casillas altas y la que ya tenía su hoja de estilos.
+              <div className="cal-grid cal-week">
+                {WEEKDAY_HEADS.map((d) => <div key={d} className="cal-head">{d}</div>)}
+                <SemanaCalendario lunes={mondayOf(anchor)} altoDia={220} mostrarDiaSemana
+                                  carriles={10} {...semanaProps} />
               </div>
             )}
 
             {view === 'dia' && (
               <div className="cal-day-single">
-                <Day date={anchor} list={byDay.get(anchor) ?? []} today={today} over={over} view={view}
-                     canDrag={canDrag} setOver={setOver} drop={drop} chipProps={chipProps}
-                     festivo={noLaborables.has(anchor)}
-                     onFestivo={worker ? undefined : alternarFestivo} />
+                <div className="cal-agenda-date" style={{ marginBottom: 10 }}>
+                  <strong>{relativeDay(anchor, today)}</strong>
+                  <span className="faint">{longDate(anchor)}</span>
+                </div>
+                {tramosDelDia(shown, anchor).length ? (
+                  <div className="stack" style={{ gap: 6 }}>
+                    {tramosDelDia(shown, anchor).map((e) => (
+                      <button key={spanUid(e)} type="button" className="cal-row"
+                              style={{ ['--ev' as string]: CALENDAR_COLOR[e.kind] }}
+                              onClick={() => openEvent(e)}>
+                        <span className="cal-dot" aria-hidden />
+                        <span className="cal-row-main">
+                          <strong>{e.code ? `${e.code} · ` : ''}{e.title}</strong>
+                          <small>
+                            {CALENDAR_LABEL[e.kind]}
+                            {e.starts !== e.ends
+                              ? ` · del ${fmtDate(e.starts)} al ${fmtDate(e.ends)}` : ''}
+                            {e.client_name ? ` · ${e.client_name}` : ''}
+                            {` · ${e.status}`}
+                          </small>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <Empty title="Nada programado" icon={<CalendarDays aria-hidden />}>
+                    Este día no tiene nada con los filtros elegidos.
+                  </Empty>
+                )}
               </div>
             )}
 
@@ -426,8 +423,8 @@ export default function CalendarPage({ worker }: { worker?: boolean }) {
                         <span className="faint">{fmtDate(d)}</span>
                       </div>
                       <div className="stack" style={{ gap: 6 }}>
-                        {(byDay.get(d) ?? []).map((e) => (
-                          <button key={eventUid(e)} type="button" className="cal-row"
+                        {tramosDelDia(shown, d).map((e) => (
+                          <button key={spanUid(e)} type="button" className="cal-row"
                                   style={{ ['--ev' as string]: CALENDAR_COLOR[e.kind] }}
                                   onClick={() => openEvent(e)}>
                             <span className="cal-dot" aria-hidden />
@@ -435,6 +432,8 @@ export default function CalendarPage({ worker }: { worker?: boolean }) {
                               <strong>{e.code ? `${e.code} · ` : ''}{e.title}</strong>
                               <small>
                                 {CALENDAR_LABEL[e.kind]}
+                                {e.starts !== e.ends
+                                  ? ` · del ${fmtDate(e.starts)} al ${fmtDate(e.ends)}` : ''}
                                 {e.project_code ? ` · ${e.project_code}` : ''}
                                 {e.client_name ? ` · ${e.client_name}` : ''}
                                 {` · ${e.status}`}

@@ -70,6 +70,8 @@ export interface ProjectHoursRow {
 export interface MaterialReportRow {
   material: string; unidades: number | null; proveedor: string; proyecto: string;
   pedido: string | null; previsto: string | null; recibido: boolean; dias_retraso: number;
+  /** «Pedido» o «De almacén»: lo que se compró y lo que ya teníamos. */
+  origen: string;
 }
 
 export interface SupplierReportRow {

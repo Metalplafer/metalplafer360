@@ -253,7 +253,12 @@ try {
     Number(db.projects[0].budget_hours_fab) === 0 && !db.projects[0].fab_start);
   check('Y por eso no aparece en el calendario',
     !calendario.includes(`PROY-${YEAR}-001`));
-  check('Y el material previsto también', calendario.includes('Pletina'));
+  // Con el rediseño, el calendario abre con fabricación y montaje: el
+  // material se enciende a mano, y entonces sí sale con su fecha.
+  await page.locator('.cal-legend-item:has-text("Material")').click();
+  await page.waitForTimeout(800);
+  check('Y el material previsto, al encender su categoría',
+    (await page.locator('main').innerText()).includes('Pletina'));
   check('Los estados del calendario salen en castellano, no como los guarda la base',
     !/por_asignar|en_curso|pendiente_cobro|cobrado_parcial/.test(calendario));
 

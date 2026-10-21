@@ -188,6 +188,7 @@ export default function ReportsPage() {
         columns: [
           { key: 'material', label: 'Material', width: 32 },
           { key: 'unidades', label: 'Unidades', type: 'number', width: 12 },
+          { key: 'origen', label: 'Origen', width: 14 },
           { key: 'proveedor', label: 'Proveedor', width: 24 },
           { key: 'proyecto', label: 'Proyecto', width: 16 },
           { key: 'pedido', label: 'Pedido', type: 'date', width: 13 },
@@ -326,6 +327,7 @@ export default function ReportsPage() {
           columns: [
             { key: 'material', label: 'Material', width: 4 },
             { key: 'unidades', label: 'Unidades', width: 1, align: 'right' },
+            { key: 'origen', label: 'Origen', width: 2 },
             { key: 'proveedor', label: 'Proveedor', width: 3 },
             { key: 'proyecto', label: 'Proyecto', width: 2 },
             { key: 'pedido', label: 'Pedido', width: 2 },
@@ -336,7 +338,7 @@ export default function ReportsPage() {
           rows: m.map((r) => ({
             material: r.material,
             unidades: r.unidades === null ? '—' : fmtNumber(r.unidades),
-            proveedor: r.proveedor, proyecto: r.proyecto,
+            origen: r.origen, proveedor: r.proveedor, proyecto: r.proyecto,
             pedido: r.pedido ? fmtDate(r.pedido) : '—',
             previsto: r.previsto ? fmtDate(r.previsto) : '—',
             recibido: r.recibido ? 'Sí' : 'No',
@@ -573,7 +575,8 @@ export default function ReportsPage() {
                     <div className="table-wrap">
                       <table className="table">
                         <thead><tr>
-                          <th>Material</th><th className="right">Unidades</th><th>Proveedor</th>
+                          <th>Material</th><th className="right">Unidades</th>
+                          <th>Origen</th><th>Proveedor</th>
                           <th>Proyecto</th><th>Pedido</th><th>Previsto</th>
                           <th>Recibido</th><th className="right">Retraso</th>
                         </tr></thead>
@@ -582,6 +585,8 @@ export default function ReportsPage() {
                             <tr key={`${r.material}-${i}`}>
                               <td>{r.material}</td>
                               <td className="right num">{r.unidades === null ? '—' : fmtNumber(r.unidades)}</td>
+                              {/* Lo que se compró y lo que ya teníamos no son lo mismo. */}
+                              <td className="nowrap">{r.origen}</td>
                               <td>{r.proveedor}</td>
                               <td>{r.proyecto}</td>
                               <td className="nowrap">{r.pedido ? fmtDate(r.pedido) : '—'}</td>

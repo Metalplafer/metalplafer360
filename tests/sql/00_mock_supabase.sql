@@ -14,7 +14,11 @@ create table auth.users (
   id uuid primary key default gen_random_uuid(),
   email text unique,
   raw_user_meta_data jsonb default '{}'::jsonb,
-  created_at timestamptz default now()
+  created_at timestamptz default now(),
+  -- La mantiene el propio Supabase Auth cada vez que alguien inicia
+  -- sesión. Vacía mientras esa cuenta no haya entrado nunca. Aquí se
+  -- reproduce para poder probar la última conexión sin Supabase.
+  last_sign_in_at timestamptz
 );
 create function auth.uid() returns uuid language sql stable as $$
   select nullif(nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub', '')::uuid $$;

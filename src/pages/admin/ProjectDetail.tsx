@@ -782,25 +782,37 @@ export default function ProjectDetail() {
                     const late = !m.received && m.expected_on && m.expected_on < todayMadrid();
                     return (
                       <li key={m.id}>
-                        <label className="checkbox" style={{ margin: 0 }}>
-                          <input type="checkbox" checked={m.received}
-                                 aria-label={`Marcar ${m.name} como recibido`}
-                                 onChange={async () => {
-                                   try { await setReceived(m.id, !m.received); await reload(); }
-                                   catch (e) { toast.error(e); }
-                                 }} />
-                        </label>
+                        {/* Lo que ya teníamos no se marca como recibido. */}
+                        {m.origin !== 'almacen' && (
+                          <label className="checkbox" style={{ margin: 0 }}>
+                            <input type="checkbox" checked={m.received}
+                                   aria-label={`Marcar ${m.name} como recibido`}
+                                   onChange={async () => {
+                                     try { await setReceived(m.id, !m.received); await reload(); }
+                                     catch (e) { toast.error(e); }
+                                   }} />
+                          </label>
+                        )}
                         <span className="cell-main" style={{ flex: 1 }}>
                           <strong>{m.units != null ? `${fmtNumber(m.units)} · ` : ''}{m.name}</strong>
                           <small>
-                            {m.supplier ?? 'Sin proveedor'}
+                            {/*
+                              Lo que ya tenemos no se le ha pedido a
+                              nadie: decir «Sin proveedor» ahí haría
+                              pensar que falta ponerlo.
+                            */}
+                            {m.origin === 'almacen'
+                              ? 'Lo teníamos en el almacén'
+                              : m.supplier ?? 'Sin proveedor'}
                             {m.expected_on ? ` · previsto ${fmtDate(m.expected_on)}` : ''}
                           </small>
                         </span>
-                        {m.received
-                          ? <Badge tone="green">Recibido</Badge>
-                          : late ? <Badge tone="red">Retrasado</Badge>
-                          : <Badge tone="amber">Pendiente</Badge>}
+                        {m.origin === 'almacen'
+                          ? <Badge tone="steel">De almacén</Badge>
+                          : m.received
+                            ? <Badge tone="green">Recibido</Badge>
+                            : late ? <Badge tone="red">Retrasado</Badge>
+                            : <Badge tone="amber">Pendiente</Badge>}
                       </li>
                     );
                   })}

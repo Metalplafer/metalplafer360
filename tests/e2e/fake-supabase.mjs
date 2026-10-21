@@ -162,7 +162,7 @@ export const normProveedor = (s) => norm(s)
   .replace(/\s+/g, ' ')
   .trim() || null;
 
-export function createDb(seed = {}) {
+function crearDbBase(seed = {}) {
   return {
     clients: [], client_contacts: [], fichas: [], projects: [], project_substatuses: [],
     work_orders: [], work_order_workers: [], notifications: [],
@@ -219,6 +219,18 @@ export function createDb(seed = {}) {
     },
     ...seed,
   };
+}
+
+/**
+ * El material de los juegos de pruebas que no diga de dónde sale es
+ * material PEDIDO, igual que todo lo que había en la base de datos antes
+ * de que existiera la distinción. Sin esto, filtrar por «origin» dejaría
+ * fuera las filas de los juegos de pruebas que se escribieron antes.
+ */
+export function createDb(seed = {}) {
+  const db = crearDbBase(seed);
+  db.materials = db.materials.map((m) => ({ ...m, origin: m.origin ?? 'pedido' }));
+  return db;
 }
 
 /** Fecha de hoy en Madrid, como 'YYYY-MM-DD'. */
@@ -1662,10 +1674,22 @@ export async function stubSupabase(context, {
       if (!inicio) return fail('Hace falta una fecha');
       const esFab = fase === 'fabricacion';
       const antes = esFab ? pr.fab_start : pr.mont_start;
-      const dias = Math.max(diasDeTrabajo(
-        esFab ? pr.budget_hours_fab : pr.budget_hours_mont,
-        esFab ? pr.fab_workers : pr.mont_workers), 1);
-      const fin = finDeTramo(inicio, dias);
+      const antesFin = esFab ? pr.fab_end : pr.mont_end;
+      /*
+       * EL TRAMO CONSERVA SU DURACIÓN, igual que «moved_span_end» en la
+       * base de datos: final nuevo = inicio nuevo + lo que duraba. Antes
+       * se recalculaba con las horas, y por eso un tramo de seis días se
+       * quedaba en dos al arrastrarlo.
+       *
+       * Solo se estima con las horas cuando la fase no tenía fechas: ahí
+       * no hay duración que conservar.
+       */
+      const fin = (antes && antesFin && antesFin >= antes)
+        ? sumarDias(inicio, Math.round(
+            (Date.parse(`${antesFin}T00:00:00Z`) - Date.parse(`${antes}T00:00:00Z`)) / 86400000))
+        : finDeTramo(inicio, Math.max(diasDeTrabajo(
+            esFab ? pr.budget_hours_fab : pr.budget_hours_mont,
+            esFab ? pr.fab_workers : pr.mont_workers), 1));
       if (esFab) { pr.fab_start = inicio; pr.fab_end = fin; pr.fab_manual = true; }
       else { pr.mont_start = inicio; pr.mont_end = fin; pr.mont_manual = true; }
       registrar(`${actorName()} movió a mano ${esFab ? 'la fabricación' : 'el montaje'} `
@@ -2782,6 +2806,7 @@ export async function stubSupabase(context, {
         name: nombre, units: body()?.p_units ?? null, supplier: body()?.p_supplier ?? null,
         ordered_on: body()?.p_ordered_on ?? null, expected_on: body()?.p_expected_on ?? null,
         received: false, notes: body()?.p_notes ?? null, late_notified_on: null,
+        origin: 'pedido',
         archived_at: null, is_demo: false,
         created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
       };
@@ -3059,6 +3084,101 @@ export async function stubSupabase(context, {
 
     if (path === '/rest/v1/work_summary') {
       const rows = visible('works', db.works ?? []).map(cuentasDeObra);
+      return json(applyFilters(rows, url));
+    }
+
+    /**
+     * «v_calendar_spans»: lo mismo que «v_calendar», pero una fila por
+     * TRAMO, con «starts» y «ends», en lugar de una por día.
+     *
+     * Se construye de lo mismo y con los mismos permisos, para que la
+     * prueba del navegador compruebe lo que hace la base de datos y no
+     * lo que la pantalla quiera pintar.
+     */
+    if (path === '/rest/v1/v_calendar_spans') {
+      const user = getUser();
+      const esAdmin = !user || user.role === 'admin';
+      const rows = [];
+
+      const proyectosVisibles = esAdmin
+        ? db.projects.filter((x) => !x.archived_at)
+        : db.projects.filter((x) => !x.archived_at && assignedProjects(user).has(x.id));
+
+      proyectosVisibles.forEach((p) => {
+        const c = db.clients.find((x) => x.id === p.client_id);
+        [['fabricacion', p.fab_start, p.fab_end, p.fab_manual],
+         ['montaje', p.mont_start, p.mont_end, p.mont_manual]].forEach(([fase, desde, hasta, aMano]) => {
+          if (!desde) return;
+          rows.push({
+            kind: fase, id: p.id, code: p.code, title: p.name, detail: null,
+            starts: desde, ends: hasta ?? desde,
+            status: aMano ? 'Colocado a mano' : 'Planificado',
+            project_id: p.id, project_code: p.code, client_name: c?.name ?? null,
+            assigned: [
+              ...new Set([
+                ...db.project_workers.filter((pw) => pw.project_id === p.id).map((pw) => pw.worker_id),
+                ...db.work_orders.filter((o) => o.project_id === p.id && !o.archived_at
+                    && o.type === fase)
+                  .flatMap((o) => db.work_order_workers.filter((w) => w.order_id === o.id)
+                    .map((w) => w.worker_id)),
+              ]),
+            ],
+            movable: true,
+          });
+        });
+      });
+
+      visible('materials', db.materials)
+        .filter((m) => !m.archived_at && m.expected_on).forEach((m) => {
+          const p = db.projects.find((x) => x.id === m.project_id);
+          const c = p ? db.clients.find((x) => x.id === p.client_id) : null;
+          rows.push({
+            kind: 'material', id: m.id, code: null, title: m.name, detail: m.notes,
+            starts: m.expected_on, ends: m.expected_on,
+            status: m.received ? 'Recibido' : 'Pendiente',
+            project_id: m.project_id, project_code: p?.code ?? null,
+            client_name: c?.name ?? null, assigned: [], movable: false,
+          });
+        });
+
+      const fichasVisibles = esAdmin
+        ? db.fichas
+        : db.fichas.filter((f) => assignedFichas(user).has(f.id));
+      fichasVisibles
+        .filter((f) => !f.archived_at && f.scheduled_date && ['visita', 'aviso'].includes(f.type))
+        .forEach((f) => {
+          const c = db.clients.find((x) => x.id === f.client_id);
+          rows.push({
+            kind: f.type, id: f.id, code: f.code,
+            title: f.title ?? (f.description ?? '').slice(0, 60), detail: f.address,
+            starts: f.scheduled_date, ends: f.scheduled_date,
+            status: FICHA_STATUS_ES[f.status] ?? f.status,
+            project_id: null, project_code: null, client_name: c?.name ?? null,
+            assigned: f.assigned_to ? [f.assigned_to] : [], movable: false,
+          });
+        });
+
+      (db.calendar_notes ?? []).forEach((n) => {
+        const p = db.projects.find((x) => x.id === n.project_id);
+        rows.push({
+          kind: 'otro', id: n.id, code: null, title: n.title, detail: n.detail,
+          starts: n.day, ends: n.day, status: 'Evento', project_id: n.project_id ?? null,
+          project_code: p?.code ?? null, client_name: null, assigned: [], movable: true,
+        });
+      });
+
+      visible('works', (db.works ?? []).filter((w) => !w.archived_at)).forEach((w) => {
+        const c = cuentasDeObra(w);
+        if (!c.desde || !c.hasta) return;
+        const cliente = db.clients.find((x) => x.id === w.client_id);
+        rows.push({
+          kind: 'obra', id: w.id, code: w.code, title: w.name,
+          detail: `${c.proyectos} proyecto(s)`, starts: c.desde, ends: c.hasta, status: 'Obra',
+          project_id: null, project_code: w.code,
+          client_name: cliente?.name ?? null, assigned: [], movable: false,
+        });
+      });
+
       return json(applyFilters(rows, url));
     }
 
@@ -3665,13 +3785,17 @@ export async function stubSupabase(context, {
         proyecto: codigoProyecto(m.project_id) || nombreProyecto(m.project_id),
         pedido: m.ordered_on ?? null, previsto: m.expected_on ?? null,
         recibido: Boolean(m.received), dias_retraso: retrasoDe(m),
+        // De dónde sale: lo que se compró y lo que ya teníamos, que en
+        // un informe de compras no son lo mismo.
+        origen: m.origin === 'almacen' ? 'De almacén' : 'Pedido',
       })));
     }
 
     if (path === '/rest/v1/rpc/report_suppliers') {
       if (soloAdmin()) return fail('No tienes permisos para ver esto.', '42501');
       const porProveedor = new Map();
-      for (const m of db.materials.filter((x) => !x.archived_at && x.supplier)) {
+      for (const m of db.materials.filter(
+        (x) => !x.archived_at && x.supplier && x.origin !== 'almacen')) {
         const fila = porProveedor.get(m.supplier)
           ?? { proveedor: m.supplier, pedidos: 0, pendientes: 0, retrasados: 0, dias: [] };
         fila.pedidos += 1;
@@ -4010,6 +4134,30 @@ export async function stubSupabase(context, {
     }
 
     /**
+     * «user_last_sign_in»: la última vez que entró cada persona.
+     *
+     * En Supabase sale de «auth.users», que la mantiene el propio
+     * sistema de acceso. Aquí se reproduce desde «last_sign_in_at» de
+     * cada perfil del juego de pruebas: vacío significa que esa cuenta
+     * no ha entrado nunca, igual que allí.
+     *
+     * Y el mismo reparto que la vista de verdad: administración ve a
+     * todo el mundo, cada cual se ve a sí mismo.
+     */
+    if (path === '/rest/v1/user_last_sign_in') {
+      const actual = getUser();
+      const todas = people.map((p) => ({
+        user_id: p.id,
+        last_sign_in_at: p.last_sign_in_at ?? null,
+        account_created_at: p.created_at ?? null,
+      }));
+      const rows = soloAdmin()
+        ? todas.filter((r) => actual && r.user_id === actual.id)
+        : todas;
+      return json(applyFilters(rows, url));
+    }
+
+    /**
      * «profiles_full»: la ficha completa, con los datos personales.
      * Cada persona la suya; administración, todas.
      */
@@ -4154,6 +4302,7 @@ export async function stubSupabase(context, {
 
         if (table === 'materials') {
           row.received = row.received ?? false;
+          row.origin = row.origin ?? 'pedido';
           row.late_notified_on = null;
           registrar(`${actorName()} anotó material pendiente: ${row.name}`, null, 'materials');
         }

@@ -22,7 +22,7 @@ import { REQUEST_STATUS_LABEL, REQUEST_STATUS_TONE } from '@/config/constants';
 import { fmtDate, fmtDateTime, fmtNumber, todayMadrid } from '@/lib/format';
 import type { Material, MaterialRequest } from '@/types/db';
 
-type Tab = 'pendiente' | 'retrasado' | 'recibido' | 'todos' | 'avisos';
+type Tab = 'pendiente' | 'retrasado' | 'recibido' | 'almacen' | 'todos' | 'avisos';
 
 /**
  * Material pendiente.
@@ -105,6 +105,7 @@ export default function MaterialsList() {
 
   async function saveNew(draft: MaterialValues) {
     await createMaterial({
+      origin: draft.origin,
       // «Material de taller» se manda como lo que es: sin proyecto.
       project_id: projectId === SIN_PROYECTO ? null : projectId,
       name: draft.name.trim(),
@@ -115,8 +116,9 @@ export default function MaterialsList() {
       expected_on: draft.expected_on || null,
       notes: draft.notes,
     });
-    toast.success(projectId === SIN_PROYECTO
-      ? 'Material de taller anotado' : 'Material anotado');
+    toast.success(draft.origin === 'almacen'
+      ? 'Material del almacén anotado en el proyecto'
+      : projectId === SIN_PROYECTO ? 'Material de taller anotado' : 'Material anotado');
     setCreating(false);
     setProjectId('');
     reload();
@@ -125,6 +127,7 @@ export default function MaterialsList() {
   async function saveEdit(draft: MaterialValues) {
     if (!editing) return;
     await updateMaterial(editing.id, {
+      origin: draft.origin,
       name: draft.name.trim(),
       units: draft.units,
       supplier: draft.supplier,
@@ -203,6 +206,9 @@ export default function MaterialsList() {
             { key: 'pendiente' as const, label: 'Pendiente' },
             { key: 'retrasado' as const, label: 'Retrasado' },
             { key: 'recibido' as const, label: 'Recibido' },
+            // El material que YA tenemos tiene pestaña propia: no es
+            // material pendiente de comprar y no debe mezclarse con él.
+            { key: 'almacen' as const, label: 'De almacén' },
             { key: 'todos' as const, label: 'Todos' },
             { key: 'avisos' as const, label: 'Avisos del taller', count: pending.length },
           ]}
@@ -301,6 +307,9 @@ export default function MaterialsList() {
                 : !rows.length ? (
                   <Empty title={debounced ? `Sin resultados para «${debounced}»` : 'No hay material en esta lista'}>
                     {!debounced && tab === 'pendiente' && 'Anota lo que falte con el botón «Nuevo material».'}
+                    {!debounced && tab === 'almacen'
+                      && 'Aquí sale el material que ya tenemos y se ha anotado en un proyecto. '
+                       + 'Se apunta con «Nuevo material», eligiendo «Ya lo tenemos en el almacén».'}
                   </Empty>
                 ) : (
                   <div className="table-wrap">
@@ -334,6 +343,9 @@ export default function MaterialsList() {
                                 {m.project
                                   ? <Link to={`/admin/proyectos/${m.project.id}`}>{m.project.code}</Link>
                                   : <Badge tone="neutral" plain>Taller</Badge>}
+                                {m.origin === 'almacen' && (
+                                  <> <Badge tone="steel" plain>De almacén</Badge></>
+                                )}
                               </td>
                               <td className="nowrap">{m.ordered_on ? fmtDate(m.ordered_on) : <span className="faint">—</span>}</td>
                               <td className="nowrap">
@@ -344,12 +356,23 @@ export default function MaterialsList() {
                                 ) : <span className="faint">Sin fecha</span>}
                               </td>
                               <td>
-                                <label className="checkbox" style={{ margin: 0 }}>
-                                  <input type="checkbox" checked={m.received}
-                                         onChange={() => toggleReceived(m)}
-                                         aria-label={`Marcar ${m.name} como recibido`} />
-                                  <span className="sr-only">Recibido</span>
-                                </label>
+                                {/*
+                                  «Recibido» es de un pedido: dice si ha
+                                  llegado. El material del almacén ya lo
+                                  tenemos, así que no se marca ni se
+                                  desmarca: desmarcarlo lo haría contar
+                                  como pendiente en el proyecto.
+                                */}
+                                {m.origin === 'almacen' ? (
+                                  <span className="faint" title="Ya lo teníamos: no hay nada que esperar">—</span>
+                                ) : (
+                                  <label className="checkbox" style={{ margin: 0 }}>
+                                    <input type="checkbox" checked={m.received}
+                                           onChange={() => toggleReceived(m)}
+                                           aria-label={`Marcar ${m.name} como recibido`} />
+                                    <span className="sr-only">Recibido</span>
+                                  </label>
+                                )}
                               </td>
                               <td className="right nowrap">
                                 <button className="btn btn-ghost icon-btn" onClick={() => setEditing(m)}
@@ -394,6 +417,7 @@ export default function MaterialsList() {
       {accepting && (
         <MaterialModal
           title="Anotar como material pendiente"
+          allowOrigin={false}
           initial={{ ...emptyMaterial, name: accepting.body }}
           projects={accepting.project_id
             ? undefined

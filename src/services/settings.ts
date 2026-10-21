@@ -1,6 +1,6 @@
 import { supabase, unwrap } from '@/lib/supabase';
 import { Aviso } from '@/lib/errors';
-import type { AppSettings, Profile, UserRole } from '@/types/db';
+import type { AppSettings, Profile, UserLastSignIn, UserRole } from '@/types/db';
 
 export interface Counter { prefix: string; year: number; last_value: number }
 export interface StorageUsage {
@@ -116,6 +116,20 @@ export async function listAllPeople() {
   return unwrap(
     await supabase.from('profiles_full').select('*').order('role').order('full_name'),
   ) as Profile[];
+}
+
+/**
+ * La última conexión de cada persona, en UNA consulta para toda la
+ * lista: no una por empleado.
+ *
+ * Sale de «auth.users.last_sign_in_at», que mantiene el propio Supabase
+ * Auth. La vista se la devuelve entera a administración y, a cualquier
+ * otra persona, solo la suya.
+ */
+export async function listLastSignIns() {
+  return unwrap(
+    await supabase.from('user_last_sign_in').select('user_id, last_sign_in_at'),
+  ) as UserLastSignIn[];
 }
 
 /** Vuelve a leer la ficha completa después de cambiarla. */

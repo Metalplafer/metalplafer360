@@ -11,7 +11,7 @@ const REQUEST_SELECT =
 
 export type MaterialInput = Partial<Pick<Material,
   'project_id' | 'order_id' | 'name' | 'units' | 'supplier' | 'supplier_id' |
-  'ordered_on' | 'expected_on' | 'received' | 'notes'>>;
+  'ordered_on' | 'expected_on' | 'received' | 'notes' | 'origin'>>;
 
 function clean(o: MaterialInput) {
   return Object.fromEntries(
@@ -20,7 +20,7 @@ function clean(o: MaterialInput) {
 }
 
 export interface MaterialFilters {
-  state?: 'pendiente' | 'retrasado' | 'recibido' | 'todos';
+  state?: 'pendiente' | 'retrasado' | 'recibido' | 'almacen' | 'todos';
   projectId?: string;
   /**
    * El proveedor EN TEXTO, exacto. Sigue valiendo: hay material que solo
@@ -44,9 +44,14 @@ export async function listMaterials(f: MaterialFilters = {}, today?: string) {
 
   q = f.archived ? q.not('archived_at', 'is', null) : q.is('archived_at', null);
 
-  if (f.state === 'pendiente') q = q.eq('received', false);
-  else if (f.state === 'recibido') q = q.eq('received', true);
-  else if (f.state === 'retrasado' && today) q = q.eq('received', false).lt('expected_on', today);
+  // El material del almacén NO es material pendiente de comprar: se
+  // saca de «Pendiente», de «Retrasado» y de «Recibido», que son los
+  // estados de un pedido, y tiene su propia pestaña.
+  if (f.state === 'pendiente') q = q.eq('received', false).eq('origin', 'pedido');
+  else if (f.state === 'recibido') q = q.eq('received', true).eq('origin', 'pedido');
+  else if (f.state === 'retrasado' && today) {
+    q = q.eq('received', false).eq('origin', 'pedido').lt('expected_on', today);
+  } else if (f.state === 'almacen') q = q.eq('origin', 'almacen');
 
   if (f.projectId) q = q.eq('project_id', f.projectId);
 
@@ -71,6 +76,17 @@ export async function listMaterials(f: MaterialFilters = {}, today?: string) {
 
 export async function createMaterial(input: MaterialInput) {
   if (!input.name?.trim()) throw new Aviso('Escribe qué material falta.');
+  // El material que YA tenemos no se le ha pedido a nadie: ni proveedor
+  // ni fechas de pedido, y está disponible desde el primer momento. La
+  // base de datos lo exige también, pero aquí se deja dicho para que no
+  // viaje nada que luego rechace.
+  if (input.origin === 'almacen') {
+    input = {
+      ...input,
+      supplier: null, supplier_id: null, ordered_on: null, expected_on: null,
+      received: true,
+    };
+  }
   // El proyecto puede ir VACÍO —material de taller—, pero tiene que
   // venir decidido: «null» es una respuesta, no haberlo puesto no.
   if (input.project_id === undefined) {
@@ -82,6 +98,12 @@ export async function createMaterial(input: MaterialInput) {
 }
 
 export async function updateMaterial(id: string, patch: MaterialInput & { archived_at?: string | null }) {
+  if (patch.origin === 'almacen') {
+    patch = {
+      ...patch,
+      supplier: null, supplier_id: null, ordered_on: null, expected_on: null, received: true,
+    };
+  }
   return unwrap(
     await supabase.from('materials').update(clean(patch)).eq('id', id).select(SELECT).single(),
   ) as unknown as Material;

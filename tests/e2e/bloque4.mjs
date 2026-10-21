@@ -246,11 +246,23 @@ try {
 
   check('«Obras» es un tipo más de la leyenda del calendario',
     (await page.locator('.cal-legend').innerText()).includes('Obras'));
+  // ESTO CAMBIÓ con el rediseño: el calendario abre con fabricación y
+  // montaje, y «Obras» se enciende a mano.
+  await page.locator('.cal-legend-item:has-text("Obras")').click();
+  await page.waitForTimeout(700);
+
   check('La obra aparece en el calendario como un elemento más',
     (await page.locator('.cal-grid').innerText()).includes(`OBRA-${YEAR}-001`));
-  check('Ocupando los días de sus proyectos, no uno solo',
-    await page.locator(`.cal-event:has-text("OBRA-${YEAR}-001")`).count() >= 2,
-    String(await page.locator(`.cal-event:has-text("OBRA-${YEAR}-001")`).count()));
+
+  // Y ESTO TAMBIÉN: antes eran varias pastillas sueltas, una por día.
+  // Ahora es UNA barra continua que ocupa los días de sus proyectos, que
+  // es lo que se pidió. Se mira cuántas columnas ocupa, no cuántas
+  // pastillas hay.
+  const barraObra = page.locator(`.cal-event:has-text("OBRA-${YEAR}-001")`).first();
+  const columnas = await barraObra.evaluate(
+    (el) => getComputedStyle(el).gridColumn || el.style.gridColumn);
+  check('Y es UNA barra continua que ocupa varios días, no una por día',
+    /span\s*([2-9]|\d\d)/.test(columnas), columnas);
   check('La obra no se arrastra: lo que se mueve son los proyectos',
     await page.locator(`.cal-event[draggable="true"]:has-text("OBRA-${YEAR}-001")`).count() === 0);
 
@@ -259,12 +271,22 @@ try {
   check('Y al pulsarla se abre la pantalla de la obra',
     page.url().includes(`#/admin/obras/${obra.id}`), page.url());
 
-  // Quitar el filtro «Obras» la saca de la rejilla: es un tipo como los demás.
+  // El filtro «Obras» va y viene: es un tipo como los demás. Con el
+  // rediseño, al abrir el calendario está APAGADO —solo están
+  // fabricación y montaje—, así que se comprueba el camino entero.
   await page.goto(`http://localhost:${PORT}/#/admin/calendario`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(1100);
+  check('Al abrir el calendario, «Obras» está apagado',
+    !(await page.locator('.cal-grid').innerText()).includes(`OBRA-${YEAR}-001`));
+
   await page.locator('.cal-legend-item:has-text("Obras")').click();
   await page.waitForTimeout(800);
-  check('Se puede filtrar: al apagar «Obras» desaparece de la rejilla',
+  check('Al encenderlo, la obra entra en la rejilla',
+    (await page.locator('.cal-grid').innerText()).includes(`OBRA-${YEAR}-001`));
+
+  await page.locator('.cal-legend-item:has-text("Obras")').click();
+  await page.waitForTimeout(800);
+  check('Y al apagarlo desaparece de la rejilla',
     !(await page.locator('.cal-grid').innerText()).includes(`OBRA-${YEAR}-001`));
 
   // ================== SACAR UN PROYECTO =================================
