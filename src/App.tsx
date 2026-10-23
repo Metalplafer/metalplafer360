@@ -12,6 +12,8 @@ import { ADMIN_NAV, WORKER_NAV } from '@/config/navigation';
 const Dashboard = lazy(() => import('@/pages/admin/Dashboard'));
 const ClientsList = lazy(() => import('@/pages/admin/ClientsList'));
 const ClientDetail = lazy(() => import('@/pages/admin/ClientDetail'));
+const InboxList = lazy(() => import('@/pages/admin/InboxList'));
+const InboxDetail = lazy(() => import('@/pages/admin/InboxDetail'));
 const FichasList = lazy(() => import('@/pages/admin/FichasList'));
 const FichaForm = lazy(() => import('@/pages/admin/FichaForm'));
 const FichaDetail = lazy(() => import('@/pages/admin/FichaDetail'));
@@ -77,6 +79,9 @@ export function App() {
             <Route path="clientes" element={<Lazy><ClientsList /></Lazy>} />
             <Route path="clientes/:id" element={<Lazy><ClientDetail /></Lazy>} />
 
+            {/* MEJORA 6 · La bandeja de entrada de solicitudes. */}
+            <Route path="solicitudes" element={<Lazy><InboxList /></Lazy>} />
+            <Route path="solicitudes/:id" element={<Lazy><InboxDetail /></Lazy>} />
             <Route path="fichas" element={<Lazy><FichasList /></Lazy>} />
             <Route path="fichas/nueva" element={<Lazy><FichaForm /></Lazy>} />
             <Route path="fichas/:id" element={<Lazy><FichaDetail /></Lazy>} />

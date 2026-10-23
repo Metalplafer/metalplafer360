@@ -11,7 +11,24 @@ const REQUEST_SELECT =
 
 export type MaterialInput = Partial<Pick<Material,
   'project_id' | 'order_id' | 'name' | 'units' | 'supplier' | 'supplier_id' |
-  'ordered_on' | 'expected_on' | 'received' | 'notes' | 'origin'>>;
+  'ordered_on' | 'expected_on' | 'received' | 'notes' | 'origin' | 'prepared'>>;
+
+/**
+ * MEJORA 3 · ¿SE PUEDE PREPARAR ESTE MATERIAL?
+ *
+ * La misma regla que la restricción «materials_preparado_valido» de la
+ * base de datos, dicha una sola vez para que la pantalla no la repita de
+ * tres maneras distintas:
+ *
+ *   · lo de almacén ya está en el taller;
+ *   · lo pedido, solo cuando ha llegado.
+ *
+ * La pantalla la usa para APAGAR la casilla; la base de datos la usa
+ * para RECHAZAR la escritura. Las dos, no una.
+ */
+export function sePuedePreparar(m: Pick<Material, 'origin' | 'received'>) {
+  return m.origin === 'almacen' || m.received;
+}
 
 function clean(o: MaterialInput) {
   return Object.fromEntries(
@@ -115,6 +132,21 @@ export async function updateMaterial(id: string, patch: MaterialInput & { archiv
  */
 export async function setReceived(id: string, received: boolean) {
   return updateMaterial(id, { received });
+}
+
+/**
+ * MEJORA 3 · MARCAR EL MATERIAL COMO PREPARADO Y CARGADO.
+ *
+ * Igual que «recibido»: solo la marca. Ni fecha ni autor, que quedan en
+ * el historial general, y sin tocar el estado del pedido.
+ *
+ * Si el material está pedido y todavía no ha llegado, la base de datos
+ * lo RECHAZA con la restricción «materials_preparado_valido». La
+ * pantalla ya apaga la casilla en ese caso, pero la comprobación de
+ * verdad está allí: apagar un control no es una validación.
+ */
+export async function setPrepared(id: string, prepared: boolean) {
+  return updateMaterial(id, { prepared });
 }
 
 /** Proveedores ya utilizados, para sugerirlos mientras se escribe. */

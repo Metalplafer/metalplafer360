@@ -4,9 +4,10 @@ import {
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { DEFAULT_MAX_FILE_MB, env, isConfigured } from '@/config/env';
+import { coloresCalendario } from '@/config/constants';
 import { toUserMessage } from '@/lib/errors';
 import { usernameToEmail } from '@/lib/format';
-import type { ClientConfig, Profile } from '@/types/db';
+import type { CalendarKind, ClientConfig, Profile } from '@/types/db';
 
 interface AuthState {
   session: Session | null;
@@ -15,6 +16,13 @@ interface AuthState {
   authError: string | null;
   maxFileMb: number;
   companyName: string;
+  /**
+   * MEJORA 4.2 · Los colores del calendario, tal como los ha dejado
+   * administración. Vienen con «client_config», que ya se pide una vez
+   * al entrar: así no hay una segunda consulta ni cada calendario
+   * pidiéndolos por su cuenta, y el del trabajador los ve igual.
+   */
+  calendarColors: Record<CalendarKind, string>;
   isAdmin: boolean;
   signIn: (username: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -30,6 +38,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [authError, setAuthError] = useState<string | null>(null);
   const [maxFileMb, setMaxFileMb] = useState(DEFAULT_MAX_FILE_MB);
   const [companyName, setCompanyName] = useState('Metalplafer');
+  const [calendarColors, setCalendarColors] = useState<Record<CalendarKind, string>>(
+    () => coloresCalendario(null),
+  );
 
   /**
    * Carga el perfil del usuario. El rol y el estado activo se leen SIEMPRE
@@ -66,6 +77,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const c = cfg.data as ClientConfig;
       if (c.max_file_mb) setMaxFileMb(Number(c.max_file_mb));
       if (c.company_name) setCompanyName(c.company_name);
+      setCalendarColors(coloresCalendario(c.calendar_colors));
     }
   }, []);
 
@@ -111,11 +123,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<AuthState>(() => ({
-    session, profile, loading, authError, maxFileMb, companyName,
+    session, profile, loading, authError, maxFileMb, companyName, calendarColors,
     isAdmin: profile?.role === 'admin',
     signIn, signOut,
     refreshProfile: () => loadProfile(session),
-  }), [session, profile, loading, authError, maxFileMb, companyName, signIn, signOut, loadProfile]);
+  }), [session, profile, loading, authError, maxFileMb, companyName, calendarColors,
+    signIn, signOut, loadProfile]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

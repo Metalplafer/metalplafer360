@@ -1,6 +1,6 @@
 import {
   BarChart3, Boxes, Building2, CalendarDays, ClipboardList, FileStack, FileText, FolderKanban,
-  HardHat, Home, LayoutDashboard, Receipt, Settings, Siren, Truck, UserRound, Users,
+  HardHat, Home, Inbox, LayoutDashboard, Receipt, Settings, Siren, Truck, UserRound, Users,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -20,6 +20,9 @@ export interface NavItem {
  */
 export const ADMIN_NAV: NavItem[] = [
   { path: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
+  // MEJORA 6 · La bandeja va ARRIBA, justo antes de las fichas: es por
+  // donde entra el trabajo, y lo primero que hay que mirar por la mañana.
+  { path: '/admin/solicitudes', label: 'Solicitudes', icon: Inbox },
   { path: '/admin/fichas', label: 'Fichas', icon: FileStack },
   { path: '/admin/obras', label: 'Obras', icon: HardHat },
   { path: '/admin/proyectos', label: 'Proyectos', icon: FolderKanban },

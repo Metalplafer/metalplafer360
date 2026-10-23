@@ -12,7 +12,11 @@ import { DocumentsPanel } from '@/components/shared/DocumentsPanel';
 import { documentPaths, removeStoredFiles } from '@/services/documents';
 import { CommentsPanel } from '@/components/shared/CommentsPanel';
 import { HistoryPanel } from '@/components/shared/HistoryPanel';
-import { assignFichaWorkers, deleteFicha, fichaTeam, getFicha, updateFicha } from '@/services/fichas';
+import { RelatedDocsPanel } from '@/components/shared/RelatedDocsPanel';
+import { VisitasPanel } from '@/components/shared/VisitasPanel';
+import {
+  assignFichaWorkers, deleteFicha, fichaTeam, getFicha, updateFicha, visitTargetInfo,
+} from '@/services/fichas';
 import { convertBudget, projectFromFicha } from '@/services/projects';
 import { listPeople } from '@/services/people';
 import { FICHA_STATUSES, FICHA_TYPE_LABEL, fichaStatus } from '@/config/constants';
@@ -35,6 +39,26 @@ export default function FichaDetail() {
   );
   // Si este presupuesto ya se convirtió, aquí está su proyecto.
   const project = useAsync(() => projectFromFicha(id), [id, ficha.data?.status]);
+  /**
+   * MEJORA 2 · DE DÓNDE VIENE UNA VISITA.
+   *
+   * Si esta ficha es una visita vinculada, se pide el código de su
+   * destino para poder volver allí con un enlace. Solo el código y el
+   * cliente: no hace falta traerse el proyecto entero.
+   */
+  const origen = useAsync(async () => {
+    const f = ficha.data;
+    if (!f || f.type !== 'visita') return null;
+    if (f.linked_ficha_id) {
+      const d = await visitTargetInfo('presupuesto', f.linked_ficha_id);
+      return d && { tipo: 'ficha' as const, id: d.id, code: d.code };
+    }
+    if (f.linked_project_id) {
+      const d = await visitTargetInfo('proyecto', f.linked_project_id);
+      return d && { tipo: 'proyecto' as const, id: d.id, code: d.code };
+    }
+    return null;
+  }, [ficha.data?.id, ficha.data?.linked_ficha_id, ficha.data?.linked_project_id]);
   const [saving, setSaving] = useState(false);
   // Se incrementa tras cada acción para volver a pedir el historial.
   const [historyKey, setHistoryKey] = useState(0);
@@ -191,7 +215,12 @@ export default function FichaDetail() {
   async function convert() {
     const ok = await confirm({
       title: 'Convertir en proyecto',
-      message: <>Se creará un proyecto con los datos de {f.code}. El presupuesto se conserva tal cual.</>,
+      message: (
+        <>
+          Se creará un proyecto con los datos de {f.code}. El presupuesto se conserva tal
+          cual, y sus archivos se verán desde el proyecto sin copiarse.
+        </>
+      ),
       confirmLabel: 'Crear el proyecto',
     });
     if (!ok) return;
@@ -200,7 +229,29 @@ export default function FichaDetail() {
       const projectId = await convertBudget(f.id, f.title ?? undefined);
       toast.success('Proyecto creado a partir del presupuesto');
       navigate(`/admin/proyectos/${projectId}`);
-    } catch (e) { toast.error(e); } finally { setSaving(false); }
+    } catch (e) {
+      /**
+       * MEJORA 1 · DOS INTENTOS, UN SOLO PROYECTO.
+       *
+       * La base de datos ya impide crear un segundo proyecto del mismo
+       * presupuesto: «source_ficha_id» es único y la función lo
+       * comprueba antes. Pero si alguien pulsa dos veces —o lo intenta
+       * desde dos pestañas—, lo que veía era un error crudo y se
+       * quedaba sin saber qué había pasado.
+       *
+       * Así que se mira si YA existe el proyecto y se lleva a él. No se
+       * crea nada: solo se lee para poder explicarlo.
+       */
+      try {
+        const ya = await projectFromFicha(f.id);
+        if (ya) {
+          toast.success(`Este presupuesto ya es el proyecto ${ya.code}`);
+          navigate(`/admin/proyectos/${ya.id}`);
+          return;
+        }
+      } catch { /* si tampoco se puede consultar, manda el error original */ }
+      toast.error(e);
+    } finally { setSaving(false); }
   }
 
   const phone = f.phone ?? f.client?.phone ?? null;
@@ -226,6 +277,19 @@ export default function FichaDetail() {
             <Badge tone="neutral" plain>{FICHA_TYPE_LABEL[f.type]}</Badge>
             <Badge tone={status.tone}>{status.label}</Badge>
             {archived && <Badge tone="steel">Archivada</Badge>}
+            {/*
+              MEJORA 2 · VOLVER AL PRESUPUESTO O AL PROYECTO DE ORIGEN.
+              Se pedía una navegación clara en los dos sentidos: desde la
+              ficha de origen se ve la visita, y desde la visita se
+              vuelve con un enlace que dice a qué pertenece.
+            */}
+            {origen.data && (
+              <Link to={origen.data.tipo === 'proyecto'
+                ? `/admin/proyectos/${origen.data.id}`
+                : `/admin/fichas/${origen.data.id}`}>
+                Visita técnica de {origen.data.code}
+              </Link>
+            )}
             <span className="faint">Creada el {fmtDate(f.created_at)}</span>
           </span>
         }
@@ -464,6 +528,23 @@ export default function FichaDetail() {
         <div className="stack">
           <DocumentsPanel owner={{ fichaId: f.id }}
             onChange={() => setHistoryKey((k) => k + 1)} />
+          {/*
+            MEJORA 2 · Los planos y las fotos de las visitas técnicas
+            vinculadas a esta ficha, sin copiar ningún archivo.
+          */}
+          {f.type !== 'visita' && (
+            <RelatedDocsPanel paraTipo={f.type === 'aviso' ? 'aviso' : 'presupuesto'}
+                              paraId={f.id} reloadKey={String(historyKey)} />
+          )}
+          {/*
+            Las visitas se asignan a un presupuesto o a un aviso. Una
+            visita no tiene visitas: ahí el panel no se enseña.
+          */}
+          {f.type !== 'visita' && (
+            <VisitasPanel paraTipo={f.type === 'aviso' ? 'aviso' : 'presupuesto'}
+                          paraId={f.id} codigo={f.code} clientId={f.client_id}
+                          onChange={() => setHistoryKey((k) => k + 1)} />
+          )}
           <CommentsPanel owner={{ fichaId: f.id }} />
         </div>
       </div>

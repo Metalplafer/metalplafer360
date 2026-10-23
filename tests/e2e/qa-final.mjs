@@ -527,16 +527,47 @@ try {
   const rejilla = await page.locator('.cal-grid').innerText();
   check('9 · Los dos tramos salen en el calendario',
     rejilla.includes(`PROY-${YEAR}-001`));
-  // ESTO CAMBIÓ con el rediseño del calendario: antes se contaban las
-  // pastillas, una por día (fabricación 2 + montaje 1 = 3). Ahora cada
-  // tramo es UNA barra, así que son dos barras, y lo que dice que la de
-  // fabricación dura dos días son sus columnas.
-  const barras = page.locator(`.cal-event:has-text("PROY-${YEAR}-001")`);
-  const columnasFab = await page.locator('.cal-event[title^="Fabricación"]').first()
-    .evaluate((el) => getComputedStyle(el).gridColumn || el.style.gridColumn);
-  check('9 · Las dos fases son dos barras, y la de 2 días ocupa 2 columnas',
-    await barras.count() === 2 && /span\s*2/.test(columnasFab),
-    `${await barras.count()} barra(s), fabricación: ${columnasFab}`);
+  /*
+    ESTO CAMBIÓ con el rediseño del calendario: antes se contaban las
+    pastillas, una por día (fabricación 2 + montaje 1 = 3). Ahora cada
+    tramo es UNA barra que ocupa sus columnas.
+
+    Y OJO CON EL NÚMERO EXACTO. Esta comprobación exigía «span 2» porque
+    32 horas entre dos personas son dos días. Pero los tramos se
+    planifican en días LABORABLES y se pintan en días de CALENDARIO: si
+    la fabricación empieza un viernes, esos dos días son viernes y lunes,
+    la barra se parte en dos semanas y en la primera ocupa tres columnas
+    (viernes, sábado y domingo). La comprobación fallaba los viernes y
+    pasaba el resto de la semana, sin que nada estuviera mal. Se encontró
+    ejecutando la batería un viernes.
+
+    Ahora se comprueba lo que se quería comprobar: que son barras y no
+    una pastilla por día, y que los trozos de la fabricación suman los
+    días que dura.
+  */
+  const barrasFab = page.locator('.cal-event[title^="Fabricación"]')
+    .filter({ hasText: `PROY-${YEAR}-001` });
+  const barrasMont = page.locator('.cal-event[title^="Montaje"]')
+    .filter({ hasText: `PROY-${YEAR}-001` });
+  const diasFab = Math.round(
+    (Date.parse(`${planificado.fab_end}T00:00:00Z`)
+     - Date.parse(`${planificado.fab_start}T00:00:00Z`)) / 86400000,
+  ) + 1;
+  const columnasFab = await barrasFab.evaluateAll((els) => els.map(
+    (el) => getComputedStyle(el).gridColumn || el.style.gridColumn));
+  const sumaFab = columnasFab.reduce(
+    (t, c) => t + Number(/span\s*(\d+)/.exec(c)?.[1] ?? 1), 0);
+
+  check('9 · Las dos fases son barras, no una pastilla por día',
+    columnasFab.length >= 1 && columnasFab.length < diasFab
+    && await barrasMont.count() === 1,
+    `fabricación ${columnasFab.length} trozo(s) de ${diasFab} días, `
+    + `montaje ${await barrasMont.count()}`);
+
+  check('9 · Y los trozos de la fabricación suman los días que dura',
+    sumaFab === diasFab,
+    `${columnasFab.join(' / ')} → suman ${sumaFab} de ${diasFab} `
+    + `(${planificado.fab_start} → ${planificado.fab_end})`);
   check('9 · No se pinta en sábado ni en domingo',
     await page.locator('.cal-grid .cal-day.fin-de-semana .cal-event').count() === 0 || true);
 

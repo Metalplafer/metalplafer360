@@ -124,14 +124,47 @@ try {
   check('El proyecto planificado aparece en el calendario',
     (await page.locator('.cal-grid').innerText()).includes(`PROY-${YEAR}-001`));
 
-  // ESTO CAMBIÓ con el rediseño del calendario, y es justo lo que se
-  // pidió: un tramo de dos días ya NO son dos pastillas sueltas con el
-  // mismo nombre, sino UNA barra continua que ocupa dos columnas.
-  const barraFab = page.locator(`.cal-event:has-text("PROY-${YEAR}-001")`).first();
-  const columnasFab = await barraFab.evaluate(
-    (el) => getComputedStyle(el).gridColumn || el.style.gridColumn);
-  check('Un tramo de 2 días es UNA barra que ocupa 2 columnas, no dos pastillas',
-    /span\s*2/.test(columnasFab), columnasFab);
+  /*
+    ESTO CAMBIÓ con el rediseño del calendario, y es justo lo que se
+    pidió: un tramo de varios días ya NO son varias pastillas sueltas con
+    el mismo nombre, sino UNA barra continua que ocupa sus columnas.
+
+    OJO CON CÓMO SE COMPROBABA ESTO. Antes se exigía «span 2», porque 32
+    horas entre dos personas son dos días de trabajo. Pero el tramo se
+    planifica en días LABORABLES y se pinta en días de CALENDARIO: si
+    empieza un viernes, esos dos días laborables son viernes y lunes, y
+    en la semana del viernes la barra ocupa TRES columnas (viernes,
+    sábado y domingo). La comprobación fallaba los viernes y pasaba el
+    resto de la semana, sin que nada estuviera mal.
+
+    Se encontró ejecutando la batería un viernes. Ahora se comprueba lo
+    que de verdad se quería comprobar —que la fabricación es UNA barra y
+    que ocupa MÁS DE UNA columna—, y el número exacto se calcula de las
+    fechas que tiene el proyecto, no de un número escrito a mano.
+  */
+  const barrasFab = page.locator('.cal-event[title^="Fabricación"]')
+    .filter({ hasText: `PROY-${YEAR}-001` });
+
+  // Los días de calendario que dura el tramo, de sus propias fechas.
+  const diasDelTramo = Math.round(
+    (Date.parse(`${db.projects[0].fab_end}T00:00:00Z`)
+     - Date.parse(`${db.projects[0].fab_start}T00:00:00Z`)) / 86400000,
+  ) + 1;
+
+  const trozos = await barrasFab.count();
+  check('La fabricación son barras, no una pastilla por día',
+    trozos >= 1 && trozos < diasDelTramo,
+    `${trozos} trozo(s) para ${diasDelTramo} días `
+    + `(${db.projects[0].fab_start} → ${db.projects[0].fab_end})`);
+
+  // Y entre los trozos suman los días del tramo: una barra por semana,
+  // con sus columnas, y nada perdido por el camino.
+  const columnasFab = await barrasFab.evaluateAll((els) => els.map(
+    (el) => getComputedStyle(el).gridColumn || el.style.gridColumn));
+  const suma = columnasFab.reduce(
+    (t, c) => t + Number(/span\s*(\d+)/.exec(c)?.[1] ?? 1), 0);
+  check('Y entre todos los trozos suman los días que dura el tramo',
+    suma === diasDelTramo, `${columnasFab.join(' / ')} → suman ${suma} de ${diasDelTramo}`);
 
   // ================== MOVER A MANO =====================================
   const antes = db.projects[0].fab_start;
@@ -213,8 +246,8 @@ try {
 
   check('Administración crea un evento «Otro» desde el calendario',
     db.calendar_notes.some((n) => n.title === 'Revisión de la plegadora' && n.day === MARTES));
-  // Con el rediseño, «Otros» no está encendido al abrir: se enciende
-  // para verlo, como cualquier categoría suelta.
+  // «Otros» no está encendido al abrir: se enciende para verlo. Desde
+  // la MEJORA 4.3 encenderlo no apaga fabricación ni montaje.
   await page.locator('.cal-legend-item:has-text("Otros")').click();
   await page.waitForTimeout(700);
   check('Y aparece en la rejilla al encender «Otros»',

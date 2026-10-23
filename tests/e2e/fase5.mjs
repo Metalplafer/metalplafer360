@@ -272,10 +272,13 @@ try {
 
   check('La fabricación planificada aparece en el calendario',
     (await a.locator('.cal-grid').innerText()).includes(`PROY-${YEAR}-001`));
-  // ESTO CAMBIÓ con el rediseño del calendario: al abrirlo solo están
-  // encendidas fabricación y montaje, que es lo que dice cómo de cargada
-  // está una semana. El material se enciende a mano, y entonces se ve
-  // SOLO material: las categorías sueltas son excluyentes.
+  // Al abrir el calendario solo están encendidas fabricación y montaje,
+  // que es lo que dice cómo de cargada está una semana. El material se
+  // enciende a mano.
+  //
+  // MEJORA 4.3 · Lo que cambió aquí: encender «Material» ya NO apaga lo
+  // demás. Esta prueba comprobaba lo contrario y se ha reescrito para la
+  // regla nueva, que es la que se pidió.
   check('Al abrir, el material no está encendido',
     !(await a.locator('.cal-grid').innerText()).includes('Bisagras inox 40 mm'));
 
@@ -283,14 +286,14 @@ try {
   await a.waitForTimeout(500);
   check('Y el material en su fecha prevista, al encenderlo',
     (await a.locator('.cal-grid').innerText()).includes('Bisagras inox 40 mm'));
-  check('Encender «Material» apaga lo demás',
-    !(await a.locator('.cal-grid').innerText()).includes(`PROY-${YEAR}-001`));
+  check('Encender «Material» NO apaga la planificación: se ven las dos cosas',
+    (await a.locator('.cal-grid').innerText()).includes(`PROY-${YEAR}-001`),
+    (await a.locator('.cal-grid').innerText()).replace(/\n/g, ' | ').slice(0, 200));
 
-  // Volver a pulsarla devuelve a fabricación y montaje, que es lo de
-  // siempre: así nunca se queda el calendario en blanco.
+  // Y apagarla quita solo el material.
   await a.locator('.cal-legend-item:has-text("Material")').click();
   await a.waitForTimeout(500);
-  check('Y volver a pulsarla devuelve a fabricación y montaje',
+  check('Y apagarla quita el material y deja la planificación',
     (await a.locator('.cal-grid').innerText()).includes(`PROY-${YEAR}-001`)
     && !(await a.locator('.cal-grid').innerText()).includes('Bisagras inox 40 mm'));
 

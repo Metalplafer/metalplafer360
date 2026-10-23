@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import {
   Building2, CalendarRange, CloudUpload, Database, Download, HardDrive, Hash,
-  RefreshCw, Save, Smartphone, TriangleAlert, Upload,
+  Palette, RefreshCw, RotateCcw, Save, Smartphone, TriangleAlert, Upload,
 } from 'lucide-react';
 import { useAsync } from '@/hooks/useAsync';
 import { useAuth } from '@/auth/AuthProvider';
@@ -15,9 +15,13 @@ import {
   generateBackup, listBackups, readBackupFile, restoreBackup,
 } from '@/services/backup';
 import {
-  getSettings, listCounters, saveStorageQuota, setBackupSettings, setCompany, setCounter,
-  setGapDays, setMaxFileMb, storageSummary, storageUsage,
+  getSettings, listCounters, saveStorageQuota, setBackupSettings, setCalendarColors,
+  setCompany, setCounter, setGapDays, setMaxFileMb, storageSummary, storageUsage,
 } from '@/services/settings';
+import {
+  CALENDAR_COLOR, CALENDAR_KINDS, CALENDAR_LABEL, coloresCalendario,
+} from '@/config/constants';
+import { normalizaHex, seLee, textoSobre } from '@/lib/colores';
 import { RESTORE_SCOPES, tablesForScopes, type BackupContents } from '@/lib/export/backup';
 import { MIME, downloadBytes } from '@/lib/download';
 import { fmtBytes, fmtDate, fmtDateTime, fmtNumber } from '@/lib/format';
@@ -72,7 +76,12 @@ export default function SettingsPage() {
                 <BackupTab settings={settings.data} company={companyName} onSaved={reload} />
               )}
               {tab === 'planificacion' && (
-                <PlanningTab settings={settings.data} onSaved={reload} />
+                <>
+                  <PlanningTab settings={settings.data} onSaved={reload} />
+                  {/* MEJORA 4.2 · Los colores van con la planificación:
+                      es la pestaña del calendario. */}
+                  <ColoresTab settings={settings.data} onSaved={reload} />
+                </>
               )}
               {tab === 'almacenamiento' && (
                 <StorageTab settings={settings.data} maxFileMb={maxFileMb} onSaved={reload} />
@@ -923,6 +932,121 @@ function PlanningTab({ settings, onSaved }: { settings: AppSettings; onSaved: ()
         El margen vale <strong>de aquí en adelante</strong>: lo que ya esté colocado en el
         calendario no se mueve. La planificación automática nunca solapa dos proyectos;
         si hace falta solapar, se hace a mano desde el calendario y entonces manda eso.
+      </p>
+    </Panel>
+  );
+}
+
+// ---------------------------------------------------------------------
+// MEJORA 4.2 · LOS COLORES DEL CALENDARIO
+// ---------------------------------------------------------------------
+/**
+ * EL COLOR DE CADA CATEGORÍA, PARA TODA LA EMPRESA.
+ *
+ * Se guarda en «app_settings», que es donde viven los ajustes
+ * compartidos, y NO en el navegador: el objetivo es justamente que lo
+ * vean los demás. Lo que se manda es solo lo que se ha cambiado; una
+ * categoría que vuelve a su color de serie se manda quitada.
+ *
+ * Debajo de cada color se enseña una pastilla de muestra IGUAL que la
+ * del calendario, con el color de texto ya calculado, porque lo que hay
+ * que decidir no es «¿me gusta este azul?» sino «¿se lee el código del
+ * proyecto encima?». Y si un color no llega al contraste mínimo se
+ * avisa, sin impedirlo: a lo mejor se usa para algo que se mira de lejos.
+ */
+function ColoresTab({ settings, onSaved }: { settings: AppSettings; onSaved: () => void }) {
+  const { toast } = useDialogs();
+  const guardados = settings.calendar_colors ?? {};
+  const [form, setForm] = useState<Record<string, string>>(
+    () => ({ ...coloresCalendario(guardados) }),
+  );
+  const [busy, setBusy] = useState(false);
+
+  const efectivos = coloresCalendario(form);
+  /*
+    Se compara NORMALIZANDO los dos lados: el selector del navegador
+    devuelve «#1d4f91» y una paleta escrita a mano puede traer
+    «#1D4F91». Comparar el texto tal cual daba por cambiados colores que
+    nadie había tocado.
+  */
+  const cambiados = CALENDAR_KINDS.filter(
+    (k) => normalizaHex(efectivos[k]) !== normalizaHex(CALENDAR_COLOR[k]),
+  );
+
+  async function save() {
+    setBusy(true);
+    try {
+      // Solo lo que se ha cambiado. Lo que coincide con el color de
+      // serie no se guarda: así, si algún día cambia la paleta de la
+      // aplicación, estas instalaciones la siguen.
+      const soloCambiados: Record<string, string> = {};
+      cambiados.forEach((k) => { soloCambiados[k] = efectivos[k]; });
+      await setCalendarColors(soloCambiados);
+      toast.success(cambiados.length
+        ? 'Colores guardados. Los verá todo el mundo al volver a entrar.'
+        : 'Colores devueltos a los de siempre.');
+      onSaved();
+    } catch (e) { toast.error(e); } finally { setBusy(false); }
+  }
+
+  return (
+    <Panel title={<span className="row" style={{ gap: 7 }}><Palette size={17} />Colores del calendario</span>}>
+      <p className="hint" style={{ marginTop: 0 }}>
+        El color es de la <strong>categoría</strong>, no de la persona ni del cliente. Lo que
+        se elija aquí lo ve todo el mundo: no es una preferencia de este navegador.
+      </p>
+
+      <div className="color-grid">
+        {CALENDAR_KINDS.map((k) => {
+          const valor = efectivos[k];
+          const legible = seLee(valor);
+          return (
+            <div key={k} className="color-item">
+              <label className="label" htmlFor={`color-${k}`}>{CALENDAR_LABEL[k]}</label>
+              <div className="row" style={{ gap: 8 }}>
+                <input id={`color-${k}`} type="color" className="color-input" value={valor}
+                       aria-label={`Color de ${CALENDAR_LABEL[k]}`}
+                       onChange={(e) => setForm((f) => ({ ...f, [k]: e.target.value }))} />
+                <input className="input" style={{ width: 110 }} value={form[k] ?? valor}
+                       aria-label={`Color de ${CALENDAR_LABEL[k]} en texto`}
+                       onChange={(e) => setForm((f) => ({ ...f, [k]: e.target.value }))} />
+              </div>
+              {/* La muestra: lo mismo que se verá en el calendario. */}
+              <span className="cal-event color-muestra"
+                    style={{ ['--ev' as string]: valor, ['--ev-texto' as string]: textoSobre(valor) }}>
+                <span className="cal-event-text"><strong>PROY-0000</strong> Ejemplo</span>
+              </span>
+              {!legible && (
+                <span className="hint" style={{ color: 'var(--warn)' }}>
+                  Con este color el texto se lee con dificultad.
+                </span>
+              )}
+              {normalizaHex(valor) !== normalizaHex(CALENDAR_COLOR[k]) && (
+                <button type="button" className="btn btn-sm btn-ghost"
+                        onClick={() => setForm((f) => ({ ...f, [k]: CALENDAR_COLOR[k] }))}>
+                  Volver al de siempre
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="row" style={{ marginTop: 12 }}>
+        <button className="btn btn-primary" onClick={save} disabled={busy}>
+          <Save />{busy ? 'Guardando…' : 'Guardar los colores'}
+        </button>
+        <button className="btn" disabled={busy || !cambiados.length}
+                onClick={() => setForm({ ...CALENDAR_COLOR })}>
+          <RotateCcw />Volver a los de siempre
+        </button>
+      </div>
+
+      <p className="hint" style={{ marginBottom: 0 }}>
+        {cambiados.length === 0
+          ? 'Ahora mismo están puestos los colores de siempre.'
+          : `${cambiados.length === 1 ? 'Hay 1 color cambiado' : `Hay ${cambiados.length} colores cambiados`}: `
+            + cambiados.map((k) => CALENDAR_LABEL[k]).join(', ') + '.'}
       </p>
     </Panel>
   );

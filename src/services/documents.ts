@@ -1,7 +1,7 @@
 import { supabase, unwrap } from '@/lib/supabase';
 import { STORAGE_BUCKET } from '@/config/env';
 import { categoryFor, safeStorageName, validateFileSize } from '@/lib/files';
-import type { DocScope, DocumentRow, WorkDocument } from '@/types/db';
+import type { DocScope, DocumentRow, RelatedDocument, WorkDocument } from '@/types/db';
 
 const SELECT = '*, uploader:profiles!documents_uploaded_by_fkey(full_name)';
 
@@ -11,7 +11,14 @@ const SELECT = '*, uploader:profiles!documents_uploaded_by_fkey(full_name)';
  */
 export type DocOwner =
   { fichaId: string } | { projectId: string } | { orderId: string } | { reportId: string }
-  | { workId: string };
+  | { workId: string }
+  /**
+   * MEJORA 6 · Los adjuntos de un correo son archivos normales, con su
+   * categoría, su papelera y sus permisos. Por eso la bandeja usa EL
+   * MISMO panel de documentos que los presupuestos: un dueño más, no un
+   * segundo sistema de archivos.
+   */
+  | { mailRequestId: string };
 
 function ownerColumn(owner: DocOwner) {
   if ('fichaId' in owner) return { column: 'ficha_id', id: owner.fichaId, folder: `fichas/${owner.fichaId}` };
@@ -19,6 +26,12 @@ function ownerColumn(owner: DocOwner) {
   if ('reportId' in owner) return { column: 'report_id', id: owner.reportId, folder: `reports/${owner.reportId}` };
   // FASE 3.5 · La obra tiene documentación propia, en su propia carpeta.
   if ('workId' in owner) return { column: 'work_id', id: owner.workId, folder: `works/${owner.workId}` };
+  // MEJORA 6 · La carpeta «mail/» es la que la función de permisos del
+  // almacén NO reconoce, así que solo administración lee lo que hay
+  // dentro. Se comprobó leyendo «storage_can_read»: cae en «else false».
+  if ('mailRequestId' in owner) {
+    return { column: 'mail_request_id', id: owner.mailRequestId, folder: `mail/${owner.mailRequestId}` };
+  }
   return { column: 'order_id', id: owner.orderId, folder: `orders/${owner.orderId}` };
 }
 
@@ -135,6 +148,27 @@ export async function listWorkDocuments(workId: string) {
       .eq('work_id', workId).is('deleted_at', null)
       .order('created_at', { ascending: false }),
   ) as WorkDocument[];
+}
+
+/**
+ * MEJORA 1 y 2 · LOS ARCHIVOS QUE SE HEREDAN.
+ *
+ * Lo que este proyecto o esta ficha VE sin ser suyo: los archivos del
+ * presupuesto del que nació el proyecto y los de las visitas técnicas
+ * vinculadas. Ni uno se copia: la vista «related_documents» los mira
+ * donde están y dice de dónde vienen.
+ *
+ * La vista se ejecuta con los permisos de quien pregunta, así que no hay
+ * que filtrar nada aquí: lo que no se pueda ver, no llega.
+ */
+export async function listRelatedDocuments(
+  paraTipo: RelatedDocument['para_tipo'], paraId: string,
+) {
+  return unwrap(
+    await supabase.from('related_documents').select('*')
+      .eq('para_tipo', paraTipo).eq('para_id', paraId)
+      .order('created_at', { ascending: false }),
+  ) as RelatedDocument[];
 }
 
 /** Las rutas de todos los archivos de una ficha o un proyecto. */

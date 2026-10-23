@@ -155,8 +155,9 @@ try {
     (await page.locator('h1').first().innerText()).includes('Salvi'));
   // FASE 4 · eran 14; se retiró «Órdenes de trabajo» y quedaron 13.
   // M6 · entra «Proveedores» y vuelven a ser 14.
-  check('El menú de administración tiene las 14 secciones',
-    (await page.locator('.sidebar nav a').count()) === 14,
+  // MEJORA 6 · entra «Solicitudes» —la bandeja del correo— y son 15.
+  check('El menú de administración tiene las 15 secciones',
+    (await page.locator('.sidebar nav a').count()) === 15,
     String(await page.locator('.sidebar nav a').count()));
 
   // ---------------------------------------------------------------------
@@ -254,9 +255,12 @@ try {
   // los partes, y la sección antigua ya no aparece en el menú.
   // M6: «Proveedores» entra justo detrás de «Material pendiente», que es
   // desde donde se usan.
-  const expected = ['Dashboard', 'Fichas', 'Obras', 'Proyectos', 'Partes de trabajo',
-    'Material pendiente', 'Proveedores', 'Calendario', 'Avisos', 'Clientes',
-    'Trabajadores', 'Facturación', 'Informes', 'Configuración'];
+  // MEJORA 6: «Solicitudes» entra ARRIBA, justo detrás del panel y antes
+  // de las fichas: es por donde entra el trabajo y lo primero que hay
+  // que mirar por la mañana.
+  const expected = ['Dashboard', 'Solicitudes', 'Fichas', 'Obras', 'Proyectos',
+    'Partes de trabajo', 'Material pendiente', 'Proveedores', 'Calendario', 'Avisos',
+    'Clientes', 'Trabajadores', 'Facturación', 'Informes', 'Configuración'];
   check('Las secciones son exactamente las previstas',
     menu.length === expected.length
     && expected.every((label, i) => menu[i].includes(label)), menu.join(' | '));

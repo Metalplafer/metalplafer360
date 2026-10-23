@@ -271,9 +271,10 @@ try {
   check('Y al pulsarla se abre la pantalla de la obra',
     page.url().includes(`#/admin/obras/${obra.id}`), page.url());
 
-  // El filtro «Obras» va y viene: es un tipo como los demás. Con el
-  // rediseño, al abrir el calendario está APAGADO —solo están
-  // fabricación y montaje—, así que se comprueba el camino entero.
+  // El filtro «Obras» va y viene: es un tipo como los demás. Al abrir el
+  // calendario está APAGADO —solo están fabricación y montaje—, así que
+  // se comprueba el camino entero: encender y volver a apagar, sin que
+  // eso toque a las demás categorías (MEJORA 4.3).
   await page.goto(`http://localhost:${PORT}/#/admin/calendario`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(1100);
   check('Al abrir el calendario, «Obras» está apagado',

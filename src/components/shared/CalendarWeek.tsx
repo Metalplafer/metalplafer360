@@ -1,5 +1,5 @@
-import { memo } from 'react';
-import { CALENDAR_COLOR, CALENDAR_LABEL } from '@/config/constants';
+import { memo, type CSSProperties } from 'react';
+import { CALENDAR_LABEL } from '@/config/constants';
 import { dayNumber, weekdayShort } from '@/lib/format';
 import {
   cubre, escondidosPorDia, masDias, repartirSemana, type Segmento,
@@ -23,6 +23,12 @@ export interface SemanaProps {
   lunes: string;
   tramos: CalendarSpan[];
   hoy: string;
+  /**
+   * MEJORA 4.1 · El color de la categoría y el del texto que se lee
+   * encima, ya calculados por quien sabe qué colores ha elegido la
+   * empresa. La semana solo los pone.
+   */
+  estiloDe: (k: CalendarSpan['kind']) => CSSProperties;
   /** El mes que se está mirando, para apagar los días de los otros. */
   mes?: string;
   noLaborables: Set<string>;
@@ -44,11 +50,12 @@ export interface SemanaProps {
 /** Cuántos carriles se pintan antes de empezar a resumir en «+N». */
 const CARRILES = 4;
 
-function Pastilla({ s, uid, dragging, canDrag, onDragStart, onOpen }: {
+function Pastilla({ s, uid, dragging, canDrag, estiloDe, onDragStart, onOpen }: {
   s: Segmento<CalendarSpan & { uid: string }>;
   uid: string;
   dragging: string | null;
   canDrag: boolean;
+  estiloDe: (k: CalendarSpan['kind']) => CSSProperties;
   onDragStart: (uid: string | null) => void;
   onOpen: (s: CalendarSpan) => void;
 }) {
@@ -64,7 +71,7 @@ function Pastilla({ s, uid, dragging, canDrag, onDragStart, onOpen }: {
         s.continuaDespues ? 'sigue-despues' : '',
       ].filter(Boolean).join(' ')}
       style={{
-        ['--ev' as string]: CALENDAR_COLOR[e.kind],
+        ...estiloDe(e.kind),
         gridColumn: `${s.col + 1} / span ${dias}`,
         gridRow: s.lane + 1,
       }}
@@ -77,6 +84,13 @@ function Pastilla({ s, uid, dragging, canDrag, onDragStart, onOpen }: {
         + `${e.starts !== e.ends ? ` · del ${e.starts} al ${e.ends}` : ''}`}
     >
       <span className="cal-dot" aria-hidden />
+      {/*
+        MEJORA 4.1 · La categoría, DICHA y no solo coloreada. No se ve en
+        pantalla —no cabe en una pastilla de 20 píxeles— pero la leen los
+        lectores de pantalla y está en el «title» al pasar por encima,
+        para que la información no dependa solo del color.
+      */}
+      <span className="sr-only">{CALENDAR_LABEL[e.kind]}: </span>
       <span className="cal-event-text">
         {s.continuaAntes ? '◂ ' : ''}
         {e.code ? <strong>{e.code}</strong> : null} {e.title}
@@ -87,7 +101,7 @@ function Pastilla({ s, uid, dragging, canDrag, onDragStart, onOpen }: {
 }
 
 export const SemanaCalendario = memo(function SemanaCalendario({
-  lunes, tramos, hoy, mes, noLaborables, canDrag, dragging, over,
+  lunes, tramos, hoy, mes, noLaborables, canDrag, dragging, over, estiloDe,
   carriles = CARRILES, altoDia = 104, mostrarDiaSemana, uid,
   onDragStart, onOver, onDrop, onOpen, onFestivo, onVerDia,
 }: SemanaProps) {
@@ -104,7 +118,19 @@ export const SemanaCalendario = memo(function SemanaCalendario({
   return (
     <div
       className={`cal-semana${dragging ? ' arrastrando' : ''}`}
-      style={{ minHeight: altoDia + usados * 22 }}
+      /*
+        MEJORA 5.2 · El alto NO se calcula aquí. Se dicen las dos cosas
+        que el CSS no puede saber —cuántos carriles hacen falta y cuánto
+        mide una casilla de día en esta vista— y el alto sale de ahí con
+        las medidas de carril que use cada tamaño de pantalla. Antes se
+        multiplicaba por 22 a mano, y en el móvil los carriles medían 16:
+        la capa de pastillas se salía y se montaba sobre la semana
+        siguiente.
+      */
+      style={{
+        ['--carriles' as string]: usados,
+        ['--alto-dia' as string]: `${altoDia}px`,
+      }}
     >
       <div className="cal-dias">
         {dias.map((d) => (
@@ -145,10 +171,11 @@ export const SemanaCalendario = memo(function SemanaCalendario({
         ))}
       </div>
 
-      <div className="cal-pastillas" style={{ top: 26 }}>
+      <div className="cal-pastillas">
         {visibles.map((s) => (
           <Pastilla key={s.item.uid} s={s} uid={s.item.uid} dragging={dragging}
-                    canDrag={canDrag} onDragStart={onDragStart} onOpen={onOpen} />
+                    canDrag={canDrag} estiloDe={estiloDe}
+                    onDragStart={onDragStart} onOpen={onOpen} />
         ))}
       </div>
     </div>

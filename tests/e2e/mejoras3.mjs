@@ -14,9 +14,11 @@
  *     contra un proyecto, sin pedirlo a nadie y sin proveedor, y que se
  *     distingue del que hay que comprar;
  *
- *   · N3 · que el calendario arranca con fabricación y montaje, que las
- *     demás categorías son excluyentes, que un tramo de varios días es
- *     UNA pastilla continua y que al arrastrarlo conserva su duración.
+ *   · N3 · que el calendario arranca con fabricación y montaje, que un
+ *     tramo de varios días es UNA pastilla continua y que al arrastrarlo
+ *     conserva su duración. (La exclusividad de los filtros que se
+ *     comprobaba aquí se retiró en la MEJORA 4.3: ahora se comprueba la
+ *     multiselección, en esta misma prueba y en mejoras4.)
  *
  * Las reglas de verdad se prueban contra PostgreSQL en
  * tests/sql/99_tests_ultima_conexion.sql, 99_tests_material_almacen.sql
@@ -280,39 +282,45 @@ try {
 
   // Colores distintos: el de fabricación y el de montaje no pueden ser
   // el mismo, o no se distinguen las dos fases de un vistazo.
-  const colorDe = (texto) => page.locator(`.cal-event:has-text("${texto}")`).first()
-    .evaluate((el) => getComputedStyle(el).borderLeftColor);
   check('Fabricación y montaje se pintan de colores distintos',
     (await page.locator('.cal-legend-item:has-text("Fabricación") .cal-dot')
       .evaluate((el) => getComputedStyle(el).backgroundColor))
     !== (await page.locator('.cal-legend-item:has-text("Montaje") .cal-dot')
       .evaluate((el) => getComputedStyle(el).backgroundColor)));
 
-  // Una categoría suelta apaga todas las demás.
+  /*
+    MEJORA 4.3 · AQUÍ SE COMPROBABA LA EXCLUSIVIDAD, Y YA NO EXISTE.
+    Estas comprobaciones decían que encender «Otros» apagaba fabricación
+    y montaje. Se pidió quitar ese comportamiento, así que no se relajan:
+    se sustituyen por las de la regla nueva, que es que cada categoría se
+    enciende y se apaga sola.
+  */
   await page.locator('.cal-legend-item:has-text("Otros")').click();
   await page.waitForTimeout(700);
-  check('Al elegir «Otros» se apaga todo lo demás',
-    JSON.stringify(await encendidas()) === JSON.stringify(['Otros']),
+  check('Encender «Otros» NO apaga fabricación ni montaje',
+    JSON.stringify(await encendidas()) === JSON.stringify(['Fabricación', 'Montaje', 'Otros']),
     (await encendidas()).join(' | '));
-  check('Y en la rejilla solo queda la nota',
+  check('Y en la rejilla están la nota Y los proyectos a la vez',
     (await page.locator('.cal-grid').innerText()).includes('Revisión de la plegadora')
-    && !(await page.locator('.cal-grid').innerText()).includes(`PROY-${YEAR}-001`));
+    && (await page.locator('.cal-grid').innerText()).includes(`PROY-${YEAR}-001`));
 
   await page.locator('.cal-legend-item:has-text("Aviso")').click();
   await page.waitForTimeout(700);
-  check('Una categoría suelta sustituye a la anterior',
-    JSON.stringify(await encendidas()) === JSON.stringify(['Aviso']),
+  check('Se pueden añadir más categorías sin quitar las anteriores',
+    JSON.stringify(await encendidas())
+      === JSON.stringify(['Fabricación', 'Montaje', 'Aviso', 'Otros']),
     (await encendidas()).join(' | '));
 
-  // Y volver a proyectos: las dos pueden estar a la vez.
-  await page.locator('.cal-legend-item:has-text("Fabricación")').click();
+  // Apagar una no toca a las demás.
+  await page.locator('.cal-legend-item:has-text("Otros")').click();
   await page.waitForTimeout(600);
-  check('Desde una suelta, pulsar fabricación deja solo fabricación',
-    JSON.stringify(await encendidas()) === JSON.stringify(['Fabricación']),
+  check('Apagar «Otros» deja las otras tres como estaban',
+    JSON.stringify(await encendidas()) === JSON.stringify(['Fabricación', 'Montaje', 'Aviso']),
     (await encendidas()).join(' | '));
-  await page.locator('.cal-legend-item:has-text("Montaje")').click();
-  await page.waitForTimeout(700);
-  check('Fabricación y montaje pueden estar encendidas a la vez',
+
+  await page.locator('.cal-legend-item:has-text("Aviso")').click();
+  await page.waitForTimeout(600);
+  check('Y al apagar la última añadida quedan fabricación y montaje',
     JSON.stringify(await encendidas()) === JSON.stringify(['Fabricación', 'Montaje']),
     (await encendidas()).join(' | '));
 

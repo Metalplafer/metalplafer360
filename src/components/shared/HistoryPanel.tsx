@@ -19,7 +19,13 @@ export function HistoryPanel({ entityId, entityCode, title = 'Historial', reload
   );
 
   return (
-    <section className="panel">
+    /*
+      MEJORA 5.1 · «panel-historial» no pinta nada por sí sola: es la
+      marca que permite a la hoja de estilos llevar este panel AL FINAL
+      de la página en un móvil, sin tocar el escritorio y sin mover el
+      panel de sitio en el código.
+    */
+    <section className="panel panel-historial">
       <div className="panel-head">
         <h2>{title}</h2>
         <span className="hint faint">No se puede modificar</span>

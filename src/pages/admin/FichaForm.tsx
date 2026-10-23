@@ -7,16 +7,27 @@ import { Field, PageHeader, Panel } from '@/components/ui/Layout';
 import { Alert, ErrorBox, Loading } from '@/components/ui/Feedback';
 import { ClientPicker, emptyClient, type ClientDraft } from '@/components/shared/ClientPicker';
 import { createClient, getClient } from '@/services/clients';
-import { createFicha, getFicha, setFichaClient, updateFicha } from '@/services/fichas';
+import {
+  createFicha, getFicha, linkVisit, setFichaClient, updateFicha, visitTargetInfo,
+} from '@/services/fichas';
 import { listPeople } from '@/services/people';
 import { FICHA_CODE_PREFIX, FICHA_NEW_TITLE, FICHA_TYPE_LABEL } from '@/config/constants';
 import { parseDecimal, parseHours } from '@/lib/format';
+import { parseSolicitud, parseVincular, rutaDestino } from '@/lib/vinculos';
+import { linkMailRequest } from '@/services/mail';
 import { toUserMessage } from '@/lib/errors';
 import type { FichaType } from '@/types/db';
 
 const TYPES: FichaType[] = ['presupuesto', 'visita', 'aviso'];
 const isType = (v: string | null): v is FichaType => TYPES.includes(v as FichaType);
 
+/**
+ * MEJORA 2 · «proyecto:<id>» o «presupuesto:<id>» → a qué se vincula.
+ *
+ * Se valida la forma en lugar de confiarse: lo que llega por la
+ * dirección lo puede escribir cualquiera, y con un texto raro el
+ * formulario tiene que seguir funcionando como si no hubiera nada.
+ */
 /** Alta y edición de presupuestos, visitas y avisos. */
 export default function FichaForm() {
   const { id } = useParams();
@@ -29,6 +40,28 @@ export default function FichaForm() {
   const people = useAsync(() => listPeople(), []);
 
   const [type, setType] = useState<FichaType>(isType(params.get('tipo')) ? params.get('tipo') as FichaType : 'presupuesto');
+
+  /**
+   * MEJORA 2 · A QUÉ SE VA A VINCULAR ESTA VISITA.
+   *
+   * Llega en la dirección como «proyecto:<id>» o «presupuesto:<id>»,
+   * puesto por el botón «Asignar visita técnica» del presupuesto o del
+   * proyecto. Si no viene, el formulario funciona exactamente como
+   * siempre.
+   */
+  const vincular = parseVincular(params.get('vincular'));
+  /**
+   * MEJORA 6 · LA SOLICITUD DE LA QUE SALE ESTA FICHA.
+   *
+   * La bandeja de entrada no crea presupuestos por su cuenta: trae aquí,
+   * al formulario de siempre, con el tipo elegido y el identificador de
+   * la solicitud. Al guardar, la ficha queda vinculada a ella.
+   */
+  const solicitud = parseSolicitud(params.get('solicitud'));
+  const destino = useAsync(
+    async () => (vincular && !editing ? visitTargetInfo(vincular.tipo, vincular.id) : null),
+    [vincular?.tipo, vincular?.id, editing],
+  );
   const [client, setClient] = useState<ClientDraft>(emptyClient);
   /**
    * El cliente con el que se abrió la ficha. Hace falta para dos cosas:
@@ -53,6 +86,17 @@ export default function FichaForm() {
       email: c.email ?? '', address: c.address ?? '', city: c.city ?? '', postal_code: c.postal_code ?? '',
     })).catch(() => undefined);
   }, [params, editing]);
+
+  /**
+   * MEJORA 2 · La visita se hace EN EL MISMO SITIO que el trabajo, así
+   * que la dirección del presupuesto o del proyecto se trae puesta. Solo
+   * si el campo está vacío: si alguien ya ha escrito otra, no se le pisa.
+   */
+  useEffect(() => {
+    const dir = destino.data?.address;
+    if (!dir || editing) return;
+    setForm((f) => (f.address.trim() ? f : { ...f, address: dir }));
+  }, [destino.data?.address, editing]);
 
   // Datos de la ficha que se está editando
   useEffect(() => {
@@ -182,6 +226,64 @@ export default function FichaForm() {
       const saved = editing && id
         ? await updateFicha(id, payload)
         : await createFicha({ ...payload, client_id: clientId });
+
+      /**
+       * MEJORA 2 · LA VISITA NACE VINCULADA.
+       *
+       * Son dos pasos y no uno, a propósito: la ficha se crea por donde
+       * se han creado siempre —el mismo formulario, las mismas
+       * validaciones, el mismo código VIS-AAAA-###— y después se
+       * vincula. Meter las dos cosas en una función de la base de datos
+       * obligaría a reescribir el alta de fichas ahí dentro, que es
+       * justo lo que se pidió no hacer.
+       *
+       * Si el segundo paso falla, la visita YA está creada y se dice con
+       * esas palabras: se queda sin vincular y se puede vincular a mano
+       * desde el presupuesto o el proyecto con «Vincular existente». Lo
+       * que no pasa es que se pierda la visita.
+       */
+      if (!editing && vincular && saved.type === 'visita') {
+        try {
+          await linkVisit(saved.id, vincular.tipo === 'proyecto'
+            ? { projectId: vincular.id }
+            : { fichaId: vincular.id });
+          toast.success(`Visita ${saved.code} creada y vinculada`);
+          navigate(rutaDestino(vincular));
+          return;
+        } catch (err) {
+          toast.error(`La visita ${saved.code} se ha creado, pero no se ha podido vincular: `
+            + `${toUserMessage(err)} Puedes vincularla desde la ficha de origen.`);
+          navigate(`/admin/fichas/${saved.id}`);
+          return;
+        }
+      }
+
+      /**
+       * MEJORA 6 · LA FICHA QUEDA ATADA A SU SOLICITUD.
+       *
+       * Dos pasos, como con las visitas, y por lo mismo: la ficha se
+       * crea por donde se han creado siempre y después se vincula.
+       * Meter las dos cosas en una función de la base de datos obligaría
+       * a reescribir el alta de fichas ahí dentro.
+       *
+       * Si el segundo paso falla, la ficha YA está creada y se dice con
+       * esas palabras: la solicitud se queda sin vincular y se puede
+       * vincular a mano. Lo que no pasa es que se pierda el trabajo.
+       */
+      if (!editing && solicitud) {
+        try {
+          await linkMailRequest(solicitud, { fichaId: saved.id });
+          toast.success(`${saved.code} creada desde la solicitud`);
+          navigate(`/admin/solicitudes/${solicitud}`);
+          return;
+        } catch (err) {
+          toast.error(`${saved.code} se ha creado, pero no se ha podido vincular con la `
+            + `solicitud: ${toUserMessage(err)} Vincúlala desde la bandeja.`);
+          navigate(`/admin/fichas/${saved.id}`);
+          return;
+        }
+      }
+
       toast.success(editing
         ? (clienteCambiado ? `Ficha actualizada · cliente: ${client.name}` : 'Ficha actualizada')
         : `Ficha ${saved.code} creada`);
@@ -200,9 +302,26 @@ export default function FichaForm() {
 
   return (
     <>
-      <Link className="btn btn-sm btn-ghost" to="/admin/fichas" style={{ marginBottom: 10 }}>
-        <ArrowLeft />Fichas
-      </Link>
+      {/*
+        MEJORA 2 · Si se ha entrado desde un presupuesto o un proyecto,
+        el botón de volver lleva ALLÍ y no al listado de fichas: se pedía
+        una navegación clara en los dos sentidos.
+      */}
+      {solicitud && !editing ? (
+        <Link className="btn btn-sm btn-ghost" style={{ marginBottom: 10 }}
+              to={`/admin/solicitudes/${solicitud}`}>
+          <ArrowLeft />Volver a la solicitud
+        </Link>
+      ) : vincular && !editing ? (
+        <Link className="btn btn-sm btn-ghost" style={{ marginBottom: 10 }}
+              to={rutaDestino(vincular)}>
+          <ArrowLeft />Volver a {destino.data?.code ?? (vincular.tipo === 'proyecto' ? 'el proyecto' : 'la ficha')}
+        </Link>
+      ) : (
+        <Link className="btn btn-sm btn-ghost" to="/admin/fichas" style={{ marginBottom: 10 }}>
+          <ArrowLeft />Fichas
+        </Link>
+      )}
 
       <PageHeader
         title={editing ? `Editar ${label.toLowerCase()} ${ficha.data?.code ?? ''}` : FICHA_NEW_TITLE[type]}
@@ -211,6 +330,29 @@ export default function FichaForm() {
 
       <form onSubmit={submit} className="stack" style={{ maxWidth: 860 }} noValidate>
         {error && <Alert kind="danger">{error}</Alert>}
+
+        {/* De qué solicitud sale esta ficha, dicho antes de guardar. */}
+        {solicitud && !editing && (
+          <Alert kind="info">
+            Esta ficha quedará <strong>vinculada a la solicitud</strong> de la que sale, y los
+            archivos que mandó el cliente por correo se verán desde ella sin copiarse.
+          </Alert>
+        )}
+
+        {/* A qué va a quedar vinculada esta visita, dicho antes de guardar. */}
+        {vincular && !editing && type === 'visita' && (
+          <Alert kind="info">
+            Esta visita técnica quedará vinculada a{' '}
+            <strong>{destino.data?.code ?? (vincular.tipo === 'proyecto' ? 'el proyecto' : 'la ficha')}</strong>.
+            Sus documentos y fotografías se verán también desde allí, sin copiarse.
+          </Alert>
+        )}
+        {vincular && !editing && type !== 'visita' && (
+          <Alert kind="warn">
+            Solo las visitas técnicas se vinculan a un presupuesto o a un proyecto. Como has
+            cambiado el tipo, esta ficha se creará sin vincular.
+          </Alert>
+        )}
 
         {!editing && (
           <Panel title="Tipo de ficha">

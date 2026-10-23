@@ -1,5 +1,7 @@
 import { supabase, unwrap } from '@/lib/supabase';
-import type { Ficha, FichaTeamRow, FichaType, Profile } from '@/types/db';
+import type {
+  Ficha, FichaTeamRow, FichaType, LinkedVisit, Profile, VisitTarget,
+} from '@/types/db';
 
 const SELECT =
   '*, client:clients(id, name, phone, kind), contact:client_contacts(id, name, phone), ' +
@@ -165,4 +167,83 @@ export async function setFichaClient(fichaId: string, clientId: string | null) {
   unwrap(await supabase.rpc('set_ficha_client', {
     p_ficha: fichaId, p_client: clientId,
   }));
+}
+
+// ---------------------------------------------------------------------
+// MEJORA 2 · VISITAS TÉCNICAS VINCULADAS
+// ---------------------------------------------------------------------
+
+/**
+ * VINCULAR UNA VISITA a un presupuesto, a un aviso o a un proyecto.
+ *
+ * Con «null» la DESVINCULA, que es la manera de arreglar una asignación
+ * equivocada: no borra la visita ni sus archivos.
+ *
+ * Va por su propia función de la base de datos porque hay dos cosas que
+ * un «update» suelto no puede hacer: comprobar que el destino no es otra
+ * visita —eso exige mirar otra fila— y dejar el movimiento escrito en el
+ * historial con palabras («vinculó la visita técnica VIS-2026-003 a
+ * PROY-2026-010») en lugar de un «cambió la ficha» que no dice nada.
+ */
+export async function linkVisit(visitId: string, target: VisitTarget) {
+  return unwrap(await supabase.rpc('link_visit', {
+    p_visit: visitId,
+    p_ficha: target && 'fichaId' in target ? target.fichaId : null,
+    p_project: target && 'projectId' in target ? target.projectId : null,
+  })) as unknown as Ficha;
+}
+
+/**
+ * LAS VISITAS QUE SE VEN DESDE UN PRESUPUESTO, UN AVISO O UN PROYECTO.
+ *
+ * Un proyecto ve también las que se vincularon a su presupuesto de
+ * origen: salen marcadas como «heredada».
+ */
+export async function listLinkedVisits(
+  paraTipo: LinkedVisit['para_tipo'], paraId: string,
+) {
+  return unwrap(
+    await supabase.from('linked_visits').select('*')
+      .eq('para_tipo', paraTipo).eq('para_id', paraId)
+      .order('scheduled_date', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false }),
+  ) as LinkedVisit[];
+}
+
+/**
+ * VISITAS QUE SE PUEDEN VINCULAR AQUÍ.
+ *
+ * Las que todavía no cuelgan de nada, para el caso de que la visita se
+ * creara ANTES que el presupuesto: se llamó al cliente, se apuntó la
+ * visita y el presupuesto llegó después. Sin esto habría que crear una
+ * visita nueva y duplicar la información.
+ *
+ * Se ofrecen las del mismo cliente primero. Si la ficha de origen no
+ * tiene cliente, se ofrecen las últimas sin vincular.
+ */
+export async function listVisitsToLink(clientId?: string | null) {
+  let q = supabase.from('fichas').select('id, code, title, status, scheduled_date, client_id')
+    .eq('type', 'visita')
+    .is('linked_ficha_id', null)
+    .is('linked_project_id', null)
+    .is('archived_at', null)
+    .order('created_at', { ascending: false })
+    .limit(25);
+  if (clientId) q = q.eq('client_id', clientId);
+  return unwrap(await q) as Pick<Ficha,
+    'id' | 'code' | 'title' | 'status' | 'scheduled_date' | 'client_id'>[];
+}
+
+/**
+ * EL CÓDIGO Y LOS DATOS DEL DESTINO, para poder decir a qué se va a
+ * vincular la visita y heredar su cliente y su dirección.
+ *
+ * Una consulta mínima a propósito: no hace falta traerse el proyecto
+ * entero para escribir «Visita técnica de PROY-2026-010».
+ */
+export async function visitTargetInfo(tipo: LinkedVisit['para_tipo'], id: string) {
+  const tabla = tipo === 'proyecto' ? 'projects' : 'fichas';
+  return unwrap(
+    await supabase.from(tabla).select('id, code, client_id, address').eq('id', id).maybeSingle(),
+  ) as { id: string; code: string; client_id: string | null; address: string | null } | null;
 }

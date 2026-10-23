@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   CalendarDays, ChevronLeft, ChevronRight, Plus, Trash2,
 } from 'lucide-react';
 import { useAsync } from '@/hooks/useAsync';
+import { useAuth } from '@/auth/AuthProvider';
 import { useDialogs } from '@/components/ui/Dialogs';
 import { PageHeader } from '@/components/ui/Layout';
 import { Modal } from '@/components/ui/Modal';
@@ -14,11 +15,12 @@ import {
 } from '@/services/calendar';
 import { listPeople } from '@/services/people';
 import {
-  CALENDAR_COLOR, CALENDAR_DEFECTO, CALENDAR_KINDS, CALENDAR_LABEL, CALENDAR_VIEWS,
-  WORKER_CALENDAR_KINDS, siguienteSeleccion, type CalendarView,
+  CALENDAR_DEFECTO, CALENDAR_KINDS, CALENDAR_LABEL, CALENDAR_VIEWS,
+  WORKER_CALENDAR_KINDS, alternarCategoria, type CalendarView,
 } from '@/config/constants';
 import { SemanaCalendario, tramosDelDia } from '@/components/shared/CalendarWeek';
 import { diasEntre, masDias, semanasDeLaRejilla } from '@/lib/calendario';
+import { textoSobre } from '@/lib/colores';
 import {
   addDays, addMonths, fmtDate, longDate, mondayOf, monthLabel,
   relativeDay, startOfMonth, todayMadrid,
@@ -59,6 +61,9 @@ function rangeFor(view: CalendarView, anchor: string) {
 export default function CalendarPage({ worker }: { worker?: boolean }) {
   const navigate = useNavigate();
   const { toast, confirm } = useDialogs();
+  // MEJORA 4.2 · Los colores que ha dejado administración, compartidos
+  // por toda la empresa. Llegan con la sesión, no se piden aquí.
+  const { calendarColors: colores } = useAuth();
   const today = todayMadrid();
 
   const [view, setView] = useState<CalendarView>(worker ? 'agenda' : 'mes');
@@ -73,9 +78,8 @@ export default function CalendarPage({ worker }: { worker?: boolean }) {
    * obra, que es para lo que se mira el calendario. Lo demás se enciende
    * a mano. El trabajador abre con lo suyo, como hasta ahora.
    */
-  const [kinds, setKinds] = useState<CalendarKind[]>(
-    worker ? [...WORKER_CALENDAR_KINDS] : [...CALENDAR_DEFECTO],
-  );
+  const porDefecto = worker ? WORKER_CALENDAR_KINDS : CALENDAR_DEFECTO;
+  const [kinds, setKinds] = useState<CalendarKind[]>([...porDefecto]);
   const [workerId, setWorkerId] = useState('');
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
@@ -135,12 +139,26 @@ export default function CalendarPage({ worker }: { worker?: boolean }) {
   );
 
   /**
-   * Las categorías se encienden con una regla, no a capricho:
-   * fabricación y montaje van juntas; las demás, de una en una. Está en
-   * «siguienteSeleccion», con sus pruebas.
+   * MEJORA 4.1 · EL COLOR DE UN EVENTO Y EL DE SU TEXTO.
+   *
+   * La pastilla se pinta ENTERA del color de su categoría, así que el
+   * color del texto no puede ser fijo: con un amarillo claro hace falta
+   * texto oscuro y con un azul marino, blanco. Se calcula a partir del
+   * fondo con la fórmula de contraste de WCAG («textoSobre»), y así
+   * cualquier color que elija administración se sigue leyendo.
+   */
+  const estiloDe = useCallback((k: CalendarKind) => ({
+    ['--ev' as string]: colores[k],
+    ['--ev-texto' as string]: textoSobre(colores[k]),
+  }), [colores]);
+
+  /**
+   * MEJORA 4.3 · Cada categoría se enciende y se apaga por su cuenta, sin
+   * tocar las demás. La regla está en «alternarCategoria», con sus
+   * pruebas.
    */
   function toggleKind(kind: CalendarKind) {
-    setKinds((list) => siguienteSeleccion(list, kind));
+    setKinds((list) => alternarCategoria(list, kind));
   }
 
   function step(direction: number) {
@@ -272,6 +290,9 @@ export default function CalendarPage({ worker }: { worker?: boolean }) {
   const semanaProps = {
     tramos: shown,
     hoy: today,
+    // MEJORA 4.1 · El color de cada categoría y el de su texto, ya
+    // calculados: la pastilla no tiene que saber de contrastes.
+    estiloDe,
     noLaborables,
     canDrag,
     dragging,
@@ -338,7 +359,7 @@ export default function CalendarPage({ worker }: { worker?: boolean }) {
           {disponibles.map((k) => (
             <button key={k} type="button" className="cal-legend-item" aria-pressed={kinds.includes(k)}
                     onClick={() => toggleKind(k)}>
-              <span className="cal-dot" style={{ ['--ev' as string]: CALENDAR_COLOR[k] }} aria-hidden />
+              <span className="cal-dot" style={estiloDe(k)} aria-hidden />
               {CALENDAR_LABEL[k]}
             </button>
           ))}
@@ -355,6 +376,23 @@ export default function CalendarPage({ worker }: { worker?: boolean }) {
           </div>
         )}
       </div>
+
+      {/*
+        MEJORA 4.3 · APAGARLAS TODAS SE PERMITE, pero se explica.
+        Ahora cada categoría se apaga por su cuenta, así que se puede
+        llegar a tener ninguna encendida. Antes, la última pulsación no
+        hacía nada —y una casilla que no responde parece estropeada—; lo
+        que se hace ahora es decir por qué está vacío y ofrecer volver a
+        lo de siempre con un botón.
+      */}
+      {kinds.length === 0 && (
+        <div className="cal-vacio" role="status">
+          <span>No hay ninguna categoría seleccionada, así que no se pinta nada.</span>
+          <button className="btn btn-sm" onClick={() => setKinds([...porDefecto])}>
+            Volver a lo de siempre
+          </button>
+        </div>
+      )}
 
       {events.loading && !events.data ? <Loading />
         : events.error ? <ErrorBox message={events.error} onRetry={events.reload} />
@@ -389,7 +427,7 @@ export default function CalendarPage({ worker }: { worker?: boolean }) {
                   <div className="stack" style={{ gap: 6 }}>
                     {tramosDelDia(shown, anchor).map((e) => (
                       <button key={spanUid(e)} type="button" className="cal-row"
-                              style={{ ['--ev' as string]: CALENDAR_COLOR[e.kind] }}
+                              style={estiloDe(e.kind)}
                               onClick={() => openEvent(e)}>
                         <span className="cal-dot" aria-hidden />
                         <span className="cal-row-main">
@@ -425,7 +463,7 @@ export default function CalendarPage({ worker }: { worker?: boolean }) {
                       <div className="stack" style={{ gap: 6 }}>
                         {tramosDelDia(shown, d).map((e) => (
                           <button key={spanUid(e)} type="button" className="cal-row"
-                                  style={{ ['--ev' as string]: CALENDAR_COLOR[e.kind] }}
+                                  style={estiloDe(e.kind)}
                                   onClick={() => openEvent(e)}>
                             <span className="cal-dot" aria-hidden />
                             <span className="cal-row-main">

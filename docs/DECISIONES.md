@@ -761,3 +761,334 @@ administrativos al trabajador: la pantalla **siguió sin enseñarlos**,
 porque `DocumentsPanel` filtra también por su cuenta. Lo que sí cazó la
 mutación fue la comprobación por API. Las dos capas son deliberadas y
 conviene mantenerlas.
+
+---
+
+## MEJORAS · Conversión, visitas, material, calendario, móvil y bandeja de correo
+
+Seis mejoras pedidas de una vez. Lo que sigue es lo que se decidió y por
+qué, incluidas las veces en que lo que se pedía no se podía hacer tal
+cual y se hizo otra cosa explicándolo.
+
+### 1. Qué se perdía de verdad al convertir un presupuesto
+
+El encargo decía que la conversión perdía información y que era un
+problema crítico. Antes de tocar nada se miró **tabla por tabla** lo que
+apunta a `fichas`, que es la única manera de saber qué se queda atrás:
+
+| Qué apunta a la ficha | ¿Viajaba al proyecto? |
+|---|---|
+| `projects.source_ficha_id` | Sí: el enlace de origen ya existía |
+| `documents.ficha_id` | **NO. Los archivos se quedaban atrás** |
+| `comments.ficha_id` | **NO** |
+| `ficha_workers.ficha_id` | No aplica: es de los avisos |
+| `work_reports.ficha_id` | No aplica: es de los avisos |
+
+Y de los campos de la ficha, los que no se copiaban era porque el
+proyecto no tiene dónde ponerlos (`phone`, `scheduled_date/time`,
+`assigned_to`). El cliente, el contacto, el importe, la dirección y la
+descripción **sí** se copiaban, y el doble intento **ya** estaba
+bloqueado por el índice único de `source_ficha_id`.
+
+Así que el problema eran los archivos. Y no se podían mover ni copiar:
+`documents_one_owner` obliga a que cada archivo tenga **un solo dueño**,
+de modo que cambiar `ficha_id` por `project_id` habría vaciado el
+presupuesto, e insertar una segunda fila viola la restricción y obligaría
+a tener **dos copias del archivo en el almacén** (un vídeo de 80 MB
+pasaría a ocupar 160).
+
+**Decisión:** una vista, `related_documents`, que los mira donde están y
+dice de dónde viene cada uno. Es el patrón que la casa ya usaba en
+`work_documents` (archivo 36) para enseñar en una obra los archivos de
+sus proyectos.
+
+**Efecto secundario que conviene saber:** como es una vista y no una
+migración de datos, **los proyectos convertidos hace meses ganan el
+acceso a los archivos de su presupuesto en el momento de instalar la
+migración**, sin tocar ni una fila.
+
+### 2. Lo heredado no se puede borrar desde donde se ve
+
+El panel «Documentos de origen» es de **solo lectura**: se puede ver y
+descargar, no subir ni enviar a la papelera. El archivo es del
+presupuesto o de la visita, y borrarlo desde el proyecto lo haría
+desaparecer de una pantalla en la que nadie estaba mirando.
+
+### 3. Los permisos de lo heredado NO se ampliaron
+
+`projects_select` es `is_admin()`: un trabajador no lee la tabla
+`projects` ni estando asignado (su lista le llega por otro camino hecho
+para él). Como la vista pasa por `projects` y es `security_invoker`, a un
+trabajador le devuelve **cero filas siempre**.
+
+Se dejó así a propósito. Dar a los trabajadores los archivos técnicos del
+presupuesto es un cambio de permisos que nadie pidió, y los cambios de
+permisos se revisan expresamente. Queda propuesto en la entrega, con la
+línea exacta que habría que cambiar.
+
+### 4. Una visita se vincula con dos columnas, no con una tabla
+
+Una visita técnica se hace **por una cosa**: un presupuesto que hay que
+medir o un proyecto en marcha. Siendo así, una tabla de enlace añadiría
+una tabla, sus permisos y sus índices para guardar lo mismo que dos
+columnas con una restricción. Son dos y no una porque el destino puede
+ser una ficha o un proyecto, que son dos tablas: es exactamente el
+patrón de `documents`.
+
+Al revés —varias visitas para el mismo presupuesto— sí se puede, y es lo
+normal: se mide, se vuelve a medir, se va a comprobar un detalle.
+
+**Lo que una restricción `check` no puede comprobar** es que la ficha de
+destino no sea otra visita, porque eso exige mirar otra fila. Lo
+comprueba la función `link_visit`, y queda dicho en el archivo para que
+nadie lo busque en la restricción.
+
+### 5. Crear la visita y vincularla son dos pasos
+
+El encargo pedía reutilizar la ficha de visita que ya existe, con sus
+campos y validaciones. Así que el botón «Asignar visita técnica» lleva al
+formulario de siempre y, al guardar, la aplicación la vincula.
+
+Son **dos pasos** y no una función de base de datos que haga las dos
+cosas: meter el alta de fichas dentro de una función obligaría a
+reescribirla ahí, que es justo lo que se pidió no hacer. Si el segundo
+paso falla, la visita **ya está creada** y se dice con esas palabras; se
+puede vincular a mano con «Vincular existente». Lo que no pasa es que se
+pierda la visita.
+
+### 6. El comentario del material no era un problema de la base de datos
+
+Se pedía investigar el recorrido completo del dato y no dar por supuesto
+que hacía falta una columna nueva. No hacía falta: `materials.notes`
+existe desde el archivo 15, el servicio lo manda al crear y al editar, y
+la pantalla de Material lo enseña.
+
+El fallo estaba en **una sola pantalla**: el panel «Material» del detalle
+del proyecto pintaba unidades, nombre, proveedor, fecha y estado, y no
+pintaba `notes`. Quien anotaba material de almacén escribía el
+comentario, volvía al proyecto y no lo encontraba.
+
+Se arregló en la pantalla, y además se puede corregir ahí mismo con el
+formulario de siempre: mandar a alguien a otra pantalla para cambiar una
+línea de texto que está mirando es la manera de que no se corrija nunca.
+
+### 7. «Preparado / cargado»: la restricción y el disparador se reparten el trabajo
+
+La regla era: solo se puede marcar el material de almacén o el pedido que
+ya ha llegado. Y el encargo insistía en que no bastaba con ocultar el
+botón.
+
+- La **restricción** `materials_preparado_valido` impide el estado
+  imposible. No se puede saltar ni desde PostgREST ni desde la consola.
+- El **disparador** resuelve lo que la restricción no puede: si alguien
+  desmarca «recibido» de algo ya preparado —una corrección legítima y
+  frecuente—, limpia la marca en lugar de rechazar la corrección con un
+  error que no explica nada.
+
+**La primera versión limpiaba la marca en los dos casos**, y entonces un
+intento prohibido se «arreglaba» en silencio: quien llamara a la API
+recibía un «correcto» habiendo pasado por alto su petición. Lo cazó la
+prueba «El que está de camino NO se puede marcar», que esperaba el error
+23514. La diferencia está en mirar el estado **anterior**: si estaba
+preparado, se limpia; si no, se deja pasar hasta la restricción.
+
+### 8. Quién puede marcar «cargado»
+
+El encargo decía «por el personal de administración u operarios». La
+política `materials_update` es `is_admin()` y el proyecto del trabajador
+**no lista el material**: no hay pantalla donde pudiera marcarlo.
+
+Se implementó para administración, que es donde el encargo sitúa el
+control («en el detalle del proyecto»), y la ampliación a operarios queda
+**propuesta** en la entrega: hace falta una función con permiso propio
+—no abrir `materials` a los trabajadores, que les dejaría cambiar
+proveedor, fechas y recepción— y una lista de material en su pantalla.
+Ampliar permisos por iniciativa propia era la otra opción, y no se tomó.
+
+### 9. El color de la pastilla obliga a calcular el color del texto
+
+Colorear la pastilla entera y, además, dejar elegir el color, significa
+que el color del texto **no puede estar escrito en la hoja de estilos**:
+sobre un amarillo claro hace falta texto oscuro y sobre un azul marino,
+blanco. Si se deja fijo, la mitad de las paletas posibles quedan
+ilegibles.
+
+Se calcula con la fórmula de contraste de WCAG 2.1 (`src/lib/colores.ts`)
+y se elige entre blanco y la tinta de la aplicación, la que más contraste
+dé. Dos opciones y no un tono intermedio: un gris calculado por pastilla
+se ve sucio y da contrastes a medias.
+
+**El peor color posible** es el que está a la misma distancia de los dos:
+se buscó midiendo, y es el gris medio `#808080` (3,95 contra el blanco y
+3,96 contra la tinta). Ahí la pantalla **avisa** de que se leerá mal,
+sin impedirlo.
+
+### 10. La paleta está escrita dos veces, y hay una prueba que lo vigila
+
+En `tokens.css`, que es de donde la toman los estilos, y en
+`CALENDAR_COLOR`, que es de donde la toma el cálculo del contraste. Hacen
+falta las dos: el navegador no deja mirar dentro de un `var()` desde el
+código sin pedir el estilo calculado de un elemento.
+
+Y como están dos veces, hay una prueba (`tests/unit/colores.test.ts`) que
+**lee `tokens.css`** y comprueba que no se han separado.
+
+Además, los valores se pasaron a minúsculas. No es estética: el selector
+de color del navegador devuelve minúsculas, y la pantalla compara el
+color elegido con el de serie para saber qué ha cambiado. Con `#1D4F91`
+en el código y `#1d4f91` viniendo del selector, esa comparación decía que
+los siete colores estaban cambiados sin haber tocado ninguno. Lo cazó la
+prueba «De entrada están los colores de siempre».
+
+### 11. Se quitó la exclusividad de los filtros, y se permite dejarlos todos apagados
+
+La tanda anterior había hecho que fabricación y montaje fueran un modo
+combinado y las demás categorías vistas sueltas y excluyentes. Se pidió
+quitarlo: «el usuario podrá activar materiales sin desactivar
+fabricación… no conviertas los filtros en un selector de opción única».
+
+Ahora cada categoría se enciende y se apaga sola. **Y se pueden apagar
+todas**, que es la consecuencia de que desmarcar cualquiera funcione
+siempre. Antes, la última pulsación no hacía nada, y una casilla que no
+responde parece estropeada; ahora el calendario explica que no hay
+ninguna categoría seleccionada y ofrece volver con un botón.
+
+Las pruebas de la regla antigua **no se relajaron: se sustituyeron** por
+las de la regla nueva, en `tests/unit/calendario.test.ts`,
+`tests/e2e/mejoras3.mjs` y `tests/e2e/fase5.mjs`.
+
+### 12. El solapamiento del calendario móvil tenía una causa, y no era el diseño
+
+Las pastillas van en una capa absoluta sobre las casillas de los días, en
+carriles de alto fijo, y **el alto de la semana lo calculaba el código
+con el número 22 escrito a mano**. En el móvil los carriles pasan a medir
+16-17 px y la cabecera menos, pero el cálculo seguía usando 22: con tres
+o cuatro carriles la capa se salía por abajo y se montaba sobre la semana
+siguiente y sobre los números de los días. Y `white-space: normal`
+dejaba que el texto se partiera en dos líneas dentro de un carril de
+16 px.
+
+Ahora el alto **lo decide el CSS** a partir de las mismas medidas que
+usan los carriles (`--carriles` lo pone el código; el resto es del CSS),
+así que no pueden desincronizarse.
+
+Y se comprueba **midiendo en píxeles**: la prueba recorre todas las
+pastillas a 390 px de ancho con las siete categorías encendidas y falla
+si dos se cruzan o si alguna se sale de su semana.
+
+En pantallas de menos de 560 px la pastilla del **mes** se queda como una
+barra de color sin texto: en un móvil cada día mide unos 50 px y no caben
+ni cuatro letras. El detalle se consulta tocando el día. Es el criterio
+de Google Calendar, que se daba como referencia. En la vista de semana y
+en la de día el texto se queda, porque ahí cabe.
+
+### 13. El historial baja al final con `display: contents`
+
+La ficha del proyecto son dos columnas y el historial es lo último de la
+izquierda. Al quedarse en una sola columna, esa columna entera va
+primero: el historial aparecía **a mitad de la página**, antes de los
+documentos, el material y los cobros.
+
+Moverlo en el código habría cambiado también el escritorio. Así que en
+pantalla estrecha las dos columnas se vuelven `display: contents`: todos
+los paneles pasan a ser hijos directos de la rejilla —manteniendo su
+orden— y entonces el historial se puede llevar al final con `order`.
+Escritorio intacto.
+
+Se pierden los 12 px de separación propios de cada columna y mandan los
+16 px de la rejilla: 4 px que en un móvil no se notan.
+
+### 14. La bandeja de correo: un destino, no una tabla de enlaces
+
+El encargo advertía: «si una solicitud puede originar varios registros,
+no impongas una relación uno a uno sin analizar el proceso real».
+
+Analizado, el proceso real es una **cadena**, no un abanico:
+
+```
+el correo → un presupuesto → un proyecto   (source_ficha_id)
+el correo → una visita → su presupuesto    (linked_ficha_id)
+```
+
+Cada paso tiene un padre y la trazabilidad llega al final sin ninguna
+relación de muchos a muchos. Por eso la solicitud guarda **un** destino
+—ficha o proyecto, nunca los dos— y se puede corregir si se vinculó mal,
+dejándolo dicho en el historial.
+
+### 15. Los adjuntos del correo son archivos normales
+
+No se creó un segundo sistema de documentos: se añadió a `documents` una
+columna de dueño más, `mail_request_id`, como se hizo con los proyectos,
+las órdenes, los partes y las obras. Así los adjuntos tienen categoría,
+papelera, cuota de almacenamiento y permisos, y cuando la solicitud se
+convierte en presupuesto se ven desde él **sin copiarse**, por la misma
+vista `related_documents`.
+
+Era el punto 9 del encargo: que visitas, documentos y solicitudes no
+acabaran siendo tres sistemas de archivos distintos.
+
+### 16. Sugerir el cliente no es clasificar la solicitud
+
+Al recibir un correo, si el remitente coincide con el correo de un
+cliente que ya existe, se **apunta** como sugerencia. La solicitud se
+queda «pendiente» y la revisión sigue siendo manual, que es lo acordado:
+sugerir ahorra una búsqueda, clasificar sería decidir por una persona.
+
+### 17. El remitente de un reenvío no se adivina
+
+Cuando administración reenvía un correo, el remitente del mensaje que
+llega es administración. El cliente está dentro del cuerpo, escrito por
+el programa de correo de quien lo reenvió, en castellano o en inglés y de
+media docena de formas.
+
+Se decide con **dos señales**: el asunto (`RV:`, `Fwd:`, `TR:`) y el
+bloque `De:`/`From:` del cuerpo. Y hace falta que el correo encontrado
+sea **distinto** del que nos lo mandó. Si no cuadra, se marca
+`sender_needs_review` y la pantalla lo pide. No se inventa, que es lo que
+el encargo pedía expresamente.
+
+Está todo en funciones puras (`supabase/functions/_shared/correo.ts`) con
+treinta pruebas, incluidos los reenvíos de Outlook en castellano, los de
+Gmail en inglés, las cadenas de reenvíos y el caso de quien se reenvía un
+correo a sí mismo.
+
+### 18. Primero el correo, después los adjuntos
+
+La función de recepción guarda la solicitud **antes** de bajar un solo
+archivo. Si un adjunto falla —el proveedor no responde, el archivo es
+enorme, el almacén está lleno—, lo que no se pierde es la petición del
+cliente: queda en la bandeja marcada «Con error», con su cuerpo y su
+remitente, y se puede llamar al cliente igualmente.
+
+Y la regla de qué se responde al proveedor: **500 solo si no se ha podido
+guardar la solicitud** (para que reintente, porque no hay nada
+guardado); **200 si la solicitud ya está** aunque algún adjunto haya
+fallado, porque reintentar no lo arreglaría y el correo ya está a salvo.
+
+### 19. Una tabla nueva nace concedida a `anon`, y hay que revocarlo
+
+Supabase deja configurados *default privileges* que conceden todo sobre
+cada tabla nueva del esquema a `anon`, `authenticated` y `service_role`.
+El archivo 03 revoca lo de `anon` en bloque, pero eso solo alcanza a las
+tablas que existían entonces: **`mail_requests` nació concedida a la
+clave pública del navegador**.
+
+Con sus políticas, `anon` no habría visto ninguna fila, pero tenía el
+permiso de la tabla y una consulta suya devolvía una lista vacía en lugar
+de un «no tienes permiso». Lo cazó la prueba «Sin sesión no se ve la
+bandeja», que esperaba un 42501 y recibía cero filas.
+
+**Para la próxima tabla: revocar explícitamente de `anon`.**
+
+### 20. Un fallo del propio banco de pruebas que se llevaba los resultados
+
+El servidor de archivos de las pruebas de navegador escribía la cabecera
+`200` y **después** leía el archivo. Si la lectura fallaba —o si el
+navegador se cerraba a mitad—, el `catch` intentaba responder un 404
+sobre una respuesta ya empezada: eso no es un fallo recogido, es una
+excepción que se lleva el proceso por delante.
+
+Se vio ejecutando `navegacion.mjs`: las 48 comprobaciones salieron bien y
+el proceso murió antes de imprimir el total. Ahora el archivo se lee
+antes de escribir la cabecera, y el `catch` comprueba si la cabecera ya
+se mandó.

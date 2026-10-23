@@ -27,6 +27,15 @@ export interface AppSettings {
   /** Días laborables libres entre proyectos en la planificación. */
   gap_days: number;
   /**
+   * MEJORA 4.2 · EL COLOR DE CADA CATEGORÍA DEL CALENDARIO, compartido
+   * por toda la empresa.
+   *
+   * Solo contiene los que alguien ha cambiado a mano: lo que falta son
+   * los de serie. Vacío significa «los de siempre», y así el día que
+   * cambie la paleta de la aplicación estas instalaciones la siguen.
+   */
+  calendar_colors: Record<string, string>;
+  /**
    * CUÁNTO ESPACIO HAY CONTRATADO · declarado A MANO.
    *
    * El límite del plan vive en la facturación de Supabase y no se puede
@@ -61,6 +70,12 @@ export interface AuditRow {
 export interface ClientConfig {
   max_file_mb?: number;
   company_name?: string;
+  /**
+   * MEJORA 4.2 · El color elegido para cada categoría del calendario,
+   * compartido por toda la empresa. Solo trae los que se han cambiado a
+   * mano: lo que falta son los de serie.
+   */
+  calendar_colors?: Record<string, string>;
 }
 
 // ---------------------------------------------------------------------
@@ -178,6 +193,13 @@ export interface Ficha {
   scheduled_time: string | null;
   assigned_to: string | null;
   amount: number | null;
+  /**
+   * MEJORA 2 · Por qué se hace esta visita técnica: el presupuesto o
+   * aviso, o el proyecto. Solo las fichas de tipo «visita» los tienen, y
+   * nunca los dos a la vez. Las fichas de antes los tienen vacíos.
+   */
+  linked_ficha_id: string | null;
+  linked_project_id: string | null;
   archived_at: string | null;
   is_demo: boolean;
   created_at: string;
@@ -239,6 +261,116 @@ export interface WorkDocument {
   uploaded_by: string | null;
   uploader_name: string | null;
   deleted_at: string | null;
+  created_at: string;
+}
+
+/**
+ * MEJORA 6 · UNA SOLICITUD QUE HA ENTRADO POR CORREO.
+ *
+ * Es una FICHA PROVISIONAL: el correo tal como llegó, con sus adjuntos,
+ * esperando a que alguien lo revise. No es un presupuesto, ni una
+ * visita, ni un aviso, y no se convierte en ninguno de ellos sin que una
+ * persona lo decida.
+ */
+export type MailStatus = 'pendiente' | 'revisada' | 'vinculada' | 'error' | 'descartada';
+
+export interface MailRequest {
+  id: string;
+  code: string;
+  status: MailStatus;
+  /** El identificador del mensaje en el proveedor. Evita duplicados. */
+  provider_message_id: string;
+  subject: string | null;
+  body_text: string | null;
+  body_html: string | null;
+  /** Quién mandó el mensaje que hemos recibido. En un reenvío, administración. */
+  sender_email: string | null;
+  sender_name: string | null;
+  recipients: string | null;
+  received_at: string;
+  forwarded: boolean;
+  /** El cliente, cuando se ha podido saber con seguridad. */
+  original_sender_email: string | null;
+  original_sender_name: string | null;
+  original_subject: string | null;
+  /** No se ha podido determinar el remitente original: lo pone una persona. */
+  sender_needs_review: boolean;
+  client_id: string | null;
+  notes: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  target_ficha_id: string | null;
+  target_project_id: string | null;
+  error_detail: string | null;
+  is_demo: boolean;
+  created_at: string;
+  updated_at: string;
+  client?: Pick<Client, 'id' | 'name' | 'phone' | 'kind'> | null;
+  reviewer?: Pick<Profile, 'id' | 'full_name'> | null;
+  target_ficha?: Pick<Ficha, 'id' | 'code' | 'type'> | null;
+  target_project?: Pick<Project, 'id' | 'code' | 'name'> | null;
+}
+
+/**
+ * MEJORA 2 · UNA VISITA TÉCNICA VISTA DESDE EL PRESUPUESTO O EL PROYECTO
+ * POR EL QUE SE HIZO.
+ *
+ * Es la vista «linked_visits». «heredada» marca las visitas que se
+ * vincularon al presupuesto del que nació el proyecto: se hicieron antes
+ * de que el proyecto existiera y se siguen viendo desde él.
+ */
+export interface LinkedVisit {
+  para_tipo: 'presupuesto' | 'aviso' | 'proyecto';
+  para_id: string;
+  heredada: boolean;
+  id: string;
+  code: string;
+  status: string;
+  title: string | null;
+  scheduled_date: string | null;
+  scheduled_time: string | null;
+  assigned_to: string | null;
+  assigned_name: string | null;
+  created_at: string;
+  /** Cuántos archivos tiene la visita, sin contarlos en el navegador. */
+  archivos: number;
+}
+
+/** Dónde se vincula una visita: a una ficha o a un proyecto. */
+export type VisitTarget =
+  { fichaId: string } | { projectId: string } | null;
+
+/**
+ * MEJORA 1 y 2 · UN ARCHIVO QUE SE VE DESDE OTRO SITIO.
+ *
+ * Es la vista «related_documents»: lo que un proyecto o una ficha VE sin
+ * ser suyo. Hoy, los archivos del presupuesto del que nació el proyecto
+ * y los de las visitas técnicas vinculadas.
+ *
+ * El archivo existe UNA sola vez, en el almacén y en «documents». Esto
+ * solo lo mira desde otro sitio y dice de dónde viene: «origen_tipo» y
+ * «origen_code» son lo que la pantalla escribe para explicarlo.
+ */
+export interface RelatedDocument {
+  /** Desde dónde se mira: un proyecto o una ficha. */
+  para_tipo: 'proyecto' | 'presupuesto' | 'aviso';
+  para_id: string;
+  /** De dónde sale el archivo. */
+  origen_tipo: 'presupuesto' | 'visita' | 'correo';
+  origen_id: string;
+  origen_code: string;
+  /** La fecha de la visita, o la del presupuesto si no tiene otra. */
+  origen_fecha: string | null;
+  id: string;
+  bucket: string;
+  storage_path: string;
+  file_name: string;
+  mime_type: string | null;
+  size_bytes: number;
+  category: DocCategory;
+  scope: DocScope;
+  uploaded_by: string | null;
+  uploader_name: string | null;
   created_at: string;
 }
 
@@ -493,6 +625,15 @@ export interface Material {
   ordered_on: string | null;
   expected_on: string | null;
   received: boolean;
+  /**
+   * MEJORA 3 · Preparado y cargado para llevarlo a la obra.
+   *
+   * Solo se puede marcar si el material es de almacén o si se pidió y YA
+   * HA LLEGADO. Lo impide la base de datos, no la pantalla. No es
+   * inventario: no descuenta existencias ni cambia el estado del pedido.
+   */
+  prepared: boolean;
+  /** El comentario del material: tipo, ubicación en el almacén, referencias. */
   notes: string | null;
   archived_at: string | null;
   is_demo: boolean;
@@ -605,6 +746,10 @@ export interface ProjectMaterials {
   total: number;
   pendientes: number;
   retrasados: number;
+  /** MEJORA 3 · Cuántos están ya preparados y cargados. */
+  preparados: number;
+  /** Y cuántos se pueden preparar pero todavía no lo están. */
+  por_preparar: number;
 }
 
 /** Tipos de evento del calendario. El color lo da el tipo, no la persona. */

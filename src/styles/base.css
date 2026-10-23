@@ -42,6 +42,31 @@ hr { border: 0; border-top: 1px solid var(--line); margin: var(--s4) 0; }
 .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s4); }
 .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s4); }
 @media (max-width: 900px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+
+/* ---------------------------------------------------------------------
+   MEJORA 5.1 · EL HISTORIAL, AL FINAL EN UN MÓVIL
+
+   La ficha del proyecto son DOS columnas, y el historial es lo último de
+   la columna izquierda. Al quedarse en una sola columna, esa columna
+   entera va primero: el historial aparecía A MITAD de la página, antes
+   de los documentos, el material y los cobros. Para consultar el
+   material había que pasar por encima de todo el historial.
+
+   Se arregla sin mover el panel en el código y sin tocar el escritorio:
+   en pantalla estrecha las dos columnas se vuelven «display: contents»,
+   así que todos los paneles pasan a ser hijos directos de la rejilla —y
+   mantienen su orden— y entonces el historial puede llevarse al final
+   con «order». Moverlo en el código habría cambiado también el
+   escritorio, que es lo que se pidió no tocar.
+
+   Se pierden los 12 px de separación propios de cada columna y mandan
+   los 16 px de la rejilla: 4 px de diferencia que en un móvil no se
+   notan y que, si acaso, dejan los paneles más holgados.
+   --------------------------------------------------------------------- */
+@media (max-width: 900px) {
+  .proy-detalle > .stack { display: contents; }
+  .proy-detalle .panel-historial { order: 99; }
+}
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }

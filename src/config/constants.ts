@@ -1,4 +1,5 @@
-import type { ClientKind, FichaType, ReportStatus } from '@/types/db';
+import { normalizaHex } from '@/lib/colores';
+import type { ClientKind, FichaType, MailStatus, ReportStatus } from '@/types/db';
 
 export type Tone = 'neutral' | 'blue' | 'green' | 'amber' | 'red' | 'violet' | 'steel' | 'signal';
 
@@ -293,65 +294,113 @@ export const CALENDAR_LABEL: Record<CalendarKind, string> = {
   obra: 'Obras',
 };
 
-/** Se corresponden con las variables --ev-* de tokens.css. */
+/**
+ * EL COLOR DE CADA CATEGORÍA, de serie.
+ *
+ * MEJORA 4 · Antes esto era una lista de «var(--ev-*)», y bastaba porque
+ * el color solo pintaba una rayita de 3 píxeles. Ahora se colorea la
+ * PASTILLA ENTERA y hay que calcular el color del texto a partir del
+ * fondo, y para eso hace falta el color de verdad y no el nombre de una
+ * variable: el navegador no deja mirar dentro de un «var()» desde el
+ * código sin pedirle el estilo calculado a un elemento.
+ *
+ * Son los MISMOS valores que las variables «--ev-*» de tokens.css, y hay
+ * una prueba que lee ese archivo y comprueba que siguen coincidiendo
+ * («tests/unit/colores.test.ts»): si alguien cambia la paleta en un
+ * sitio y se olvida del otro, la prueba lo dice.
+ *
+ * Y son los de SERIE: lo que se elige en Configuración los sustituye.
+ */
+/*
+  EN MINÚSCULAS, y no es un detalle de estilo: el selector de color del
+  navegador («input type=color») devuelve siempre minúsculas, y la
+  pantalla de Configuración compara el color elegido con el de serie para
+  saber qué ha cambiado. Con «#1D4F91» aquí y «#1d4f91» viniendo del
+  selector, esa comparación decía que los siete colores estaban
+  cambiados sin haber tocado ninguno, y guardaba los siete. Lo cazó la
+  prueba «De entrada están los colores de siempre».
+*/
 export const CALENDAR_COLOR: Record<CalendarKind, string> = {
-  fabricacion: 'var(--ev-fabricacion)',
-  montaje: 'var(--ev-montaje)',
-  material: 'var(--ev-material)',
-  visita: 'var(--ev-visita)',
-  aviso: 'var(--ev-aviso)',
-  otro: 'var(--ev-otro)',
-  obra: 'var(--ev-obra)',
+  fabricacion: '#1d4f91',
+  montaje: '#2e7d5b',
+  material: '#a8660a',
+  visita: '#6a4fa3',
+  aviso: '#b23a2a',
+  otro: '#5b6778',
+  obra: '#0e7490',
 };
+
+/**
+ * EL COLOR QUE DE VERDAD SE PINTA.
+ *
+ * MEJORA 4.2 · Los colores elegidos en Configuración llegan de la base
+ * de datos («app_settings.calendar_colors»), que solo guarda los que
+ * alguien ha cambiado: lo que falta son los de serie. Esta función junta
+ * las dos cosas.
+ *
+ * Se descarta en silencio lo que no sea un color válido o una categoría
+ * que exista. No es por desconfiar de la base de datos —tiene su propia
+ * restricción—, es porque esto también se usa con lo que todavía se está
+ * escribiendo en la pantalla de Configuración, donde un color a medio
+ * teclear es lo normal.
+ */
+export function coloresCalendario(
+  elegidos?: Record<string, string> | null,
+): Record<CalendarKind, string> {
+  const salida = { ...CALENDAR_COLOR };
+  if (!elegidos) return salida;
+  CALENDAR_KINDS.forEach((k) => {
+    const v = elegidos[k];
+    const hex = typeof v === 'string' ? normalizaHex(v) : null;
+    if (hex) salida[k] = hex;
+  });
+  return salida;
+}
 
 /**
  * LAS DOS CATEGORÍAS DE PROYECTO.
  *
- * Fabricación y montaje van juntas: son las dos fases del mismo trabajo
- * y verlas a la vez es lo que dice cómo está de cargada una semana. Por
- * eso son las únicas que pueden estar activas al mismo tiempo, y por eso
- * son las que salen al abrir el calendario.
+ * Fabricación y montaje son las dos fases del mismo trabajo, y verlas a
+ * la vez es lo que dice cómo está de cargada una semana. Por eso son las
+ * que salen al abrir el calendario.
  */
 export const CALENDAR_PROYECTOS: CalendarKind[] = ['fabricacion', 'montaje'];
 
 /** Lo que se ve al abrir el calendario, sin tocar nada. */
 export const CALENDAR_DEFECTO: CalendarKind[] = [...CALENDAR_PROYECTOS];
 
-const esProyecto = (k: CalendarKind) => CALENDAR_PROYECTOS.includes(k);
-
 /**
- * QUÉ QUEDA ACTIVO AL PULSAR UNA CATEGORÍA.
+ * ENCENDER Y APAGAR UNA CATEGORÍA.
  *
- * La regla, en una frase: fabricación y montaje son un modo combinado;
- * las demás son vistas sueltas que se excluyen con todo lo demás.
+ * MEJORA 4.3 · Antes esto era otra cosa: fabricación y montaje eran un
+ * modo combinado y las demás categorías eran vistas sueltas que apagaban
+ * todo lo demás. Se pidió quitarlo con estas palabras: «el usuario podrá
+ * activar materiales sin desactivar fabricación… no conviertas los
+ * filtros en un selector de opción única».
  *
- *   · estando en proyectos, pulsar fabricación o montaje añade o quita
- *     ESA, y la otra se queda como esté;
- *   · estando en una vista suelta, pulsar fabricación o montaje vuelve a
- *     proyectos con la que se ha pulsado;
- *   · pulsar una vista suelta deja ESA sola, apagando todo lo demás;
- *   · pulsar la vista suelta que ya está activa vuelve a lo de siempre
- *     (fabricación y montaje), para no dejar el calendario en blanco;
- *   · y una pulsación que dejaría el calendario sin NADA no hace nada:
- *     un calendario vacío no informa de nada y además no se entiende.
+ * Así que ahora la regla es la que se espera de una casilla:
+ *
+ *   · pulsar una categoría apagada la ENCIENDE;
+ *   · pulsar una encendida la APAGA;
+ *   · y no toca ninguna otra, nunca.
+ *
+ * El resultado sale SIEMPRE en el orden del calendario y no en el orden
+ * en que se fueron pulsando: así la leyenda y las pastillas se leen
+ * igual por la mañana y por la tarde.
+ *
+ * APAGARLAS TODAS SE PERMITE. Es la consecuencia de que desmarcar
+ * cualquiera funcione siempre, y es reversible: el calendario explica
+ * entonces que no hay ninguna categoría seleccionada y ofrece volver a
+ * fabricación y montaje. Antes, la última pulsación no hacía nada, y una
+ * casilla que no responde parece estropeada.
  */
-export function siguienteSeleccion(
+export function alternarCategoria(
   actual: CalendarKind[], pulsada: CalendarKind,
 ): CalendarKind[] {
-  const ordenar = (ks: CalendarKind[]) =>
-    CALENDAR_KINDS.filter((k) => ks.includes(k));
-
-  if (esProyecto(pulsada)) {
-    const soloProyectos = actual.every(esProyecto);
-    if (!soloProyectos || actual.length === 0) return [pulsada];
-    const siguiente = actual.includes(pulsada)
-      ? actual.filter((k) => k !== pulsada)
-      : [...actual, pulsada];
-    return siguiente.length ? ordenar(siguiente) : actual;
-  }
-
-  const soloEsa = actual.length === 1 && actual[0] === pulsada;
-  return soloEsa ? [...CALENDAR_DEFECTO] : [pulsada];
+  const siguiente = actual.includes(pulsada)
+    ? actual.filter((k) => k !== pulsada)
+    : [...actual, pulsada];
+  return CALENDAR_KINDS.filter((k) => siguiente.includes(k));
 }
 
 export type CalendarView = 'mes' | 'semana' | 'dia' | 'agenda';
@@ -361,4 +410,34 @@ export const CALENDAR_VIEWS: { key: CalendarView; label: string }[] = [
   { key: 'semana', label: 'Semana' },
   { key: 'dia', label: 'Día' },
   { key: 'agenda', label: 'Agenda' },
+];
+
+/**
+ * MEJORA 6 · LOS ESTADOS DE UNA SOLICITUD DE CORREO.
+ *
+ * Son los cinco que hay en la base de datos («valid_mail_status») y no
+ * uno más: recepción, revisión, vinculación, error y descarte. Si
+ * alguien añade uno allí sin añadirlo aquí, la pantalla lo enseñaría con
+ * su nombre interno, y por eso hay una prueba que compara las dos
+ * listas.
+ */
+export const MAIL_STATUS_LABEL: Record<MailStatus, string> = {
+  pendiente: 'Sin revisar',
+  revisada: 'Revisada',
+  vinculada: 'Vinculada',
+  error: 'Con error',
+  descartada: 'Descartada',
+};
+
+export const MAIL_STATUS_TONE: Record<MailStatus, Tone> = {
+  pendiente: 'signal',
+  revisada: 'blue',
+  vinculada: 'green',
+  error: 'red',
+  descartada: 'steel',
+};
+
+/** En el orden en que se miran: lo que falta por hacer, primero. */
+export const MAIL_STATUSES: MailStatus[] = [
+  'pendiente', 'error', 'revisada', 'vinculada', 'descartada',
 ];

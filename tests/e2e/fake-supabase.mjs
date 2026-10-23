@@ -109,9 +109,25 @@ export async function serveApp(port) {
       if (!file.startsWith(dist)) { res.writeHead(403).end(); return; }
       const info = await stat(file).catch(() => null);
       if (!info || info.isDirectory()) file = join(dist, 'index.html');
+      /*
+        El archivo se lee ANTES de escribir la cabecera.
+        Al revés —que es como estaba— si la lectura fallaba después del
+        «writeHead(200)», el «catch» intentaba responder un 404 sobre una
+        respuesta ya empezada, y eso no es un fallo recogido: es una
+        excepción que se lleva por delante el proceso entero y con él los
+        resultados de la prueba. Pasó ejecutando «navegacion.mjs»: las 48
+        comprobaciones habían salido bien y el proceso murió antes de
+        imprimir el total.
+      */
+      const bytes = await readFile(file);
       res.writeHead(200, { 'content-type': TYPES[extname(file)] ?? 'application/octet-stream' })
-         .end(await readFile(file));
-    } catch { res.writeHead(404).end('no encontrado'); }
+         .end(bytes);
+    } catch {
+      // Y si la cabecera ya se mandó, no se puede mandar otra: lo único
+      // que queda es cerrar.
+      if (res.headersSent) res.end();
+      else res.writeHead(404).end('no encontrado');
+    }
   });
   await new Promise((resolve) => server.listen(port, resolve));
   return server;
@@ -188,6 +204,9 @@ function crearDbBase(seed = {}) {
     // vínculo con la persona, que es lo que decide a quién avisar.
     comment_mentions: [],
     documents: [], comments: [], audit_log: [], backups: [],
+    // MEJORA 6 · La bandeja de entrada: cada correo recibido es una
+    // ficha provisional. Las crea el servidor, nunca el navegador.
+    mail_requests: [],
     counters: { PRES: 0, VIS: 0, AVI: 0, PROY: 0, OT: 0, PT: 0, OBRA: 0 },
     code_counters: [
       { prefix: 'PRES', year: YEAR, last_value: 0 }, { prefix: 'VIS', year: YEAR, last_value: 0 },
@@ -215,6 +234,9 @@ function crearDbBase(seed = {}) {
       // no se puede consultar, así que nace vacío.
       storage_quota_mb: null, db_quota_mb: null,
       quota_checked_on: null, quota_note: null,
+      // MEJORA 4.2 · Sin ningún color cambiado: lo que falta son los de
+      // serie, igual que en la base de datos.
+      calendar_colors: {},
       updated_at: '2026-01-15T09:00:00Z',
     },
     ...seed,
@@ -229,9 +251,21 @@ function crearDbBase(seed = {}) {
  */
 export function createDb(seed = {}) {
   const db = crearDbBase(seed);
-  db.materials = db.materials.map((m) => ({ ...m, origin: m.origin ?? 'pedido' }));
+  db.materials = db.materials.map((m) => ({
+    ...m,
+    origin: m.origin ?? 'pedido',
+    // MEJORA 3 · Nada nace preparado, igual que en la base de datos.
+    prepared: m.prepared ?? false,
+  }));
   return db;
 }
+
+/**
+ * MEJORA 3 · La regla de cuándo se puede preparar un material, la misma
+ * que la restricción «materials_preparado_valido» y la misma que usa la
+ * pantalla: lo de almacén, o lo pedido que ya ha llegado.
+ */
+export const sePuedePreparar = (m) => m.origin === 'almacen' || Boolean(m.received);
 
 /** Fecha de hoy en Madrid, como 'YYYY-MM-DD'. */
 export const today = () =>
@@ -678,6 +712,25 @@ export async function stubSupabase(context, {
       const client = db.clients.find((c) => c.id === row.client_id) ?? null;
       return { ...row, client: client ? { id: client.id, name: client.name } : null };
     }
+    // MEJORA 6 · Una solicitud de correo con lo que la pantalla enseña:
+    // su cliente, quién la revisó y a qué se vinculó.
+    if (table === 'mail_requests') {
+      const client = db.clients.find((c) => c.id === row.client_id) ?? null;
+      const revisor = people.find((x) => x.id === row.reviewed_by) ?? null;
+      const ficha = db.fichas.find((f) => f.id === row.target_ficha_id) ?? null;
+      const proyecto = db.projects.find((x) => x.id === row.target_project_id) ?? null;
+      return {
+        ...row,
+        client: client
+          ? { id: client.id, name: client.name, phone: client.phone, kind: client.kind }
+          : null,
+        reviewer: revisor ? { id: revisor.id, full_name: revisor.full_name } : null,
+        target_ficha: ficha ? { id: ficha.id, code: ficha.code, type: ficha.type } : null,
+        target_project: proyecto
+          ? { id: proyecto.id, code: proyecto.code, name: proyecto.name }
+          : null,
+      };
+    }
     if (table === 'work_orders') {
       const project = db.projects.find((p) => p.id === row.project_id) ?? null;
       const client = project ? db.clients.find((c) => c.id === project.client_id) ?? null : null;
@@ -930,11 +983,16 @@ export async function stubSupabase(context, {
     // columnas. La tabla es de administración; el trabajador entra por
     // «worker_fichas», que se construye sin la columna del dinero.
     if (table === 'fichas') return [];
+    // MEJORA 6 · La bandeja es de administración, igual que las fichas.
+    if (table === 'mail_requests') return [];
     if (table === 'documents' || table === 'comments') {
       // Los partes que puedo LEER: los míos y los que compartí. Igual
       // que «can_read_report» en la base de datos.
       const misPartes = new Set(db.work_reports
         .filter((x) => canReadReport(user, x.id)).map((x) => x.id));
+      // «mail_request_id» no está en la lista a propósito: los adjuntos
+      // de un correo son de administración mientras la solicitud no se
+      // convierta en algo que el trabajador tenga asignado.
       const suyo = (r) => (r.order_id && mine.has(r.order_id))
         || (r.project_id && myProjects.has(r.project_id))
         || (r.ficha_id && assignedFichas(user).has(r.ficha_id))
@@ -1051,7 +1109,41 @@ export async function stubSupabase(context, {
 
     // ---------------- Funciones ----------------
     if (path === '/rest/v1/rpc/client_config') {
-      return json({ max_file_mb: 100, company_name: 'METALPLAFER S.L.' });
+      // MEJORA 4.2 · Los colores del calendario llegan por aquí, igual
+      // que en la base de datos: una sola consulta al entrar, y los
+      // mismos para administración y para el trabajador.
+      return json({
+        max_file_mb: db.settings.max_file_mb ?? 100,
+        company_name: db.settings.company?.name ?? 'METALPLAFER S.L.',
+        calendar_colors: db.settings.calendar_colors ?? {},
+      });
+    }
+
+    /**
+     * MEJORA 4.2 · «set_calendar_colors»: los colores del calendario,
+     * para toda la empresa. Se manda el conjunto completo de los
+     * cambiados; vacío devuelve los de siempre.
+     *
+     * Las mismas comprobaciones que la función de la base de datos: solo
+     * administración, solo categorías que existen y solo «#rrggbb».
+     */
+    if (path === '/rest/v1/rpc/set_calendar_colors') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const colores = body()?.p_colors ?? {};
+      const CATEGORIAS = ['obra', 'fabricacion', 'montaje', 'material', 'visita', 'aviso', 'otro'];
+      if (typeof colores !== 'object' || Array.isArray(colores)) {
+        return fail('Los colores del calendario tienen que ser «#rrggbb» y de una categoría que exista');
+      }
+      const malo = Object.entries(colores).find(
+        ([k, v]) => !CATEGORIAS.includes(k) || !/^#[0-9a-fA-F]{6}$/.test(String(v)),
+      );
+      if (malo) {
+        return fail('Los colores del calendario tienen que ser «#rrggbb» y de una categoría que exista');
+      }
+      db.settings.calendar_colors = { ...colores };
+      db.settings.updated_at = new Date().toISOString();
+      registrar(`${actorName()} cambió los colores del calendario`, null, 'app_settings');
+      return json(db.settings);
     }
 
     if (path === '/rest/v1/rpc/suggest_clients') {
@@ -2218,6 +2310,164 @@ export async function stubSupabase(context, {
       return json(project.id);
     }
 
+    /**
+     * MEJORA 2 · «link_visit»: vincula una visita técnica a un
+     * presupuesto, a un aviso o a un proyecto. Con los dos destinos
+     * vacíos, la desvincula.
+     *
+     * Las mismas comprobaciones que la función de la base de datos, con
+     * los mismos códigos de error: si la pantalla depende de uno, la
+     * prueba del navegador se entera.
+     */
+    if (path === '/rest/v1/rpc/link_visit') {
+      const user = getUser();
+      if (!user || user.role !== 'admin') {
+        return fail('No tienes permisos para realizar esta acción', '42501');
+      }
+      const visita = db.fichas.find((f) => f.id === body()?.p_visit);
+      const destinoFicha = body()?.p_ficha ?? null;
+      const destinoProyecto = body()?.p_project ?? null;
+
+      if (!visita) return fail('No se encuentra la visita', 'P0002');
+      if (visita.type !== 'visita') {
+        return fail('Solo las visitas técnicas se pueden vincular a un presupuesto o a un proyecto');
+      }
+      if (destinoFicha && destinoProyecto) {
+        return fail('Una visita se vincula a un presupuesto o a un proyecto, no a los dos');
+      }
+
+      let codigo = null;
+      if (destinoFicha) {
+        const o = db.fichas.find((f) => f.id === destinoFicha);
+        if (!o) return fail('No se encuentra el presupuesto o el aviso al que vincular la visita', 'P0002');
+        if (o.type === 'visita') return fail('Una visita técnica no se vincula a otra visita');
+        codigo = o.code;
+      } else if (destinoProyecto) {
+        const p = db.projects.find((x) => x.id === destinoProyecto);
+        if (!p) return fail('No se encuentra el proyecto al que vincular la visita', 'P0002');
+        codigo = p.code;
+      }
+
+      // Ya está vinculada ahí: no se toca nada y no se repite el apunte.
+      if ((visita.linked_ficha_id ?? null) === destinoFicha
+          && (visita.linked_project_id ?? null) === destinoProyecto) {
+        return json(visita);
+      }
+
+      visita.linked_ficha_id = destinoFicha;
+      visita.linked_project_id = destinoProyecto;
+      visita.updated_at = new Date().toISOString();
+      registrar(codigo
+        ? `Salvi Plaza vinculó la visita técnica ${visita.code} a ${codigo}`
+        : `Salvi Plaza desvinculó la visita técnica ${visita.code}`, visita.code, 'fichas');
+      return json(visita);
+    }
+
+    /**
+     * MEJORA 6 · LAS FUNCIONES DE LA BANDEJA.
+     *
+     * Las de RECEPCIÓN no están: en la base de datos solo las puede
+     * llamar el servidor con la clave «service_role», y el navegador
+     * recibe un 42501. Aquí se responde lo mismo, para que ninguna
+     * pantalla pueda depender de ellas sin que la prueba se entere.
+     */
+    if (path === '/rest/v1/rpc/receive_mail_request'
+        || path === '/rest/v1/rpc/attach_mail_document'
+        || path === '/rest/v1/rpc/mark_mail_request_error') {
+      return fail('No tienes permisos para realizar esta acción', '42501');
+    }
+
+    if (path === '/rest/v1/rpc/review_mail_request') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const m = db.mail_requests.find((x) => x.id === body()?.p_request);
+      if (!m) return fail('No se encuentra la solicitud', 'P0002');
+      if (m.status === 'descartada') {
+        return fail('Esta solicitud está descartada. Recupérala antes de revisarla.');
+      }
+      const cliente = body()?.p_client ?? null;
+      if (cliente && !db.clients.some((c) => c.id === cliente && !c.archived_at)) {
+        return fail('No se encuentra el cliente, o está archivado', 'P0002');
+      }
+      const correo = (body()?.p_original_sender_email ?? '').trim();
+      m.client_id = cliente;
+      m.notes = (body()?.p_notes ?? '').trim() || null;
+      if (correo) {
+        m.original_sender_email = correo.toLowerCase();
+        m.sender_needs_review = false;
+      }
+      const nombre = (body()?.p_original_sender_name ?? '').trim();
+      if (nombre) m.original_sender_name = nombre;
+      m.reviewed_by = actor().id;
+      m.reviewed_at = new Date().toISOString();
+      if (m.status !== 'vinculada') m.status = 'revisada';
+      if (m.status === 'revisada') m.error_detail = null;
+      m.updated_at = new Date().toISOString();
+      registrar(`${actorName()} revisó la solicitud ${m.code}`, m.code, 'mail_requests');
+      return json(m);
+    }
+
+    if (path === '/rest/v1/rpc/link_mail_request') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const m = db.mail_requests.find((x) => x.id === body()?.p_request);
+      if (!m) return fail('No se encuentra la solicitud', 'P0002');
+      const ficha = body()?.p_ficha ?? null;
+      const proyecto = body()?.p_project ?? null;
+      if (ficha && proyecto) {
+        return fail('Una solicitud se vincula a una ficha o a un proyecto, no a los dos');
+      }
+      let codigo = null;
+      if (ficha) {
+        const f = db.fichas.find((x) => x.id === ficha);
+        if (!f) return fail('No se encuentra la ficha a la que vincular la solicitud', 'P0002');
+        codigo = f.code;
+      } else if (proyecto) {
+        const p = db.projects.find((x) => x.id === proyecto);
+        if (!p) return fail('No se encuentra el proyecto al que vincular la solicitud', 'P0002');
+        codigo = p.code;
+      } else {
+        return fail('Di a qué se vincula la solicitud');
+      }
+      if ((m.target_ficha_id ?? null) === ficha && (m.target_project_id ?? null) === proyecto) {
+        return json(m);
+      }
+      m.target_ficha_id = ficha;
+      m.target_project_id = proyecto;
+      m.status = 'vinculada';
+      m.reviewed_by = m.reviewed_by ?? actor().id;
+      m.reviewed_at = m.reviewed_at ?? new Date().toISOString();
+      m.updated_at = new Date().toISOString();
+      registrar(`${actorName()} vinculó la solicitud ${m.code} a ${codigo}`, m.code, 'mail_requests');
+      return json(m);
+    }
+
+    if (path === '/rest/v1/rpc/discard_mail_request') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const m = db.mail_requests.find((x) => x.id === body()?.p_request);
+      if (!m) return fail('No se encuentra la solicitud', 'P0002');
+      if (m.status === 'vinculada') {
+        return fail('Esta solicitud ya está vinculada. Desvincúlala antes de descartarla.');
+      }
+      m.status = 'descartada';
+      const nota = (body()?.p_note ?? '').trim();
+      if (nota) m.notes = nota;
+      m.reviewed_by = actor().id;
+      m.reviewed_at = new Date().toISOString();
+      registrar(`${actorName()} descartó la solicitud ${m.code}`, m.code, 'mail_requests');
+      return json(m);
+    }
+
+    if (path === '/rest/v1/rpc/restore_mail_request') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const m = db.mail_requests.find((x) => x.id === body()?.p_request);
+      if (!m || m.status !== 'descartada') {
+        return fail('Solo se recuperan las solicitudes descartadas');
+      }
+      m.status = 'pendiente';
+      m.updated_at = new Date().toISOString();
+      registrar(`${actorName()} recuperó la solicitud ${m.code}`, m.code, 'mail_requests');
+      return json(m);
+    }
+
     if (path === '/rest/v1/rpc/change_project_phase') {
       const project = db.projects.find((p) => p.id === body()?.p_project);
       const next = body()?.p_phase;
@@ -2961,6 +3211,9 @@ export async function stubSupabase(context, {
           project_id: p.id, total: list.length,
           pendientes: list.filter((m) => !m.received).length,
           retrasados: list.filter((m) => !m.received && m.expected_on && m.expected_on < today()).length,
+          // MEJORA 3 · Lo cargado y lo que ya se puede cargar.
+          preparados: list.filter((m) => m.prepared).length,
+          por_preparar: list.filter((m) => !m.prepared && sePuedePreparar(m)).length,
         };
       });
       return json(applyFilters(rows, url));
@@ -3084,6 +3337,143 @@ export async function stubSupabase(context, {
 
     if (path === '/rest/v1/work_summary') {
       const rows = visible('works', db.works ?? []).map(cuentasDeObra);
+      return json(applyFilters(rows, url));
+    }
+
+    /**
+     * MEJORA 1 y 2 · «related_documents»: los archivos que un proyecto o
+     * una ficha VE sin ser suyos.
+     *
+     * Las cuatro maneras de entrar, igual que en la vista de la base de
+     * datos (archivos 57 y 58):
+     *
+     *   · el proyecto ve los del presupuesto del que nació;
+     *   · el proyecto ve los de las visitas vinculadas a él;
+     *   · el proyecto ve los de las visitas vinculadas a su presupuesto;
+     *   · el presupuesto o el aviso ven los de sus visitas vinculadas.
+     *
+     * Solo administración, porque en la base de datos las políticas de
+     * «fichas» y «projects» son «is_admin()» y la vista se ejecuta con
+     * los permisos de quien pregunta: a un trabajador le sale vacía.
+     */
+    if (path === '/rest/v1/related_documents') {
+      const user = getUser();
+      if (user && user.role !== 'admin') return json(applyFilters([], url));
+
+      const vivos = (fichaId) => db.documents.filter(
+        (d) => d.ficha_id === fichaId && !d.deleted_at,
+      );
+      const fecha = (f) => f.scheduled_date ?? (f.created_at ?? '').slice(0, 10) ?? null;
+      const fila = (paraTipo, paraId, origen, origenTipo, d) => {
+        const quien = people.find((x) => x.id === d.uploaded_by) ?? null;
+        return {
+          para_tipo: paraTipo, para_id: paraId,
+          origen_tipo: origenTipo, origen_id: origen.id, origen_code: origen.code,
+          origen_fecha: fecha(origen),
+          id: d.id, bucket: d.bucket, storage_path: d.storage_path,
+          file_name: d.file_name, mime_type: d.mime_type, size_bytes: d.size_bytes,
+          category: d.category, scope: d.scope, uploaded_by: d.uploaded_by ?? null,
+          uploader_name: quien?.full_name ?? null, created_at: d.created_at,
+        };
+      };
+      const visitas = db.fichas.filter((f) => f.type === 'visita');
+      const rows = [];
+
+      db.projects.forEach((p) => {
+        const pres = db.fichas.find((f) => f.id === p.source_ficha_id);
+        if (pres) {
+          vivos(pres.id).forEach((d) => rows.push(fila('proyecto', p.id, pres, 'presupuesto', d)));
+        }
+        visitas.filter((v) => v.linked_project_id === p.id).forEach((v) => {
+          vivos(v.id).forEach((d) => rows.push(fila('proyecto', p.id, v, 'visita', d)));
+        });
+        if (p.source_ficha_id) {
+          visitas.filter((v) => v.linked_ficha_id === p.source_ficha_id).forEach((v) => {
+            vivos(v.id).forEach((d) => rows.push(fila('proyecto', p.id, v, 'visita', d)));
+          });
+        }
+      });
+
+      db.fichas.filter((f) => f.type !== 'visita').forEach((o) => {
+        const tipo = o.type === 'aviso' ? 'aviso' : 'presupuesto';
+        visitas.filter((v) => v.linked_ficha_id === o.id).forEach((v) => {
+          vivos(v.id).forEach((d) => rows.push(fila(tipo, o.id, v, 'visita', d)));
+        });
+      });
+
+      // MEJORA 6 · Lo que mandó el cliente por correo, visto desde la
+      // ficha que salió de la solicitud y desde el proyecto que sale de
+      // esa ficha. Igual que las ramas 5 y 6 de la vista.
+      const delCorreo = (solicitud) => db.documents.filter(
+        (d) => d.mail_request_id === solicitud.id && !d.deleted_at,
+      );
+      const filaCorreo = (paraTipo, paraId, solicitud, d) => {
+        const quien = people.find((x) => x.id === d.uploaded_by) ?? null;
+        return {
+          para_tipo: paraTipo, para_id: paraId,
+          origen_tipo: 'correo', origen_id: solicitud.id, origen_code: solicitud.code,
+          origen_fecha: (solicitud.received_at ?? '').slice(0, 10) || null,
+          id: d.id, bucket: d.bucket, storage_path: d.storage_path,
+          file_name: d.file_name, mime_type: d.mime_type, size_bytes: d.size_bytes,
+          category: d.category, scope: d.scope, uploaded_by: d.uploaded_by ?? null,
+          uploader_name: quien?.full_name ?? null, created_at: d.created_at,
+        };
+      };
+      (db.mail_requests ?? []).forEach((sol) => {
+        if (sol.target_ficha_id) {
+          const o = db.fichas.find((f) => f.id === sol.target_ficha_id);
+          if (o) {
+            const tipo = o.type === 'aviso' ? 'aviso' : 'presupuesto';
+            delCorreo(sol).forEach((d) => rows.push(filaCorreo(tipo, o.id, sol, d)));
+          }
+        }
+        db.projects.forEach((pr) => {
+          const directa = sol.target_project_id === pr.id;
+          const porFicha = Boolean(sol.target_ficha_id)
+            && sol.target_ficha_id === pr.source_ficha_id;
+          if (directa || porFicha) {
+            delCorreo(sol).forEach((d) => rows.push(filaCorreo('proyecto', pr.id, sol, d)));
+          }
+        });
+      });
+
+      return json(applyFilters(rows, url));
+    }
+
+    /**
+     * MEJORA 2 · «linked_visits»: las visitas técnicas que se ven desde
+     * un presupuesto, un aviso o un proyecto. «heredada» marca las que
+     * cuelgan del presupuesto del que nació el proyecto.
+     */
+    if (path === '/rest/v1/linked_visits') {
+      const user = getUser();
+      if (user && user.role !== 'admin') return json(applyFilters([], url));
+
+      const fila = (paraTipo, paraId, heredada, v) => {
+        const quien = people.find((x) => x.id === v.assigned_to) ?? null;
+        return {
+          para_tipo: paraTipo, para_id: paraId, heredada,
+          id: v.id, code: v.code, status: v.status, title: v.title ?? null,
+          scheduled_date: v.scheduled_date ?? null, scheduled_time: v.scheduled_time ?? null,
+          assigned_to: v.assigned_to ?? null, assigned_name: quien?.full_name ?? null,
+          created_at: v.created_at,
+          archivos: db.documents.filter((d) => d.ficha_id === v.id && !d.deleted_at).length,
+        };
+      };
+      const rows = [];
+      db.fichas.filter((f) => f.type === 'visita').forEach((v) => {
+        if (v.linked_ficha_id) {
+          // El tipo sale de la ficha de destino: una visita se vincula a
+          // un presupuesto o a un aviso.
+          const o = db.fichas.find((f) => f.id === v.linked_ficha_id);
+          if (o) rows.push(fila(o.type === 'aviso' ? 'aviso' : 'presupuesto', o.id, false, v));
+        }
+        if (v.linked_project_id) rows.push(fila('proyecto', v.linked_project_id, false, v));
+        if (v.linked_ficha_id) {
+          db.projects.filter((p) => p.source_ficha_id === v.linked_ficha_id)
+            .forEach((p) => rows.push(fila('proyecto', p.id, true, v)));
+        }
+      });
       return json(applyFilters(rows, url));
     }
 
@@ -4230,6 +4620,11 @@ export async function stubSupabase(context, {
     }
 
     if (method === 'POST') {
+      // MEJORA 6 · Las solicitudes las crea el servidor, no el
+      // navegador: el archivo 61 revoca el «insert» a «authenticated».
+      if (table === 'mail_requests') {
+        return fail('No tienes permisos para realizar esta acción', '42501');
+      }
       const payload = Array.isArray(body()) ? body() : [body()];
       const created = payload.map((item) => {
         const row = {
@@ -4257,6 +4652,11 @@ export async function stubSupabase(context, {
           if (row.status === 'por_asignar' && row.assigned_to) {
             row.status = NEXT_WHEN_ASSIGNED[row.type];
           }
+          // MEJORA 2 · Las columnas nuevas nacen vacías, como en la base
+          // de datos: una ficha recién creada no está vinculada a nada.
+          // Se vincula en un segundo paso, con «link_visit».
+          row.linked_ficha_id = row.linked_ficha_id ?? null;
+          row.linked_project_id = row.linked_project_id ?? null;
           registrar(`Salvi Plaza creó la ficha de ${row.type} ${row.code}`, row.code, 'fichas');
         }
 
@@ -4303,6 +4703,13 @@ export async function stubSupabase(context, {
         if (table === 'materials') {
           row.received = row.received ?? false;
           row.origin = row.origin ?? 'pedido';
+          // MEJORA 3 · Nada nace preparado, y nacer marcado sin estar
+          // disponible lo rechaza la restricción.
+          row.prepared = row.prepared ?? false;
+          if (row.prepared && !sePuedePreparar(row)) {
+            return fail('El material todavía no ha llegado: no se puede marcar como preparado.',
+              '23514');
+          }
           row.late_notified_on = null;
           registrar(`${actorName()} anotó material pendiente: ${row.name}`, null, 'materials');
         }
@@ -4329,9 +4736,34 @@ export async function stubSupabase(context, {
             + 'lo tiene que hacer un trabajador, créalo como aviso.');
         }
       }
+      /**
+       * MEJORA 3 · SOLO SE PREPARA LO QUE ESTÁ EN EL TALLER.
+       *
+       * La restricción «materials_preparado_valido» de la base de datos,
+       * con su mismo código de error: marcar como preparado algo que
+       * está pedido y sin recibir se RECHAZA, no se ignora. La pantalla
+       * apaga la casilla, pero la prueba tiene que poder comprobar que
+       * la negativa existe aunque la pantalla no estuviera.
+       */
+      if (table === 'materials' && patch.prepared === true) {
+        const imposible = rows.find((row) => !sePuedePreparar({ ...row, ...patch }));
+        if (imposible) {
+          return fail('El material todavía no ha llegado: no se puede marcar como preparado.',
+            '23514');
+        }
+      }
+
       rows.forEach((row) => {
         const before = { ...row };
         Object.assign(row, patch, { updated_at: new Date().toISOString() });
+
+        // Y el disparador: si deja de estar recibido, deja de estar
+        // preparado. Solo cuando ESTABA preparado, igual que en la base
+        // de datos: si no, un intento prohibido se arreglaría solo.
+        if (table === 'materials' && before.prepared && row.prepared
+            && !sePuedePreparar(row)) {
+          row.prepared = false;
+        }
 
         if (table === 'fichas' && patch.assigned_to && before.status === 'por_asignar') {
           row.status = NEXT_WHEN_ASSIGNED[row.type];

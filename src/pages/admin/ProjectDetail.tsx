@@ -11,6 +11,8 @@ import { Badge, PageHeader, Panel } from '@/components/ui/Layout';
 import { Alert, ErrorBox, Loading } from '@/components/ui/Feedback';
 import { PhaseRail } from '@/components/ui/PhaseRail';
 import { DocumentsPanel } from '@/components/shared/DocumentsPanel';
+import { RelatedDocsPanel } from '@/components/shared/RelatedDocsPanel';
+import { VisitasPanel } from '@/components/shared/VisitasPanel';
 import { documentPaths, removeStoredFiles } from '@/services/documents';
 import { CommentsPanel } from '@/components/shared/CommentsPanel';
 import { HistoryPanel } from '@/components/shared/HistoryPanel';
@@ -22,7 +24,13 @@ import {
   BILLING_LABEL, BILLING_STATUSES, BILLING_TONE, PHASE_LABEL, PHASE_TONE, SUBSTATUSES,
 } from '@/config/constants';
 import { listOrders } from '@/services/orders';
-import { listMaterials, setReceived } from '@/services/materials';
+import {
+  listMaterials, projectMaterialSummary, sePuedePreparar, setPrepared, setReceived,
+  updateMaterial,
+} from '@/services/materials';
+import {
+  MaterialModal, draftFrom, type MaterialValues,
+} from '@/components/shared/MaterialModal';
 import { MaterialNeedButton } from '@/components/shared/MaterialNeedButton';
 import { billing } from '@/services/billing';
 import { listPeople } from '@/services/people';
@@ -32,7 +40,7 @@ import { RangoFechas } from '@/components/shared/RangoFechas';
 import { REPORT_STATUS_SHORT, REPORT_STATUS_TONE } from '@/config/constants';
 import { ORDER_STATUS_SHORT, ORDER_STATUS_TONE, ORDER_TYPE_LABEL } from '@/config/constants';
 import { fmtDate, fmtDateTime, fmtEur, fmtHours, fmtNumber, todayMadrid } from '@/lib/format';
-import type { BillingStatus, ProjectPhase } from '@/types/db';
+import type { BillingStatus, Material, ProjectPhase } from '@/types/db';
 
 export default function ProjectDetail() {
   const { id = '' } = useParams();
@@ -48,6 +56,12 @@ export default function ProjectDetail() {
   const orders = useAsync(() => listOrders({ projectId: id, pageSize: 50 }), [id, historyKey]);
   const materials = useAsync(() => listMaterials({ projectId: id, state: 'todos' }), [id, historyKey]);
   const money = useAsync(() => billing(id), [id, historyKey]);
+  /**
+   * MEJORA 3 · Los contadores de material los da la base de datos y no
+   * se cuentan aquí: la lista de arriba viene paginada, así que contar
+   * sus filas daría cifras cortas en un proyecto con mucho material.
+   */
+  const resumenMat = useAsync(() => projectMaterialSummary(id), [id, historyKey]);
   // Las piezas del proyecto. Depende de «project.data?.updated_at» para
   // que al guardar los productos la ficha los enseñe ya cambiados.
   const productos = useAsync(() => projectProducts(id), [id, project.data?.updated_at]);
@@ -59,6 +73,20 @@ export default function ProjectDetail() {
   const horas = useAsync(() => projectHours(id), [id, historyKey]);
   const [asignados, setAsignados] = useState<string[]>([]);
   const [editandoEquipo, setEditandoEquipo] = useState(false);
+
+  /**
+   * MEJORA 3.1 · EL MATERIAL QUE SE ESTÁ CORRIGIENDO.
+   *
+   * El comentario se escribe al anotar el material y se lee aquí, así
+   * que corregirlo tiene que poder hacerse aquí también: mandar a la
+   * persona a otra pantalla para cambiar una línea de texto que está
+   * mirando es lo que hace que nadie la corrija.
+   *
+   * Se reutiliza «MaterialModal», el formulario de siempre, con sus
+   * mismas validaciones. No se ofrece cambiar de proyecto: el material
+   * ya es de ESTE, y para moverlo está la pantalla de Material.
+   */
+  const [editando, setEditando] = useState<Material | null>(null);
 
   // FASE 1.1 · Las fechas de una fase, escritas a mano desde aquí.
   // Se edita UNA fase a la vez, y se guarda SOLO esa: tocar la
@@ -325,6 +353,19 @@ export default function ProjectDetail() {
             {p.no_assembly && <Badge tone="neutral" plain>Sin montaje</Badge>}
             {archived && <Badge tone="steel">Archivado</Badge>}
             {p.client && <Link to={`/admin/clientes/${p.client.id}`}>{p.client.name}</Link>}
+            {/*
+              MEJORA 1 · DE DÓNDE SALIÓ ESTE PROYECTO.
+              El enlace al presupuesto de origen ya estaba en los datos
+              («projects.source_ficha_id»), pero no se enseñaba en ningún
+              sitio: desde el proyecto no había manera de volver a la
+              ficha donde están sus fotos y sus comentarios.
+            */}
+            {p.source && (
+              <Link to={`/admin/fichas/${p.source.id}`}
+                    title="Presupuesto del que nació este proyecto">
+                Procede de {p.source.code}
+              </Link>
+            )}
             <span className="faint">Creado el {fmtDate(p.created_at)}</span>
           </span>
         }
@@ -368,7 +409,12 @@ export default function ProjectDetail() {
         <PhaseRail phase={p.phase} onChange={toPhase} disabled={saving || locked} />
       </div>
 
-      <div className="grid-2" style={{ alignItems: 'start' }}>
+      {/*
+        MEJORA 5.1 · «proy-detalle» marca esta rejilla para que en un
+        móvil el historial baje al final de la página. En escritorio no
+        cambia nada.
+      */}
+      <div className="grid-2 proy-detalle" style={{ alignItems: 'start' }}>
         <div className="stack">
           <Panel title={`Situación · ${PHASE_LABEL[p.phase]}`}>
             <div className="stack">
@@ -652,6 +698,19 @@ export default function ProjectDetail() {
         <div className="stack">
           <DocumentsPanel owner={{ projectId: p.id }} title="Documentos, fotografías y vídeos"
             onChange={() => setHistoryKey((k) => k + 1)} />
+          {/*
+            MEJORA 1 y 2 · Lo que viene del presupuesto de origen y de
+            las visitas técnicas vinculadas. Va justo DEBAJO del panel de
+            documentos propios, y solo aparece si hay algo que enseñar.
+          */}
+          <RelatedDocsPanel paraTipo="proyecto" paraId={p.id} reloadKey={String(historyKey)} />
+          {/*
+            MEJORA 2 · Las visitas técnicas de este proyecto, y las que
+            se hicieron para el presupuesto del que nació.
+          */}
+          <VisitasPanel paraTipo="proyecto" paraId={p.id} codigo={p.code}
+                        clientId={p.client_id}
+                        onChange={() => setHistoryKey((k) => k + 1)} />
           <CommentsPanel owner={{ projectId: p.id }} />
 
           <Panel
@@ -780,6 +839,9 @@ export default function ProjectDetail() {
                 <ul className="mini-list">
                   {materials.data.rows.map((m) => {
                     const late = !m.received && m.expected_on && m.expected_on < todayMadrid();
+                    // MEJORA 3 · La MISMA regla que la restricción de la
+                    // base de datos, pedida a quien la sabe.
+                    const puede = sePuedePreparar(m);
                     return (
                       <li key={m.id}>
                         {/* Lo que ya teníamos no se marca como recibido. */}
@@ -806,6 +868,15 @@ export default function ProjectDetail() {
                               : m.supplier ?? 'Sin proveedor'}
                             {m.expected_on ? ` · previsto ${fmtDate(m.expected_on)}` : ''}
                           </small>
+                          {/*
+                            MEJORA 3.1 · EL COMENTARIO DEL MATERIAL.
+                            Estaba guardado en «materials.notes» desde
+                            siempre y se veía en la pantalla de Material,
+                            pero este panel no lo pintaba: quien lo
+                            escribía al anotar material de almacén
+                            volvía al proyecto y no lo encontraba.
+                          */}
+                          {m.notes && <small className="mat-nota">{m.notes}</small>}
                         </span>
                         {m.origin === 'almacen'
                           ? <Badge tone="steel">De almacén</Badge>
@@ -813,11 +884,62 @@ export default function ProjectDetail() {
                             ? <Badge tone="green">Recibido</Badge>
                             : late ? <Badge tone="red">Retrasado</Badge>
                             : <Badge tone="amber">Pendiente</Badge>}
+                        {/*
+                          MEJORA 3.2 y 3.3 · PREPARADO Y CARGADO.
+                          Apagado mientras el material esté pedido y no
+                          haya llegado, con el motivo escrito. Y si
+                          alguien se salta la pantalla, la restricción
+                          «materials_preparado_valido» lo rechaza.
+                        */}
+                        <label className="checkbox mat-cargado" style={{ margin: 0 }}
+                               title={puede
+                                 ? 'Preparado y cargado para llevarlo a la obra'
+                                 : 'Todavía no ha llegado: no se puede preparar'}>
+                          <input type="checkbox" checked={m.prepared} disabled={!puede || locked}
+                                 aria-label={`Marcar ${m.name} como preparado y cargado`}
+                                 onChange={async () => {
+                                   try { await setPrepared(m.id, !m.prepared); await reload(); }
+                                   catch (e) { toast.error(e); }
+                                 }} />
+                          <span>Cargado</span>
+                        </label>
+                        <button className="btn btn-ghost icon-btn" onClick={() => setEditando(m)}
+                                aria-label={`Editar ${m.name}`} disabled={locked}>
+                          <Pencil />
+                        </button>
                       </li>
                     );
                   })}
                 </ul>
               )}
+
+            {/*
+              MEJORA 3 · Lo que queda por cargar, de un vistazo. Sale de
+              la vista «project_materials», que cuenta TODO el material
+              del proyecto y no solo la página que se ve arriba.
+            */}
+            {resumenMat.data && resumenMat.data.total > 0 && (
+              <p className="hint" style={{ marginBottom: 0 }}>
+                {resumenMat.data.preparados === resumenMat.data.total
+                  ? 'Todo el material está preparado y cargado.'
+                  : <>
+                      {resumenMat.data.preparados === 1
+                        ? '1 material cargado'
+                        : `${resumenMat.data.preparados} materiales cargados`}
+                      {resumenMat.data.por_preparar > 0 && (
+                        <>, {resumenMat.data.por_preparar === 1
+                          ? '1 listo para cargar'
+                          : `${resumenMat.data.por_preparar} listos para cargar`}</>
+                      )}
+                      {resumenMat.data.pendientes > 0 && (
+                        <> y {resumenMat.data.pendientes === 1
+                          ? '1 pendiente de llegar'
+                          : `${resumenMat.data.pendientes} pendientes de llegar`}</>
+                      )}
+                      .
+                    </>}
+              </p>
+            )}
           </Panel>
 
           <Panel
@@ -844,6 +966,41 @@ export default function ProjectDetail() {
           </Panel>
         </div>
       </div>
+
+      {/*
+        MEJORA 3.1 · Corregir el material sin salir del proyecto, con el
+        formulario de siempre. El origen no se puede cambiar desde aquí
+        («allowOrigin» apagado): pasar un pedido a material de almacén
+        obliga a borrar proveedor y fechas, y eso se hace en la pantalla
+        de Material, que es donde está el resto del pedido.
+      */}
+      {editando && (
+        <MaterialModal
+          title={`Editar ${editando.name}`}
+          initial={draftFrom(editando)}
+          allowOrigin={false}
+          intro={(
+            <p className="hint" style={{ margin: 0 }}>
+              El comentario se ve en este panel, debajo del material.
+            </p>
+          )}
+          onClose={() => setEditando(null)}
+          onSave={async (draft: MaterialValues) => {
+            await updateMaterial(editando.id, {
+              name: draft.name.trim(),
+              units: draft.units,
+              supplier: draft.supplier,
+              supplier_id: draft.supplier_id,
+              ordered_on: draft.ordered_on || null,
+              expected_on: draft.expected_on || null,
+              notes: draft.notes,
+            });
+            toast.success('Material guardado');
+            setEditando(null);
+            await reload();
+          }}
+        />
+      )}
     </>
   );
 }

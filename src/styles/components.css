@@ -357,6 +357,33 @@
 .mini-list li.is-voided .num { text-decoration: line-through; color: var(--muted); }
 .mini-list li.is-voided small { color: var(--muted); }
 
+/* ---------------------------------------------------------------------
+   MEJORA 3 · EL MATERIAL EN LA FICHA DEL PROYECTO
+
+   El comentario del material («Estantería 3, pasillo B») se lee entero:
+   es información operativa, y recortarla a una línea con puntos
+   suspensivos la deja inútil. Se distingue del resto por el color y por
+   la raya de la izquierda, para que no se confunda con el proveedor.
+
+   La casilla de «Cargado» no se encoge y apagada se ve apagada: si se
+   leyera igual que una encendida, nadie entendería por qué no responde.
+   --------------------------------------------------------------------- */
+.cell-main .mat-nota {
+  color: var(--muted); white-space: normal;
+  padding-left: 7px; margin-top: 2px; border-left: 2px solid var(--line-strong);
+}
+.mat-cargado { flex: none; font-size: .82rem; color: var(--muted); font-weight: 600; }
+.mat-cargado input { width: 16px; height: 16px; }
+.mat-cargado:has(input:checked) { color: var(--ok); }
+.mat-cargado:has(input:disabled) { opacity: .45; cursor: not-allowed; }
+
+@media (max-width: 700px) {
+  /* En el móvil la fila se parte: el nombre y su comentario arriba, y
+     los controles debajo, sin que nada se salga por el lado. La palabra
+     «Cargado» SE QUEDA: una casilla sin etiqueta no se entiende. */
+  .mini-list li { flex-wrap: wrap; }
+}
+
 /* Avisos internos */
 .bell-wrap { position: relative; }
 .bell-dot {
@@ -430,17 +457,39 @@
 .cal-day-head .num { font-weight: 700; font-size: .82rem; }
 .cal-day-body { display: grid; gap: 3px; align-content: start; }
 
+/* ---------------------------------------------------------------------
+   MEJORA 4.1 · LA PASTILLA ENTERA, DEL COLOR DE SU CATEGORÍA
+
+   Antes el color era una rayita de 3 píxeles a la izquierda sobre fondo
+   gris: para distinguir fabricación de montaje había que fijarse. Ahora
+   la pastilla se pinta entera.
+
+   El color del TEXTO no se escribe aquí: lo calcula la aplicación a
+   partir del fondo («textoSobre», en src/lib/colores.ts) y lo pasa en
+   «--ev-texto». Tiene que ser así porque el fondo lo elige una persona
+   en Configuración, y un color de texto fijo dejaría ilegible la mitad
+   de las paletas posibles.
+
+   El borde es negro translúcido y no un color concreto: así define la
+   pastilla sobre cualquier tono, claro u oscuro, sin tener que calcular
+   un segundo color.
+   --------------------------------------------------------------------- */
 .cal-event {
   display: flex; align-items: center; gap: 5px; width: 100%; text-align: left; cursor: pointer;
-  padding: 3px 6px; font-size: .76rem; line-height: 1.25;
-  background: var(--panel-2); border: 1px solid var(--line); border-left: 3px solid var(--ev, var(--blue));
-  border-radius: 5px; color: var(--ink);
+  padding: 3px 6px; font-size: .76rem; line-height: 1.25; font-weight: 600;
+  background: var(--ev, var(--blue));
+  border: 1px solid rgba(0, 0, 0, .22);
+  border-radius: 5px; color: var(--ev-texto, #fff);
 }
-.cal-event:hover { background: var(--blue-50); }
+.cal-event:hover { filter: brightness(1.12); }
+.cal-event:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
 .cal-event.dragging { opacity: .45; }
 .cal-event[draggable='true'] { cursor: grab; }
 .cal-event-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cal-event .cal-dot { display: none; }
+/* El código del proyecto, dentro de la pastilla, hereda el color del
+   texto: si se quedara con el color de los códigos se perdería. */
+.cal-event strong { color: inherit; font-weight: 800; }
 
 /* ---------------------------------------------------------------------
    LA SEMANA CON BARRAS CONTINUAS
@@ -453,12 +502,36 @@
    si no, soltar encima de una barra no contaría como soltar en el día
    que hay debajo.
    --------------------------------------------------------------------- */
-.cal-semana { position: relative; grid-column: 1 / -1; display: grid; }
+/* ---------------------------------------------------------------------
+   EL ALTO DE LA SEMANA LO DECIDE EL CSS, NO EL CÓDIGO
+
+   MEJORA 5.2 · Aquí estaba el solapamiento del móvil. Las pastillas van
+   en una capa ABSOLUTA encima de los días, en carriles de alto fijo, y
+   el alto de la semana lo calculaba el código con el número 22 metido a
+   mano. En el móvil los carriles pasaban a medir 16 px y la cabecera
+   menos, pero el cálculo seguía usando 22: con tres o cuatro carriles la
+   capa de pastillas se salía por abajo y se montaba encima de la semana
+   siguiente y de los números de los días.
+
+   Ahora el alto sale de las MISMAS medidas que usan los carriles:
+   «--carriles» lo pone el código (cuántos hay) y el resto es del CSS, de
+   modo que al cambiar el alto de un carril en el móvil el alto de la
+   semana cambia con él. Una sola fuente para la medida.
+   --------------------------------------------------------------------- */
+.cal-semana {
+  position: relative; grid-column: 1 / -1; display: grid;
+  --carril-fila: 20px;
+  --carril-gap: 2px;
+  --carril: calc(var(--carril-fila) + var(--carril-gap));
+  --cabecera: 26px;
+  min-height: calc(var(--alto-dia, 104px) + var(--carriles, 0) * var(--carril));
+}
 .cal-dias { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 1px; background: var(--line); }
 .cal-pastillas {
-  position: absolute; left: 0; right: 0; bottom: 4px;
+  position: absolute; left: 0; right: 0; bottom: 4px; top: var(--cabecera);
   display: grid; grid-template-columns: repeat(7, minmax(0, 1fr));
-  grid-auto-rows: 20px; gap: 2px; padding: 0 3px; align-content: start;
+  grid-auto-rows: var(--carril-fila); gap: var(--carril-gap);
+  padding: 0 3px; align-content: start;
   pointer-events: none;
 }
 .cal-pastillas .cal-event { pointer-events: auto; min-width: 0; }
@@ -468,6 +541,36 @@
    corta el borde por ese lado para que se vea que no se acaba ahí. */
 .cal-event.sigue-antes { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left-style: dashed; }
 .cal-event.sigue-despues { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right-style: dashed; }
+
+/* ---------------------------------------------------------------------
+   MEJORA 4.2 · ELEGIR LOS COLORES, EN CONFIGURACIÓN
+
+   Cada categoría con su selector, su valor en texto —para poder pegar un
+   color corporativo— y una MUESTRA igual que la pastilla del calendario:
+   lo que hay que decidir no es si el color gusta, sino si el código del
+   proyecto se lee encima.
+   --------------------------------------------------------------------- */
+.color-grid {
+  display: grid; gap: var(--s4);
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+}
+.color-item { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.color-input {
+  width: 44px; height: 34px; padding: 2px; cursor: pointer;
+  border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: #fff;
+}
+/* La muestra no es un botón: no se pulsa ni se arrastra. */
+.cal-event.color-muestra { cursor: default; width: 100%; padding: 4px 7px; }
+.cal-event.color-muestra:hover { filter: none; }
+
+/* Cuando no hay ninguna categoría encendida, el calendario lo dice en
+   lugar de quedarse en blanco sin explicación. */
+.cal-vacio {
+  display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap;
+  padding: 14px 16px; margin-bottom: 12px;
+  background: var(--panel-2); border: 1px dashed var(--line-strong); border-radius: var(--r-md);
+  color: var(--muted);
+}
 .cal-mas {
   margin-top: auto; align-self: flex-start; background: none; border: 0; padding: 1px 3px;
   font-size: .72rem; font-weight: 600; color: var(--muted); cursor: pointer; border-radius: 4px;
@@ -490,15 +593,47 @@
 .cal-row-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .cal-row-main small { color: var(--muted); font-size: .8rem; }
 
+/* ---------------------------------------------------------------------
+   MEJORA 5.2 · EL CALENDARIO EN UN MÓVIL
+
+   Tres cosas, por este orden de importancia:
+
+   1) QUE NADA SE SOLAPE. Los carriles se hacen más finos y el alto de la
+      semana se ajusta solo, porque sale de estas mismas medidas (ver
+      arriba). Y el texto NO se parte en dos líneas: antes se permitía
+      («white-space: normal») y una pastilla de dos líneas en un carril
+      de 16 px se sale por arriba y por abajo. Eso era el solapamiento.
+
+   2) QUE NO HAYA BARRA HORIZONTAL. Las siete columnas son
+      «minmax(0, 1fr)» y el texto de la pastilla se recorta con puntos
+      suspensivos, así que una palabra larga no puede ensanchar la
+      rejilla.
+
+   3) QUE SE LEA LO QUE SE PUEDE LEER. En un móvil de 360 px cada día
+      mide unos 50: en una pastilla de un solo día no caben ni cuatro
+      letras, y lo que se ve es un recorte sin sentido. Así que por
+      debajo de 560 px la pastilla del MES se queda como una barra de
+      color —que es lo que de verdad informa: cuántas cosas hay y de qué
+      tipo— y el detalle se consulta tocando el día, que abre la vista de
+      día, o en la agenda. Es el mismo criterio que usa Google Calendar
+      en su vista de mes del móvil.
+
+      En la vista de SEMANA y en la de DÍA el texto se queda: ahí cada
+      día ocupa el ancho entero y sí cabe.
+   --------------------------------------------------------------------- */
 @media (max-width: 860px) {
   .cal-day { min-height: 76px; }
   .cal-week { grid-template-columns: 1fr; }
   .cal-week .cal-day { min-height: 0; }
-  .cal-event-text { white-space: normal; }
-  /* En pantalla pequeña las barras se hacen finas, pero siguen siendo
-     continuas: el mes se lee igual. */
-  .cal-pastillas { grid-auto-rows: 16px; gap: 1px; }
+  .cal-semana { --carril-fila: 17px; --carril-gap: 1px; --cabecera: 24px; }
   .cal-event { padding: 1px 4px; font-size: .68rem; }
+}
+
+@media (max-width: 560px) {
+  /* La barra de color, sin texto. Un poco más alta para poder tocarla. */
+  .cal-grid:not(.cal-week) .cal-semana { --carril-fila: 13px; --carril-gap: 2px; }
+  .cal-grid:not(.cal-week) .cal-pastillas .cal-event-text { display: none; }
+  .cal-grid:not(.cal-week) .cal-pastillas .cal-event { padding: 0; }
 }
 
 /* =====================================================================
@@ -653,4 +788,28 @@
   flex: 1 0 100%;
   display: flex; align-items: center; gap: 5px;
   color: var(--muted); font-size: .84rem;
+}
+
+/* ---------------------------------------------------------------------
+   MEJORA 6 · EL CUERPO DE UN CORREO RECIBIDO
+
+   Se enseña el TEXTO del correo, no su HTML: pintar el HTML que manda
+   alguien de fuera dentro de la aplicación es dejarle meter su código en
+   la pantalla. El original se conserva en la base de datos.
+
+   Con su propio fondo y su borde para que se vea que es algo que ha
+   escrito otra persona y no un campo de la aplicación. Y con altura
+   máxima: un correo con veinte respuestas encadenadas no puede empujar
+   el resto de la ficha fuera de la pantalla.
+   --------------------------------------------------------------------- */
+.correo-cuerpo {
+  margin: var(--s3) 0 var(--s2);
+  padding: 12px 14px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line-strong);
+  border-radius: var(--r-md);
+  font-size: .92rem; line-height: 1.5; color: var(--ink);
+  max-height: 420px; overflow: auto;
+  overflow-wrap: anywhere;
 }

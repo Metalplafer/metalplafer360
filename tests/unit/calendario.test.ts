@@ -11,7 +11,8 @@ import {
   cubre, diasEntre, escondidosPorDia, masDias, repartirSemana, semanasDeLaRejilla,
   type Segmento, type Tramo,
 } from '@/lib/calendario';
-import { CALENDAR_DEFECTO, siguienteSeleccion } from '@/config/constants';
+import { CALENDAR_DEFECTO, CALENDAR_KINDS, alternarCategoria } from '@/config/constants';
+import type { CalendarKind } from '@/types/db';
 
 const t = (uid: string, starts: string, ends: string): Tramo => ({ uid, starts, ends });
 
@@ -180,51 +181,79 @@ describe('la rejilla del mes', () => {
   });
 });
 
-describe('qué categorías quedan activas al pulsar', () => {
+/**
+ * MEJORA 4.3 · SE QUITÓ LA EXCLUSIVIDAD.
+ *
+ * Esta tanda de pruebas comprobaba lo contrario: que elegir «material»
+ * apagaba fabricación y montaje. Se pidió cambiarlo con estas palabras:
+ * «el usuario podrá activar materiales sin desactivar fabricación… no
+ * conviertas los filtros en un selector de opción única». Así que las
+ * pruebas de la regla antigua no se relajan: se SUSTITUYEN por las de la
+ * regla nueva, que es la que ahora tiene que cumplirse.
+ */
+describe('encender y apagar categorías del calendario', () => {
   it('al abrir el calendario solo están fabricación y montaje', () => {
     expect(CALENDAR_DEFECTO).toEqual(['fabricacion', 'montaje']);
   });
 
-  it('las dos de proyecto pueden estar a la vez', () => {
-    expect(siguienteSeleccion(['fabricacion'], 'montaje')).toEqual(['fabricacion', 'montaje']);
-    expect(siguienteSeleccion(['montaje'], 'fabricacion')).toEqual(['fabricacion', 'montaje']);
+  it('se puede encender material SIN apagar fabricación ni montaje', () => {
+    expect(alternarCategoria(['fabricacion', 'montaje'], 'material'))
+      .toEqual(['fabricacion', 'montaje', 'material']);
   });
 
-  it('y se pueden quitar una a una', () => {
-    expect(siguienteSeleccion(['fabricacion', 'montaje'], 'montaje')).toEqual(['fabricacion']);
-    expect(siguienteSeleccion(['fabricacion', 'montaje'], 'fabricacion')).toEqual(['montaje']);
-  });
-
-  it('elegir una categoría suelta apaga todas las demás', () => {
-    for (const suelta of ['aviso', 'material', 'obra', 'otro', 'visita'] as const) {
-      expect(siguienteSeleccion(['fabricacion', 'montaje'], suelta)).toEqual([suelta]);
+  it('y lo mismo con obras, visitas, avisos y notas', () => {
+    let sel: CalendarKind[] = [...CALENDAR_DEFECTO];
+    for (const k of ['obra', 'material', 'visita', 'aviso', 'otro'] as CalendarKind[]) {
+      sel = alternarCategoria(sel, k);
+      expect(sel).toContain('fabricacion');
+      expect(sel).toContain('montaje');
+      expect(sel).toContain(k);
     }
+    // Todas a la vez.
+    expect(sel).toEqual(CALENDAR_KINDS);
   });
 
-  it('una categoría suelta sustituye a otra suelta', () => {
-    expect(siguienteSeleccion(['aviso'], 'material')).toEqual(['material']);
-    expect(siguienteSeleccion(['material'], 'obra')).toEqual(['obra']);
-    expect(siguienteSeleccion(['obra'], 'otro')).toEqual(['otro']);
+  it('apagar una no toca a las demás', () => {
+    const todas = [...CALENDAR_KINDS];
+    const sin = alternarCategoria(todas, 'material');
+    expect(sin).toEqual(todas.filter((k) => k !== 'material'));
+    // Y las que quedan están exactamente igual.
+    expect(sin).toContain('fabricacion');
+    expect(sin).toContain('montaje');
   });
 
-  it('desde una suelta, pulsar fabricación vuelve a proyectos con esa sola', () => {
-    expect(siguienteSeleccion(['material'], 'fabricacion')).toEqual(['fabricacion']);
-    expect(siguienteSeleccion(['aviso'], 'montaje')).toEqual(['montaje']);
+  it('pulsar dos veces la misma deja todo como estaba', () => {
+    const inicial: CalendarKind[] = [...CALENDAR_DEFECTO];
+    expect(alternarCategoria(alternarCategoria(inicial, 'aviso'), 'aviso')).toEqual(inicial);
   });
 
-  it('pulsar la suelta que ya estaba activa vuelve a fabricación y montaje', () => {
-    expect(siguienteSeleccion(['material'], 'material')).toEqual(['fabricacion', 'montaje']);
-    expect(siguienteSeleccion(['obra'], 'obra')).toEqual(['fabricacion', 'montaje']);
+  it('se puede quedar solo una categoría', () => {
+    let sel: CalendarKind[] = [...CALENDAR_DEFECTO];
+    sel = alternarCategoria(sel, 'fabricacion');
+    expect(sel).toEqual(['montaje']);
   });
 
-  it('nunca se queda el calendario sin ninguna categoría', () => {
-    expect(siguienteSeleccion(['fabricacion'], 'fabricacion')).toEqual(['fabricacion']);
-    expect(siguienteSeleccion(['montaje'], 'montaje')).toEqual(['montaje']);
+  /**
+   * Y se pueden apagar TODAS. Es la consecuencia de que desmarcar
+   * cualquiera funcione siempre; la pantalla lo explica y ofrece volver.
+   * Antes la última pulsación no hacía nada, que es peor: una casilla que
+   * no responde parece estropeada.
+   */
+  it('se pueden apagar todas, y eso es un estado válido', () => {
+    expect(alternarCategoria(['fabricacion'], 'fabricacion')).toEqual([]);
+    expect(alternarCategoria([], 'material')).toEqual(['material']);
   });
 
-  it('el orden es siempre el mismo, se pulse como se pulse', () => {
-    expect(siguienteSeleccion(['montaje'], 'fabricacion')).toEqual(['fabricacion', 'montaje']);
-    expect(siguienteSeleccion(siguienteSeleccion(['aviso'], 'montaje'), 'fabricacion'))
-      .toEqual(['fabricacion', 'montaje']);
+  it('el orden es siempre el del calendario, se pulse como se pulse', () => {
+    expect(alternarCategoria(['montaje'], 'fabricacion')).toEqual(['fabricacion', 'montaje']);
+    expect(alternarCategoria(alternarCategoria(['aviso'], 'montaje'), 'fabricacion'))
+      .toEqual(['fabricacion', 'montaje', 'aviso']);
+  });
+
+  it('no duplica una categoría que ya estaba', () => {
+    const sel = alternarCategoria(['fabricacion', 'montaje'], 'montaje');
+    expect(sel).toEqual(['fabricacion']);
+    expect(new Set(alternarCategoria(sel, 'fabricacion')).size)
+      .toBe(alternarCategoria(sel, 'fabricacion').length);
   });
 });

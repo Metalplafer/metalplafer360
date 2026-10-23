@@ -217,3 +217,20 @@ export async function resetPassword(id: string, password: string) {
 export async function setGapDays(days: number) {
   return unwrap(await supabase.rpc('set_gap_days', { p_days: days })) as unknown as AppSettings;
 }
+
+/**
+ * MEJORA 4.2 · LOS COLORES DEL CALENDARIO, PARA TODA LA EMPRESA.
+ *
+ * Se manda el conjunto COMPLETO de los que están cambiados, no un
+ * parche: mandar uno menos es quitarlo, y mandar un objeto vacío vuelve
+ * a los colores de siempre. Así no hace falta inventar una manera de
+ * decir «borra este».
+ *
+ * No va en «set_preferences» —que son las preferencias de CADA
+ * persona— porque el objetivo es justamente que los vean los demás.
+ */
+export async function setCalendarColors(colors: Record<string, string>) {
+  return unwrap(await supabase.rpc('set_calendar_colors', {
+    p_colors: colors,
+  })) as unknown as AppSettings;
+}

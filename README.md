@@ -101,6 +101,13 @@ Y las decisiones de arquitectura, con el porqué de cada una:
 
 **[`docs/DECISIONES.md`](docs/DECISIONES.md)**
 
+La bandeja de solicitudes recibe correos en `peticiones@metalplafer.com`.
+Eso necesita configuración fuera de la aplicación —el buzón en IONOS, el
+proveedor de entrada y las claves— y tiene su propia guía:
+
+**[`docs/CORREO-PETICIONES.md`](docs/CORREO-PETICIONES.md)** — el correo de
+entrada, paso a paso (incluye lo que hay que hacer antes de que funcione)
+
 Resumen de los pasos:
 
 1. Crear una cuenta y un proyecto en [supabase.com](https://supabase.com).
@@ -194,6 +201,7 @@ metalplafer360/
 │  └─ icons/             Iconos de la aplicación instalable
 ├─ docs/
 │  ├─ PUESTA-EN-MARCHA.md  Guía paso a paso
+│  ├─ CORREO-PETICIONES.md El correo de entrada de la bandeja
 │  └─ manual/              Manual en PDF para quien no programa
 └─ .github/workflows/    Publicación automática
 ```
