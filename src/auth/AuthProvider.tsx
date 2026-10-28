@@ -2,7 +2,7 @@ import {
   createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode,
 } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import { supabase } from '@/lib/supabase';
+import { olvidaActividad, supabase } from '@/lib/supabase';
 import { DEFAULT_MAX_FILE_MB, env, isConfigured } from '@/config/env';
 import { coloresCalendario } from '@/config/constants';
 import { toUserMessage } from '@/lib/errors';
@@ -117,6 +117,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     await supabase.auth.signOut().catch(() => undefined);
+    // El freno de la actividad vive en memoria: si no se reinicia, la
+    // siguiente persona que entre en esta misma pestaña heredaría la
+    // marca de la anterior y no se apuntaría hasta pasados cinco
+    // minutos.
+    olvidaActividad();
     setSession(null);
     setProfile(null);
     setAuthError(null);

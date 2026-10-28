@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { WifiOff } from 'lucide-react';
 import { useOnline } from '@/hooks/useOnline';
+import { registraActividad } from '@/lib/supabase';
 import { WORKER_NAV } from '@/config/navigation';
 import { AppMark } from '@/components/ui/Brand';
 import { useAuth } from '@/auth/AuthProvider';
@@ -15,7 +16,15 @@ export function WorkerLayout() {
   const { profile } = useAuth();
   const location = useLocation();
 
-  useEffect(() => { window.scrollTo(0, 0); }, [location.pathname]);
+  /*
+    ÚLTIMA ACTIVIDAD · LA NAVEGACIÓN, también para el trabajador. Su
+    pantalla es la que más se usa de pie y en obra, y es donde más
+    interesa saber si alguien sigue entrando.
+  */
+  useEffect(() => {
+    window.scrollTo(0, 0);
+    registraActividad();
+  }, [location.pathname]);
 
   return (
     <div className="w-shell">

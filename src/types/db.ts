@@ -586,6 +586,12 @@ export interface UserLastSignIn {
   user_id: string;
   last_sign_in_at: string | null;
   account_created_at: string | null;
+  /**
+   * La última vez que esa persona USÓ la aplicación: navegó, consultó o
+   * escribió. Vacío = todavía no ha hecho nada. Es distinto de
+   * «last_sign_in_at», que es solo cuándo escribió su contraseña.
+   */
+  last_activity_at: string | null;
 }
 
 /**

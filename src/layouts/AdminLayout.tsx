@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { LogOut, Menu, WifiOff, X } from 'lucide-react';
 import { useAuth } from '@/auth/AuthProvider';
 import { useOnline } from '@/hooks/useOnline';
+import { registraActividad } from '@/lib/supabase';
 import { ADMIN_NAV } from '@/config/navigation';
 import { AppMark } from '@/components/ui/Brand';
 import { NotificationsBell } from '@/components/ui/NotificationsBell';
@@ -14,7 +15,18 @@ export function AdminLayout() {
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
 
-  useEffect(() => { setMenuOpen(false); window.scrollTo(0, 0); }, [location.pathname]);
+  /*
+    ÚLTIMA ACTIVIDAD · LA NAVEGACIÓN.
+    Cambiar de pantalla, abrir un proyecto o entrar en un apartado es
+    una persona usando la aplicación, y aquí se apunta una sola vez para
+    toda la zona de administración. Las escrituras se apuntan solas
+    desde el cliente de Supabase; esto es lo que cubre el mirar.
+  */
+  useEffect(() => {
+    setMenuOpen(false);
+    window.scrollTo(0, 0);
+    registraActividad();
+  }, [location.pathname]);
 
   const current = ADMIN_NAV.find((n) => (n.end ? n.path === location.pathname : location.pathname.startsWith(n.path)));
 

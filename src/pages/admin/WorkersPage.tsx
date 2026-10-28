@@ -38,8 +38,8 @@ export default function WorkersPage() {
    */
   const people = useAsync(() => listAllPeople(), [reloadKey]);
   const conexiones = useAsync(() => listLastSignIns(), [reloadKey]);
-  const ultimaConexion = useMemo(
-    () => new Map((conexiones.data ?? []).map((c) => [c.user_id, c.last_sign_in_at])),
+  const ultimaActividad = useMemo(
+    () => new Map((conexiones.data ?? []).map((c) => [c.user_id, c.last_activity_at])),
     [conexiones.data],
   );
   const reload = () => setReloadKey((n) => n + 1);
@@ -148,7 +148,7 @@ export default function WorkersPage() {
                   <thead>
                     <tr>
                       <th>Nombre</th><th>Usuario</th><th>Teléfono</th>
-                      <th>Permisos</th><th>Estado</th><th>Última conexión</th><th>Alta</th><th />
+                      <th>Permisos</th><th>Estado</th><th>Última actividad</th><th>Alta</th><th />
                     </tr>
                   </thead>
                   <tbody>
@@ -174,18 +174,22 @@ export default function WorkersPage() {
                         </td>
                         <td className="nowrap">
                           {/*
-                            La última vez que ENTRÓ, no la última vez que se
-                            tocó su ficha ni el día que se dio de alta. Si
-                            nunca ha entrado se dice con palabras: una fecha
-                            inventada ahí sería peor que no poner nada.
+                            La última vez que USÓ la aplicación: navegó,
+                            consultó o escribió algo. NO es la última vez que
+                            escribió su contraseña —eso, con sesiones que
+                            duran semanas, no dice nada— ni cuándo se tocó su
+                            ficha ni el día del alta.
+                            Solo fecha y hora: ni qué hizo, ni un historial.
+                            Si no ha hecho nada se dice con palabras, porque
+                            una fecha inventada ahí sería peor que nada.
                           */}
                           {conexiones.error
                             ? <span className="faint" title={conexiones.error}>No se ha podido leer</span>
                             : conexiones.loading && !conexiones.data
                               ? <span className="faint">…</span>
-                              : ultimaConexion.get(person.id)
-                                ? fmtDateTime(ultimaConexion.get(person.id))
-                                : <span className="faint">Nunca ha entrado</span>}
+                              : ultimaActividad.get(person.id)
+                                ? fmtDateTime(ultimaActividad.get(person.id))
+                                : <span className="faint">Sin actividad</span>}
                         </td>
                         <td className="nowrap">{fmtDate(person.created_at)}</td>
                         <td className="right nowrap">

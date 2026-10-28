@@ -630,10 +630,44 @@
 }
 
 @media (max-width: 560px) {
-  /* La barra de color, sin texto. Un poco más alta para poder tocarla. */
-  .cal-grid:not(.cal-week) .cal-semana { --carril-fila: 13px; --carril-gap: 2px; }
-  .cal-grid:not(.cal-week) .cal-pastillas .cal-event-text { display: none; }
-  .cal-grid:not(.cal-week) .cal-pastillas .cal-event { padding: 0; }
+  /* ---------------------------------------------------------------------
+     EL NOMBRE DEL EVENTO, TAMBIÉN EN EL MÓVIL
+
+     Antes aquí había un «display: none» sobre «.cal-event-text» y un
+     carril de 13 píxeles: la barra se veía de color pero no decía de qué
+     era. En un calendario, una barra sin nombre obliga a tocarla una por
+     una para saber qué hay esa semana, que es justo lo que un calendario
+     existe para evitar.
+
+     El carril sube a 19 píxeles, que es lo que necesita una línea de
+     «.62rem» con su borde: 15 de texto más los dos bordes de la pastilla
+     más un pelín de aire. No se sube más porque el alto de la semana
+     crece con esta medida —«.cal-semana» la usa en su «min-height»— y
+     con cuatro carriles cada píxel de más son cuatro en cada semana.
+
+     El recorte con puntos suspensivos no hace falta ponerlo: ya está en
+     «.cal-event-text», arriba, y vale para todos los tamaños. Un nombre
+     que no quepa se corta ahí, y el nombre completo sigue estando en el
+     «title» de la pastilla y al tocarla, que abre el evento.
+     --------------------------------------------------------------------- */
+  .cal-grid:not(.cal-week) .cal-semana { --carril-fila: 19px; --carril-gap: 2px; }
+  .cal-grid:not(.cal-week) .cal-pastillas .cal-event { padding: 0 4px; font-size: .62rem; gap: 3px; }
+}
+
+/* ---------------------------------------------------------------------
+   PANTALLAS MUY ESTRECHAS
+
+   Por debajo de 360 píxeles una columna del mes mide unos 45, y en un
+   evento de un solo día ahí no cabe un nombre entero: se aprieta la
+   letra y el relleno para que entren unos caracteres más, y del resto se
+   encarga el recorte con puntos suspensivos, que ya está puesto.
+
+   Lo primero que se lee sigue siendo el código del proyecto, porque va
+   en negrita y delante del título. El nombre completo, tocando la
+   pastilla.
+   --------------------------------------------------------------------- */
+@media (max-width: 359px) {
+  .cal-grid:not(.cal-week) .cal-pastillas .cal-event { padding: 0 2px; font-size: .58rem; }
 }
 
 /* =====================================================================

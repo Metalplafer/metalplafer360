@@ -35,11 +35,21 @@ select test.ok('uc_vista', 'La vista existe y no es de las que se ejecutan con p
 -- «auth.users» y devolvería un error en vez de la fecha. Es justo lo que
 -- la hace funcionar, así que se deja fijado.
 
-select test.ok('uc_vista', 'Devuelve exactamente tres columnas, y ninguna es un secreto',
+-- Esta prueba exigía TRES columnas. Ahora son CUATRO: el archivo 62
+-- añadió «last_activity_at» al final para la última actividad. No se ha
+-- relajado nada —se sigue exigiendo la lista exacta y en orden—, lo que
+-- ha cambiado es cuál es la lista correcta.
+--
+-- Y el orden importa de verdad, no es manía: «create or replace view»
+-- solo deja AÑADIR columnas al final. Si alguien colara la nueva en
+-- medio, la migración fallaría en vuestra base de datos con una vista ya
+-- creada. Que las tres de siempre sigan donde estaban es justo lo que
+-- esta prueba protege.
+select test.ok('uc_vista', 'Devuelve exactamente cuatro columnas, en orden, y ninguna es un secreto',
   (select array_agg(column_name::text order by ordinal_position)
      from information_schema.columns
     where table_schema = 'public' and table_name = 'user_last_sign_in')
-  = array['user_id', 'last_sign_in_at', 'account_created_at'],
+  = array['user_id', 'last_sign_in_at', 'account_created_at', 'last_activity_at'],
   (select string_agg(column_name, ', ' order by ordinal_position)
      from information_schema.columns
     where table_schema = 'public' and table_name = 'user_last_sign_in'));
