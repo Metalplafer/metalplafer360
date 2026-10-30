@@ -23,7 +23,7 @@ export const ADMIN_NAV: NavItem[] = [
   // MEJORA 6 · La bandeja va ARRIBA, justo antes de las fichas: es por
   // donde entra el trabajo, y lo primero que hay que mirar por la mañana.
   { path: '/admin/solicitudes', label: 'Solicitudes', icon: Inbox },
-  { path: '/admin/fichas', label: 'Fichas', icon: FileStack },
+  { path: '/admin/fichas', label: 'Presupuestos', icon: FileStack },
   { path: '/admin/obras', label: 'Obras', icon: HardHat },
   { path: '/admin/proyectos', label: 'Proyectos', icon: FolderKanban },
   { path: '/admin/partes', label: 'Partes de trabajo', icon: FileText },

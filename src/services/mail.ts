@@ -1,3 +1,4 @@
+import { MAIL_STATUSES_EN_CURSO } from '@/config/constants';
 import { supabase, unwrap } from '@/lib/supabase';
 import type { MailRequest, MailStatus } from '@/types/db';
 
@@ -19,8 +20,11 @@ export interface MailFilters {
   /** «pendiente», «revisada»… o nada para las que están en curso. */
   status?: MailStatus;
   /**
-   * Lo que se enseña al abrir: todo lo que no está descartado. Las
-   * descartadas se piden a propósito, como los archivados.
+   * Lo que se enseña al abrir: las que están EN CURSO, es decir, las que
+   * tienen algo pendiente de hacer. Ver «MAIL_STATUSES_EN_CURSO».
+   *
+   * Las vinculadas y las descartadas se piden a propósito, por su
+   * pestaña, igual que los archivados.
    */
   state?: 'activas' | 'descartadas' | 'todas';
   clientId?: string;
@@ -37,7 +41,11 @@ export async function listMailRequests(f: MailFilters = {}) {
 
   if (f.status) q = q.eq('status', f.status);
   else if (f.state === 'descartadas') q = q.eq('status', 'descartada');
-  else if (f.state !== 'todas') q = q.neq('status', 'descartada');
+  // «En curso» es una lista EXPLÍCITA de estados, no «todo lo que no
+  // está descartado». Antes era lo segundo, y por eso las solicitudes ya
+  // vinculadas —que son las que ya están resueltas— seguían saliendo
+  // como si quedara trabajo por hacer.
+  else if (f.state !== 'todas') q = q.in('status', MAIL_STATUSES_EN_CURSO);
 
   if (f.clientId) q = q.eq('client_id', f.clientId);
 

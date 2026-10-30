@@ -183,8 +183,17 @@ select test.ok('sr_panel', 'Y la cifra sube al dejar uno pendiente de señal',
     > (test.note('sr_panel')::jsonb -> 'alertas' ->> 'presupuestos_pendientes_senal')::int,
   test.note('sr_panel2')::jsonb -> 'alertas' ->> 'presupuestos_pendientes_senal');
 
-select test.ok('sr_panel', 'Y ese presupuesto YA NO cuenta como «enviado esperando respuesta»',
-  (test.note('sr_panel2')::jsonb -> 'alertas' ->> 'presupuestos_enviados')::int
-    = (test.note('sr_panel')::jsonb -> 'alertas' ->> 'presupuestos_enviados')::int);
+/*
+  Esta prueba comprobaba que el presupuesto pendiente de señal no se
+  contara ADEMÁS como «enviado esperando respuesta». Desde la mejora 4
+  esa categoría ya no existe: se retiró del panel porque un presupuesto
+  enviado espera al cliente, no a nosotros.
+
+  Así que lo que se comprueba ahora es más fuerte: que la categoría ha
+  desaparecido del todo. Si alguien la devolviera, esto lo diría.
+*/
+select test.ok('sr_panel', 'La categoría «enviados esperando respuesta» ya no está en el panel',
+  not ((test.note('sr_panel2')::jsonb -> 'alertas') ? 'presupuestos_enviados'),
+  test.note('sr_panel2')::jsonb -> 'alertas' ->> 'presupuestos_enviados');
 
 reset role; select test.as_server();

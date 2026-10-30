@@ -92,6 +92,22 @@ export async function saveWork(input: WorkInput) {
   })) as unknown as Work;
 }
 
+/**
+ * MEJORA 1 · EL COLOR DE LA OBRA.
+ *
+ * Función propia y no un campo más de «saveWork», igual que las fechas
+ * del calendario: así el formulario de alta no cambia y el color se
+ * puede tocar desde la ficha de la obra sin volver a guardarlo todo.
+ *
+ * Con «null» se le quita el color y sus proyectos vuelven a la pastilla
+ * neutra de siempre.
+ */
+export async function setWorkColor(workId: string, color: string | null) {
+  return unwrap(await supabase.rpc('set_work_color', {
+    p_work: workId, p_color: color,
+  })) as unknown as Work;
+}
+
 /** Meter o sacar un proyecto de una obra. */
 export async function setProjectWork(projectId: string, workId: string | null) {
   return unwrap(await supabase.rpc('set_project_work', {

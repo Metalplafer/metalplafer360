@@ -1,6 +1,6 @@
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
-  Archive, ArchiveRestore, ArrowLeft, Building2, CalendarClock, Clock, FolderKanban, Mail,
+  Archive, ArchiveRestore, ArrowLeft, Building2, CalendarClock, Check, Clock, FolderKanban, Mail,
   MapPin, MessageCircle, Pencil, Phone, Trash2, UserRound,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -15,13 +15,26 @@ import { HistoryPanel } from '@/components/shared/HistoryPanel';
 import { RelatedDocsPanel } from '@/components/shared/RelatedDocsPanel';
 import { VisitasPanel } from '@/components/shared/VisitasPanel';
 import {
-  assignFichaWorkers, deleteFicha, fichaTeam, getFicha, updateFicha, visitTargetInfo,
+  assignFichaWorkers, deleteFicha, fichaTeam, getFicha, setAvisoBilling, updateFicha,
+  visitTargetInfo,
 } from '@/services/fichas';
 import { convertBudget, projectFromFicha } from '@/services/projects';
 import { listPeople } from '@/services/people';
-import { FICHA_STATUSES, FICHA_TYPE_LABEL, fichaStatus } from '@/config/constants';
+import {
+  AVISO_BILLINGS, AVISO_BILLING_LABEL, AVISO_BILLING_TONE,
+  FICHA_REVIEWS, FICHA_REVIEW_LABEL, FICHA_REVIEW_TONE, FICHA_STATUSES,
+  FICHA_TYPE_LABEL, fichaStatus, type AvisoBilling, type FichaReview,
+} from '@/config/constants';
 import { fmtDate, fmtDateTime, fmtEur, fmtHours, fmtPhone, fmtTimeShort } from '@/lib/format';
 import { telLink, whatsappLink } from '@/lib/whatsapp';
+
+/** ¿Lo que trae el aviso es una de las tres situaciones conocidas? */
+const esFacturacion = (v: string | null): v is AvisoBilling =>
+  v !== null && (AVISO_BILLINGS as readonly string[]).includes(v);
+
+/** ¿Lo que trae la ficha es una de las tres subfases conocidas? */
+const esRevision = (v: string | null): v is FichaReview =>
+  v !== null && (FICHA_REVIEWS as readonly string[]).includes(v);
 
 /** Detalle de un presupuesto, una visita o un aviso. */
 export default function FichaDetail() {
@@ -117,6 +130,40 @@ export default function FichaDetail() {
     try {
       await updateFicha(f.id, { status: next });
       toast.success(`Estado cambiado a «${label}»`);
+      await ficha.reload();
+      setHistoryKey((n) => n + 1);
+    } catch (e) { toast.error(e); } finally { setSaving(false); }
+  }
+
+  /*
+    MEJORA 3 · LA SUBFASE DE LA REVISIÓN.
+
+    Pasa por el mismo sitio que el estado —«updateFicha»— porque es una
+    columna más de la ficha y las políticas que la protegen son las
+    mismas. No hace falta una función aparte.
+  */
+  async function changeReview(next: FichaReview) {
+    setSaving(true);
+    try {
+      await updateFicha(f.id, { review_status: next });
+      toast.success(`Revisión: ${FICHA_REVIEW_LABEL[next]}`);
+      await ficha.reload();
+      setHistoryKey((n) => n + 1);
+    } catch (e) { toast.error(e); } finally { setSaving(false); }
+  }
+
+  /*
+    MEJORA 7 · TERMINAR EL AVISO, CON O SIN FACTURA.
+
+    Pasa por «setAvisoBilling» y no por «updateFicha» porque mueve DOS
+    cosas a la vez —el estado y la situación de facturación— y tienen que
+    ir juntas o no ir.
+  */
+  async function terminarAviso(state: AvisoBilling | null) {
+    setSaving(true);
+    try {
+      await setAvisoBilling(f.id, state);
+      toast.success(state ? AVISO_BILLING_LABEL[state] : 'Aviso devuelto a «En curso»');
       await ficha.reload();
       setHistoryKey((n) => n + 1);
     } catch (e) { toast.error(e); } finally { setSaving(false); }
@@ -262,7 +309,7 @@ export default function FichaDetail() {
     <>
       <Link className="btn btn-sm btn-ghost" to={f.type === 'aviso' ? '/admin/avisos' : '/admin/fichas'}
             style={{ marginBottom: 10 }}>
-        <ArrowLeft />{f.type === 'aviso' ? 'Avisos' : 'Fichas'}
+        <ArrowLeft />{f.type === 'aviso' ? 'Avisos' : 'Presupuestos'}
       </Link>
 
       <PageHeader
@@ -276,6 +323,16 @@ export default function FichaDetail() {
           <span className="row" style={{ gap: 8 }}>
             <Badge tone="neutral" plain>{FICHA_TYPE_LABEL[f.type]}</Badge>
             <Badge tone={status.tone}>{status.label}</Badge>
+            {f.type === 'aviso' && esFacturacion(f.billing_state) && (
+              <Badge tone={AVISO_BILLING_TONE[f.billing_state]}>
+                {AVISO_BILLING_LABEL[f.billing_state]}
+              </Badge>
+            )}
+            {f.type === 'presupuesto' && esRevision(f.review_status) && (
+              <Badge tone={FICHA_REVIEW_TONE[f.review_status]}>
+                {FICHA_REVIEW_LABEL[f.review_status]}
+              </Badge>
+            )}
             {archived && <Badge tone="steel">Archivada</Badge>}
             {/*
               MEJORA 2 · VOLVER AL PRESUPUESTO O AL PROYECTO DE ORIGEN.
@@ -373,6 +430,86 @@ export default function FichaDetail() {
                   ? 'Un aviso pasa a «Asignado» al repartirlo entre operarios, ahí abajo.'
                   : 'El presupuesto empieza en «Pendiente» y avanza desde aquí.'}
               </p>
+
+              {/*
+                MEJORA 7 · CÓMO TERMINA UN AVISO.
+
+                No se factura todo, así que al darlo por hecho hay que
+                decir cuál de las dos cosas es. Y una vez pendiente, el
+                tic de facturado.
+
+                Se enseña desde que el aviso está en marcha: antes de eso
+                no hay nada que terminar.
+              */}
+              {f.type === 'aviso' && f.status !== 'por_asignar' && (
+                <div className="stack" style={{ gap: 6 }}>
+                  <span className="label">Al terminarlo</span>
+                  <div className="status-flow" role="group" aria-label="Cómo termina el aviso">
+                    <button aria-current={f.billing_state === 'pendiente'}
+                            disabled={saving || archived}
+                            onClick={() => terminarAviso('pendiente')}>
+                      Realizado, pendiente de facturar
+                    </button>
+                    <button aria-current={f.billing_state === 'sin_facturacion'}
+                            disabled={saving || archived}
+                            onClick={() => terminarAviso('sin_facturacion')}>
+                      Realizado y finalizado
+                    </button>
+                  </div>
+
+                  {f.billing_state === 'pendiente' && (
+                    <button className="btn btn-primary" disabled={saving || archived}
+                            onClick={() => terminarAviso('facturado')}>
+                      <Check />Marcar como facturado
+                    </button>
+                  )}
+
+                  {f.billing_state === 'facturado' && (
+                    <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+                      <Badge tone="green">Facturado</Badge>
+                      <button className="btn btn-sm btn-ghost" disabled={saving || archived}
+                              onClick={() => terminarAviso('pendiente')}>
+                        Deshacer
+                      </button>
+                    </div>
+                  )}
+
+                  <p className="hint" style={{ margin: 0 }}>
+                    Marcar como facturado deja constancia aquí y lo saca del panel.
+                    METALPLAFER360 no emite ninguna factura ni habla con la contabilidad.
+                  </p>
+                </div>
+              )}
+
+              {/*
+                MEJORA 3 · LAS TRES SUBFASES DE LA REVISIÓN.
+
+                Solo aparece mientras el presupuesto está «por revisar»:
+                fuera de ese estado la subfase no existe y la base de
+                datos la vacía sola, así que enseñarla sería enseñar algo
+                que no se puede cambiar.
+
+                Desde «Denegado» se puede volver a «Por revisar», que es
+                lo que pasa cuando se rehace y vuelve a mirarse.
+              */}
+              {f.type === 'presupuesto' && f.status === 'por_revisar' && (
+                <div className="stack" style={{ gap: 6 }}>
+                  <span className="label">Revisión</span>
+                  <div className="status-flow" role="group" aria-label="Subfase de la revisión">
+                    {FICHA_REVIEWS.map((r) => (
+                      <button key={r} aria-current={r === f.review_status}
+                              disabled={saving || archived}
+                              onClick={() => changeReview(r)}>
+                        {FICHA_REVIEW_LABEL[r]}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="hint" style={{ margin: 0 }}>
+                    Al salir de «Por revisar», esta marca se borra sola: pertenece a la
+                    revisión, no al presupuesto.
+                  </p>
+                </div>
+              )}
 
               {/* EL RESPONSABLE SOLO EXISTE EN LAS VISITAS.
                   Un presupuesto lo prepara quien lo prepare, y eso es

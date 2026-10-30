@@ -31,7 +31,10 @@ export interface DashboardData {
     avisos_taller: number;
     /** Solo VISITAS: son las únicas que nacen «Por asignar». */
     fichas_por_asignar: number;
-    presupuestos_enviados: number;
+    /** MEJORA 4 · Las tres categorías nuevas del bloque de atención. */
+    presupuestos_por_revisar: number;
+    presupuestos_pendientes: number;
+    avisos_por_facturar: number;
     /** Aceptados por el cliente y SIN cobrar la señal: lo que más se olvida. */
     presupuestos_pendientes_senal: number;
   };

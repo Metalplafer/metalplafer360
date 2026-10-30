@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Link } from 'react-router-dom';
 import { Plus, Search } from 'lucide-react';
 import { useAsync } from '@/hooks/useAsync';
+import { estiloDeObra } from '@/lib/colores';
 import { useDebounce } from '@/hooks/useDebounce';
 import { listProjects, projectCounts, type ProjectFilters } from '@/services/projects';
 import { Badge, PageHeader, Pagination } from '@/components/ui/Layout';
@@ -174,7 +175,19 @@ export default function ProjectsList() {
                         const subs = (p.substatuses ?? []).filter((s) => s.phase === p.phase);
                         return (
                           <tr key={p.id} className="clickable" onClick={() => navigate(`/admin/proyectos/${p.id}`)}>
-                            <td><span className="plate">{p.code}</span></td>
+                            <td>
+                              {/*
+                                MEJORA 1 · La pastilla lleva el color de la obra.
+                                Sale del propio proyecto —viene con la consulta—,
+                                así que cambiar el color de una obra se nota en
+                                todos sus proyectos sin tocar ninguno. Sin obra, o
+                                con una obra sin color, se queda como siempre.
+                              */}
+                              <span className="plate" style={estiloDeObra(p.work?.color)}
+                                    title={p.work ? `Obra ${p.work.code} · ${p.work.name}` : undefined}>
+                                {p.code}
+                              </span>
+                            </td>
                             <td>
                               <span className="cell-main">
                                 <strong>{p.name}</strong>

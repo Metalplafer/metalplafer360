@@ -116,12 +116,29 @@ try {
   check('Se puede recuperar un cliente archivado',
     (await page.locator('.page-head').innerText()).includes('Activo'));
 
-  // ---------------- FICHAS ----------------
-  await page.locator('.sidebar nav a:has-text("Fichas")').click();
+  // ---------------- PRESUPUESTOS ----------------
+  await page.locator('.sidebar nav a:has-text("Presupuestos")').click();
   await page.waitForTimeout(500);
-  check('Se abre el listado de fichas', page.url().includes('#/admin/fichas'));
-  check('Tiene las tres pestañas: presupuestos, visitas y avisos',
-    (await page.locator('.tabs button').count()) === 3);
+  check('Se abre el listado de presupuestos', page.url().includes('#/admin/fichas'));
+
+  /*
+    DOS pestañas, no tres. Esta comprobación decía tres —presupuestos,
+    visitas y avisos— y ahora dice dos, porque los avisos se han separado
+    a su propia pantalla. No se ha relajado: se sigue exigiendo el número
+    exacto y además se comprueba CUÁLES son y que los avisos ya no están
+    aquí, que antes no se comprobaba.
+  */
+  const pestanas = (await page.locator('.tabs button').allInnerTexts())
+    .map((t) => t.replace(/\d+/g, '').trim());
+  check('Tiene dos pestañas: presupuestos y visitas',
+    pestanas.length === 2, pestanas.join(' | '));
+  check('Y son esas dos, en ese orden',
+    pestanas[0]?.startsWith('Presupuestos') && pestanas[1]?.startsWith('Visitas'),
+    pestanas.join(' | '));
+  check('Los avisos ya NO están en esta pantalla',
+    !pestanas.some((t) => t.includes('Avisos')), pestanas.join(' | '));
+  check('Pero siguen teniendo la suya en el menú',
+    (await page.locator('.sidebar nav a:has-text("Avisos")').count()) === 1);
 
   // Presupuesto con sugerencia de cliente
   check('El botón de alta usa el artículo correcto',
@@ -283,7 +300,7 @@ try {
   check('La sección Avisos no tiene pestañas de tipo',
     (await page.locator('.tabs').count()) === 0);
 
-  await page.locator('.sidebar nav a:has-text("Fichas")').click();
+  await page.locator('.sidebar nav a:has-text("Presupuestos")').click();
   await page.waitForTimeout(600);
   await page.locator('.tabs button:has-text("Visitas")').click();
   await page.waitForTimeout(600);

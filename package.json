@@ -35,7 +35,8 @@
     "test:mejoras2": "node tests/e2e/mejoras2.mjs",
     "test:mejoras3": "node tests/e2e/mejoras3.mjs",
     "test:mejoras4": "node tests/e2e/mejoras4.mjs",
-    "test:mejoras5": "node tests/e2e/mejoras5.mjs"
+    "test:mejoras5": "node tests/e2e/mejoras5.mjs",
+    "test:mejoras6": "node tests/e2e/mejoras6.mjs"
   },
   "dependencies": {
     "@fontsource/barlow": "^5.1.0",

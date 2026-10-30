@@ -704,7 +704,9 @@ export async function stubSupabase(context, {
         // BLOQUE 4: la obra que lo agrupa, si pertenece a alguna.
         work: (() => {
           const w = (db.works ?? []).find((x) => x.id === row.work_id);
-          return w ? { id: w.id, code: w.code, name: w.name } : null;
+          // MEJORA 1 · El COLOR viene con la obra: es lo que tiñe la
+          // pastilla del código del proyecto en el listado.
+          return w ? { id: w.id, code: w.code, name: w.name, color: w.color ?? null } : null;
         })(),
       };
     }
@@ -1108,6 +1110,77 @@ export async function stubSupabase(context, {
     if (path.startsWith('/auth/v1/')) return route.fulfill({ status: 204, body: '' });
 
     // ---------------- Funciones ----------------
+    /**
+     * «touch_activity»: apunta que quien llama sigue usando la
+     * aplicación.
+     *
+     * Se comporta como la de verdad en las tres cosas que importan para
+     * las pruebas: escribe SOLO la fila de quien llama, no acepta
+     * parámetros, y respeta el freno de los cinco minutos. Sin el freno,
+     * una prueba no podría distinguir «se apuntó una vez» de «se apuntó
+     * en cada clic».
+     */
+    /**
+     * MEJORA 1 · «set_work_color»: el color de una obra.
+     *
+     * Se comporta como la de verdad en lo que importa para las pruebas:
+     * normaliza a minúsculas, acepta nulo o vacío para quitarlo, y
+     * rechaza lo que no sea «#rrggbb».
+     */
+    if (path === '/rest/v1/rpc/set_work_color') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const { p_work, p_color } = body() ?? {};
+      const obra = db.works.find((w) => w.id === p_work);
+      if (!obra) return fail('No se encuentra la obra');
+      const limpio = String(p_color ?? '').trim().toLowerCase();
+      if (limpio && !/^#[0-9a-f]{6}$/.test(limpio)) {
+        return fail('El color de una obra se escribe como «#rrggbb», por ejemplo «#2e7d5b»');
+      }
+      obra.color = limpio || null;
+      return json(obra);
+    }
+
+    /**
+     * MEJORA 7 · «set_aviso_billing»: terminar un aviso, con o sin
+     * factura, y marcarlo facturado.
+     *
+     * Mueve el estado y la situación A LA VEZ, igual que la de verdad, y
+     * se niega a facturar lo que no estuviera pendiente.
+     */
+    if (path === '/rest/v1/rpc/set_aviso_billing') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const { p_ficha, p_state } = body() ?? {};
+      const f = db.fichas.find((x) => x.id === p_ficha);
+      if (!f) return fail('No se encuentra el aviso');
+      if (f.type !== 'aviso') return fail('Esto solo vale para los avisos');
+      if (p_state !== null && !['pendiente', 'facturado', 'sin_facturacion'].includes(p_state)) {
+        return fail('Esa situación de facturación no existe');
+      }
+      if (p_state === 'facturado' && f.billing_state !== 'pendiente') {
+        return fail('Solo se puede marcar como facturado un aviso que estuviera '
+          + 'pendiente de facturar');
+      }
+      f.status = p_state === 'pendiente' ? 'realizado'
+        : p_state === 'sin_facturacion' ? 'cerrado'
+        : p_state === 'facturado' ? 'cerrado'
+        : 'en_curso';
+      f.billing_state = p_state ?? null;
+      return json(f);
+    }
+
+    if (path === '/rest/v1/rpc/touch_activity') {
+      const actual = getUser();
+      if (!actual) return json(null, 401);
+      db.actividad = db.actividad ?? {};
+      const antes = db.actividad[actual.id];
+      const ahora = Date.now();
+      if (!antes || ahora - new Date(antes).getTime() >= 5 * 60_000) {
+        db.actividad[actual.id] = new Date(ahora).toISOString();
+        db.actividadEscrituras = (db.actividadEscrituras ?? 0) + 1;
+      }
+      return json(null);
+    }
+
     if (path === '/rest/v1/rpc/client_config') {
       // MEJORA 4.2 · Los colores del calendario llegan por aquí, igual
       // que en la base de datos: una sola consulta al entrar, y los
@@ -4072,7 +4145,16 @@ export async function stubSupabase(context, {
           // que nadie va a asignar.
           fichas_por_asignar: db.fichas.filter(
             (f) => !f.archived_at && f.type === 'visita' && f.status === 'por_asignar').length,
-          presupuestos_enviados: db.fichas.filter((f) => !f.archived_at && f.status === 'enviado').length,
+          // MEJORA 4 · «presupuestos_enviados» se ha retirado del panel: un
+          // presupuesto enviado espera al cliente, no a nosotros. En su
+          // sitio entran las tres categorías que sí piden una acción.
+          presupuestos_por_revisar: db.fichas.filter(
+            (f) => !f.archived_at && f.type === 'presupuesto' && f.status === 'por_revisar').length,
+          presupuestos_pendientes: db.fichas.filter(
+            (f) => !f.archived_at && f.type === 'presupuesto' && f.status === 'pendiente').length,
+          // MEJORA 7 · Avisos terminados que esperan factura.
+          avisos_por_facturar: db.fichas.filter(
+            (f) => !f.archived_at && f.type === 'aviso' && f.billing_state === 'pendiente').length,
           // M1: aceptado por el cliente y sin cobrar la señal. No sale en
           // «esperando respuesta» y todavía no es un proyecto, así que sin
           // este aviso no saldría por ningún lado.
@@ -4540,6 +4622,10 @@ export async function stubSupabase(context, {
         user_id: p.id,
         last_sign_in_at: p.last_sign_in_at ?? null,
         account_created_at: p.created_at ?? null,
+        // La última ACTIVIDAD, que es lo que enseña la pantalla desde
+        // la migración 62. Sale de «db.actividad», que es donde la deja
+        // «touch_activity». Vacío = esa persona no ha hecho nada.
+        last_activity_at: db.actividad?.[p.id] ?? null,
       }));
       const rows = soloAdmin()
         ? todas.filter((r) => actual && r.user_id === actual.id)
@@ -4767,6 +4853,31 @@ export async function stubSupabase(context, {
 
         if (table === 'fichas' && patch.assigned_to && before.status === 'por_asignar') {
           row.status = NEXT_WHEN_ASSIGNED[row.type];
+        }
+
+        /*
+          EL DISPARADOR «fichas_before», en lo que toca a las dos columnas
+          nuevas. Está aquí y no en la pantalla porque en la base de datos
+          también está en el disparador: la pantalla no tiene que acordarse
+          de nada, y las pruebas tienen que poder comprobarlo.
+
+          MEJORA 3 · La subfase de revisión se pone al entrar en «por
+          revisar» y se borra al salir, para que no quede un presupuesto
+          «enviado» marcado como «denegado».
+
+          MEJORA 7 · La situación de facturación es de los avisos
+          TERMINADOS: reabrir uno lo saca de la lista de pendientes de
+          facturar sin que nadie tenga que acordarse.
+        */
+        if (table === 'fichas') {
+          if (row.type === 'presupuesto' && row.status === 'por_revisar') {
+            if (!row.review_status) row.review_status = 'por_revisar';
+          } else {
+            row.review_status = null;
+          }
+          if (row.type !== 'aviso' || !['realizado', 'cerrado'].includes(row.status)) {
+            row.billing_state = null;
+          }
         }
         if (table === 'fichas' && patch.status) {
           registrar(`Salvi Plaza cambió la ficha ${row.code}`, row.code, 'fichas');

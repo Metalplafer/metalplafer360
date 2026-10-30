@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
-  BLANCO, CONTRASTE_MINIMO, TINTA, contraste, esHex, luminancia, normalizaHex, seLee, textoSobre,
+  BLANCO, CONTRASTE_MINIMO, TINTA, contraste, esHex, estiloDeObra, luminancia, normalizaHex, seLee, textoSobre,
 } from '../../src/lib/colores';
 import { CALENDAR_COLOR, CALENDAR_KINDS, coloresCalendario } from '../../src/config/constants';
 
@@ -138,5 +138,83 @@ describe('la paleta de los tokens y la del código no se separan', () => {
       expect(m, `falta --ev-${k} en tokens.css`).not.toBeNull();
       expect(normalizaHex(m![1]), `--ev-${k}`).toBe(normalizaHex(CALENDAR_COLOR[k]));
     });
+  });
+});
+
+/**
+ * MEJORA 1 · LA PASTILLA DEL CÓDIGO CON EL COLOR DE SU OBRA.
+ *
+ * Lo que importa: que el texto se siga leyendo encima del color que
+ * haya elegido alguien, y que sin color no se invente nada.
+ */
+describe('el color de la obra en la pastilla del proyecto', () => {
+  it('sin obra o sin color, la pastilla se queda como estaba', () => {
+    expect(estiloDeObra(null)).toBeUndefined();
+    expect(estiloDeObra(undefined)).toBeUndefined();
+    expect(estiloDeObra('')).toBeUndefined();
+  });
+
+  it('con un color, lo pone de fondo y calcula el texto para que se lea', () => {
+    const oscuro = estiloDeObra('#1a2433');
+    expect(oscuro?.background).toBe('#1a2433');
+    expect(oscuro?.color).toBe(BLANCO);
+
+    const claro = estiloDeObra('#ffe08a');
+    expect(claro?.background).toBe('#ffe08a');
+    expect(claro?.color).toBe(TINTA);
+  });
+
+  it('y SIEMPRE elige el mejor de los dos textos posibles', () => {
+    /*
+      Esta es la garantía de verdad, y conviene decir por qué no es «se
+      lee siempre».
+
+      La primera versión de esta prueba exigía 4:1 de contraste para
+      cualquier color, y FALLÓ. No era un fallo del código: midiendo
+      todos los colores posibles, el peor caso —un rosa fuerte, #fc065a—
+      llega a 3,95 con el blanco y no mejora con la tinta. Ni el blanco
+      ni el gris oscuro alcanzan 4:1 ahí, así que nadie puede prometer
+      ese umbral con solo dos colores de texto. En una rejilla de 216
+      colores repartidos, dos se quedan por debajo.
+
+      Lo que el código SÍ promete, y es lo que se comprueba, es que de
+      los dos textos posibles elige el que más contrasta. Por eso
+      Configuración AVISA de un color flojo en vez de impedirlo
+      («CONTRASTE_MINIMO» es un umbral de aviso, no una barrera).
+    */
+    for (let r = 0; r < 256; r += 51) {
+      for (let g = 0; g < 256; g += 51) {
+        for (let b = 0; b < 256; b += 51) {
+          const hex = `#${[r, g, b].map((n) => n.toString(16).padStart(2, '0')).join('')}`;
+          const elegido = estiloDeObra(hex)!.color;
+          const elOtro = elegido === BLANCO ? TINTA : BLANCO;
+          expect(contraste(hex, elegido)).toBeGreaterThanOrEqual(contraste(hex, elOtro));
+          // Y aun en el peor caso posible se queda muy cerca del umbral.
+          expect(contraste(hex, elegido)).toBeGreaterThan(3.9);
+        }
+      }
+    }
+  });
+
+  it('el peor color posible sigue estando por encima de 3,9', () => {
+    // Queda fijado: si alguien cambiara la tinta de la aplicación y el
+    // peor caso empeorara, esta prueba lo diría.
+    const peor = estiloDeObra('#fc065a')!;
+    expect(contraste('#fc065a', peor.color)).toBeGreaterThan(3.9);
+    expect(contraste('#fc065a', peor.color)).toBeLessThan(CONTRASTE_MINIMO);
+  });
+
+  it('acepta mayúsculas y la forma corta, y guarda la larga en minúsculas', () => {
+    expect(estiloDeObra('#2E7D5B')?.background).toBe('#2e7d5b');
+    expect(estiloDeObra('#ABC')?.background).toBe('#aabbcc');
+  });
+
+  it('lo que no es un color no llega al «style»', () => {
+    // Esto es lo que impide que una cadena cualquiera acabe en un
+    // atributo de estilo del navegador.
+    expect(estiloDeObra('rojo')).toBeUndefined();
+    expect(estiloDeObra('red; background: url(x)')).toBeUndefined();
+    expect(estiloDeObra('rgb(10,20,30)')).toBeUndefined();
+    expect(estiloDeObra('#12345')).toBeUndefined();
   });
 });

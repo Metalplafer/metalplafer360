@@ -120,13 +120,30 @@ export default function Dashboard() {
     // propia pantalla y en «Producción».
     { n: d.alertas.material_retrasado, label: 'materiales que no han llegado a tiempo', to: '/admin/material' },
     { n: d.alertas.avisos_taller, label: 'avisos de material del taller por revisar', to: '/admin/material' },
-    { n: d.alertas.fichas_por_asignar, label: 'visitas por asignar', to: '/admin/fichas' },
-    { n: d.alertas.presupuestos_enviados, label: 'presupuestos enviados esperando respuesta', to: '/admin/fichas' },
+    /*
+      MEJORA 4 · LAS SEIS CATEGORÍAS, cada una enlazando a su pantalla
+      YA FILTRADA, para poder resolverla sin buscarla.
+
+      Y se ha quitado «presupuestos enviados esperando respuesta»: ese
+      espera al cliente, no a nosotros, y encendido en «requiere tu
+      atención» pedía una acción que no existe.
+    */
+    { n: d.alertas.fichas_por_asignar, label: 'visitas por asignar',
+      to: '/admin/fichas?tipo=visita&estado=por_asignar' },
+    { n: d.alertas.presupuestos_por_revisar, label: 'presupuestos pendientes por revisar',
+      to: '/admin/fichas?tipo=presupuesto&estado=por_revisar' },
+    { n: d.alertas.presupuestos_pendientes, label: 'presupuestos pendientes',
+      to: '/admin/fichas?tipo=presupuesto&estado=pendiente' },
     // Aceptado por el cliente y sin cobrar la señal: no sale en
     // «esperando respuesta» y todavía no es un proyecto, así que sin
     // este aviso no sale por ningún lado.
     { n: d.alertas.presupuestos_pendientes_senal,
-      label: 'presupuestos pendientes de paga y señal', to: '/admin/fichas' },
+      label: 'presupuestos pendientes de paga y señal',
+      to: '/admin/fichas?tipo=presupuesto&estado=pendiente_senal' },
+    // MEJORA 7 · Avisos hechos que esperan factura. Van a su pantalla,
+    // que es donde se marcan.
+    { n: d.alertas.avisos_por_facturar, label: 'avisos pendientes de facturar',
+      to: '/admin/avisos?estado=realizado' },
   ].filter((a) => a.n > 0);
 
   const porFase = d.proyectos.por_fase ?? {};

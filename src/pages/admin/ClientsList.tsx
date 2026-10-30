@@ -177,7 +177,7 @@ export default function ClientsList() {
       </details>
 
       <p className="hint faint" style={{ marginTop: 12 }}>
-        ¿Buscas un presupuesto o un aviso concreto? Están en <Link to="/admin/fichas">Fichas</Link>.
+        ¿Buscas un presupuesto concreto? Está en <Link to="/admin/fichas">Presupuestos</Link>. Los avisos, en <Link to="/admin/avisos">Avisos</Link>.
       </p>
     </>
   );

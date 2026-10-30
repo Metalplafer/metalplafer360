@@ -92,3 +92,30 @@ export const CONTRASTE_MINIMO = 4;
 export function seLee(fondo: string): boolean {
   return contraste(fondo, textoSobre(fondo)) >= CONTRASTE_MINIMO;
 }
+
+/**
+ * MEJORA 1 · LA PASTILLA DEL CÓDIGO, CON EL COLOR DE SU OBRA.
+ *
+ * La pastilla «.plate» es una matrícula: fondo degradado gris, borde y
+ * dos remaches. Cuando el proyecto pertenece a una obra CON color, se
+ * cambian el fondo y el color del texto —calculado para que se lea,
+ * igual que en el calendario— y se deja el resto del relieve.
+ *
+ * Devuelve «undefined» cuando no hay color o cuando lo que hay no es un
+ * color: entonces la pastilla se queda exactamente como estaba, que es
+ * lo que pasa hoy con todas. Un proyecto SIN obra tampoco tiene color y
+ * no hay nada que inventar.
+ */
+export function estiloDeObra(color: string | null | undefined): {
+  background: string; color: string; borderColor: string;
+} | undefined {
+  const hex = color ? normalizaHex(color) : null;
+  if (!hex) return undefined;
+  return {
+    background: hex,
+    color: textoSobre(hex),
+    // El borde gris de la matrícula sobre un fondo de color se ve sucio;
+    // se tiñe del mismo color para que la pastilla quede de una pieza.
+    borderColor: hex,
+  };
+}

@@ -203,8 +203,19 @@ try {
     (await panelVisitas.locator('button:has-text("Asignar visita técnica")').count()) === 1,
     limpio(await panelVisitas.innerText()).replace(/\n/g, ' | '));
 
+  /*
+    Se ESPERA al estado vacío en lugar de leer el panel al instante.
+
+    Leerlo de golpe es una carrera con la carga: si la consulta de las
+    visitas todavía no ha vuelto, el panel enseña el indicador de carga y
+    la comprobación falla sin que haya nada roto. Se comprueba lo mismo,
+    pero esperando a que el panel haya terminado de cargar.
+  */
+  await panelVisitas.locator('text=Sin visitas técnicas')
+    .waitFor({ timeout: 15000 }).catch(() => undefined);
   check('Y de entrada dice que no hay ninguna',
-    limpio(await panelVisitas.innerText()).includes('Sin visitas técnicas'));
+    limpio(await panelVisitas.innerText()).includes('Sin visitas técnicas'),
+    limpio(await panelVisitas.innerText()).replace(/\n/g, ' | ').slice(0, 160));
 
   check('Mientras no haya visitas vinculadas, no hay documentos de origen',
     (await panel(page, 'Documentos de origen').count()) === 0);
@@ -780,90 +791,145 @@ try {
     Object.keys(db.settings.calendar_colors).length === 0,
     JSON.stringify(db.settings.calendar_colors));
 
-  // ============ MEJORA 5.2 · EL CALENDARIO EN UN MÓVIL ============
-  const movil = await browser.newContext({
-    viewport: { width: 390, height: 844 }, locale: 'es-ES', isMobile: true, hasTouch: true,
-  });
-  await stubSupabase(movil, { db });
-  const chico = await movil.newPage();
+  // ============ MEJORA 5.2 + CALENDARIO MÓVIL · TRES ANCHOS ============
+  //
+  // Antes esto se comprobaba solo a 390 px. Ahora se repite a 320, 360 y
+  // 390, que son el móvil pequeño de verdad, el corriente y el grande,
+  // porque el arreglo del nombre visible depende del ancho de la columna
+  // y a 320 una columna del mes mide unos 45 píxeles.
+  //
+  // Lo que se mide en cada ancho es lo mismo: que el nombre SE LEA, que
+  // no haya solapamientos, que ninguna pastilla se salga de su semana y
+  // que no aparezca barra horizontal. Todo en píxeles, no a ojo.
   const erroresMovil = [];
-  chico.on('pageerror', (e) => erroresMovil.push(`error de programación: ${e.message}`));
-  await signIn(chico, PORT, ADMIN.username);
+  let chico = null;
 
-  await chico.goto(`http://localhost:${PORT}/#/admin/calendario`, { waitUntil: 'networkidle' });
-  await chico.locator('.cal-grid').waitFor({ timeout: 15000 });
-  // Se encienden TODAS las categorías: es el caso que se solapaba, con
-  // varios carriles en la misma semana.
-  for (const k of ['Material', 'Visita', 'Aviso', 'Otros', 'Obras']) {
-    await chico.locator(`.cal-legend-item:has-text("${k}")`).click();
-    await chico.waitForTimeout(200);
-  }
-  await chico.waitForTimeout(900);
-
-  const desborda = await chico.evaluate(() =>
-    document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
-  check('En un móvil el calendario no saca barra de desplazamiento horizontal',
-    !desborda,
-    `scrollWidth ${await chico.evaluate(() => document.documentElement.scrollWidth)} · `
-    + `clientWidth ${await chico.evaluate(() => document.documentElement.clientWidth)}`);
-
-  /*
-    LA COMPROBACIÓN QUE IMPORTA, y se mide en píxeles en lugar de
-    mirarla: NINGUNA pastilla se monta encima de otra. Dos pastillas de
-    la misma semana están en carriles distintos o en columnas distintas,
-    así que cualquier intersección real es el solapamiento que se venía a
-    corregir.
-  */
-  const solapes = await chico.locator('.cal-grid .cal-event').evaluateAll((els) => {
-    const cajas = els.map((el) => {
-      const r = el.getBoundingClientRect();
-      return { t: el.getAttribute('title') ?? '', x: r.x, y: r.y, r: r.right, b: r.bottom };
-    }).filter((c) => c.r > c.x && c.b > c.y);
-    const malos = [];
-    for (let i = 0; i < cajas.length; i++) {
-      for (let j = i + 1; j < cajas.length; j++) {
-        const a = cajas[i];
-        const b = cajas[j];
-        // Se deja 1 px de tolerancia: los bordes pueden compartir línea.
-        const cruzaX = Math.min(a.r, b.r) - Math.max(a.x, b.x) > 1;
-        const cruzaY = Math.min(a.b, b.b) - Math.max(a.y, b.y) > 1;
-        if (cruzaX && cruzaY) malos.push(`${a.t} ↔ ${b.t}`);
-      }
-    }
-    return malos;
-  });
-  check('Y ninguna pastilla se solapa con otra, medido en píxeles',
-    solapes.length === 0, solapes.slice(0, 4).join(' | '));
-
-  // Las pastillas tampoco se salen de su semana, que es por donde se
-  // colaban encima de los números de los días de la semana siguiente.
-  const fugadas = await chico.evaluate(() => {
-    const malas = [];
-    document.querySelectorAll('.cal-semana').forEach((sem) => {
-      const caja = sem.getBoundingClientRect();
-      sem.querySelectorAll('.cal-event').forEach((ev) => {
-        const r = ev.getBoundingClientRect();
-        if (r.top < caja.top - 1 || r.bottom > caja.bottom + 1) {
-          malas.push(`${ev.getAttribute('title') ?? ''} (${Math.round(r.top)}–${Math.round(r.bottom)} fuera de ${Math.round(caja.top)}–${Math.round(caja.bottom)})`);
-        }
-      });
+  for (const ancho of [320, 360, 390]) {
+    const movil = await browser.newContext({
+      viewport: { width: ancho, height: 844 }, locale: 'es-ES', isMobile: true, hasTouch: true,
     });
-    return malas;
-  });
-  check('Ni se sale ninguna de la semana a la que pertenece',
-    fugadas.length === 0, fugadas.slice(0, 3).join(' | '));
+    await stubSupabase(movil, { db });
+    const pag = await movil.newPage();
+    pag.on('pageerror', (e) => erroresMovil.push(`error de programación (${ancho}px): ${e.message}`));
+    await signIn(pag, PORT, ADMIN.username);
 
-  check('Los colores por categoría se mantienen en el móvil',
-    (await chico.locator('.cal-grid .cal-event[title^="Montaje"]').first()
-      .evaluate((el) => getComputedStyle(el).backgroundColor)) === 'rgb(46, 125, 91)');
+    await pag.goto(`http://localhost:${PORT}/#/admin/calendario`, { waitUntil: 'networkidle' });
+    await pag.locator('.cal-grid').waitFor({ timeout: 15000 });
+    // Se encienden TODAS las categorías: es el caso que se solapaba, con
+    // varios carriles en la misma semana.
+    for (const k of ['Material', 'Visita', 'Aviso', 'Otros', 'Obras']) {
+      await pag.locator(`.cal-legend-item:has-text("${k}")`).click();
+      await pag.waitForTimeout(150);
+    }
+    await pag.waitForTimeout(900);
 
-  // La vista de semana y la de día sí enseñan el texto: ahí cabe.
-  await chico.locator('.chip:has-text("Día")').click();
-  await chico.waitForTimeout(800);
-  check('En la vista de día del móvil se leen los títulos',
-    (await chico.locator('.cal-day-single').innerText()).includes(`PROY-${YEAR}-009`),
-    limpio(await chico.locator('.cal-day-single').innerText()).replace(/\n/g, ' | ').slice(0, 160));
+    /*
+      LO QUE SE VENÍA A ARREGLAR: la barra se veía de color pero no decía
+      de qué era. Se mide que el texto está PINTADO —no solo en el
+      HTML— y que ocupa alto de verdad: un «display: none» da cero.
+    */
+    const textos = await pag.locator('.cal-grid .cal-event-text').evaluateAll((els) =>
+      els.map((el) => {
+        const r = el.getBoundingClientRect();
+        const cs = getComputedStyle(el);
+        return { texto: (el.textContent ?? '').trim(), alto: r.height, ancho: r.width,
+                 oculto: cs.display === 'none' || cs.visibility === 'hidden' };
+      }));
 
+    check(`A ${ancho}px el nombre del evento se PINTA en el calendario del mes`,
+      textos.length > 0 && textos.every((t) => !t.oculto && t.alto > 0 && t.ancho > 0),
+      `${textos.length} pastillas · ocultas: ${textos.filter((t) => t.oculto).length}`
+      + ` · sin alto: ${textos.filter((t) => t.alto <= 0).length}`);
+
+    check(`A ${ancho}px el nombre dice algo, no es una barra vacía`,
+      textos.length > 0 && textos.every((t) => t.texto.length > 0),
+      textos.slice(0, 3).map((t) => `«${t.texto}»`).join(' · '));
+
+    // Y el nombre completo sigue estando donde siempre, para cuando el
+    // ancho no dé para enseñarlo entero.
+    check(`A ${ancho}px el nombre completo sigue en el «title» de la pastilla`,
+      (await pag.locator('.cal-grid .cal-event[title]').count())
+        === (await pag.locator('.cal-grid .cal-event').count()));
+
+    const desborda = await pag.evaluate(() =>
+      document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
+    check(`A ${ancho}px el calendario no saca barra de desplazamiento horizontal`,
+      !desborda,
+      `scrollWidth ${await pag.evaluate(() => document.documentElement.scrollWidth)} · `
+      + `clientWidth ${await pag.evaluate(() => document.documentElement.clientWidth)}`);
+
+    /*
+      NINGUNA pastilla se monta encima de otra. Dos pastillas de la misma
+      semana están en carriles distintos o en columnas distintas, así que
+      cualquier intersección real es un solapamiento.
+    */
+    const solapes = await pag.locator('.cal-grid .cal-event').evaluateAll((els) => {
+      const cajas = els.map((el) => {
+        const r = el.getBoundingClientRect();
+        return { t: el.getAttribute('title') ?? '', x: r.x, y: r.y, r: r.right, b: r.bottom };
+      }).filter((c) => c.r > c.x && c.b > c.y);
+      const malos = [];
+      for (let i = 0; i < cajas.length; i++) {
+        for (let j = i + 1; j < cajas.length; j++) {
+          const a = cajas[i];
+          const b = cajas[j];
+          // Se deja 1 px de tolerancia: los bordes pueden compartir línea.
+          const cruzaX = Math.min(a.r, b.r) - Math.max(a.x, b.x) > 1;
+          const cruzaY = Math.min(a.b, b.b) - Math.max(a.y, b.y) > 1;
+          if (cruzaX && cruzaY) malos.push(`${a.t} ↔ ${b.t}`);
+        }
+      }
+      return malos;
+    });
+    check(`A ${ancho}px ninguna pastilla se solapa con otra, medido en píxeles`,
+      solapes.length === 0, solapes.slice(0, 4).join(' | '));
+
+    // Las pastillas tampoco se salen de su semana, que es por donde se
+    // colaban encima de los números de los días de la semana siguiente.
+    const fugadas = await pag.evaluate(() => {
+      const malas = [];
+      document.querySelectorAll('.cal-semana').forEach((sem) => {
+        const caja = sem.getBoundingClientRect();
+        sem.querySelectorAll('.cal-event').forEach((ev) => {
+          const r = ev.getBoundingClientRect();
+          if (r.top < caja.top - 1 || r.bottom > caja.bottom + 1) {
+            malas.push(`${ev.getAttribute('title') ?? ''} (${Math.round(r.top)}–${Math.round(r.bottom)} fuera de ${Math.round(caja.top)}–${Math.round(caja.bottom)})`);
+          }
+        });
+      });
+      return malas;
+    });
+    check(`A ${ancho}px ninguna se sale de la semana a la que pertenece`,
+      fugadas.length === 0, fugadas.slice(0, 3).join(' | '));
+
+    // Un tramo de varios días sigue siendo UNA barra que cruza columnas,
+    // no una pastilla por día.
+    const anchoPastilla = await pag.locator('.cal-grid .cal-event[title^="Montaje"]').first()
+      .evaluate((el) => el.getBoundingClientRect().width);
+    const anchoColumna = await pag.locator('.cal-grid .cal-day').first()
+      .evaluate((el) => el.getBoundingClientRect().width);
+    check(`A ${ancho}px un evento de varios días sigue siendo UNA barra larga`,
+      anchoPastilla > anchoColumna * 1.5,
+      `pastilla ${Math.round(anchoPastilla)}px · columna ${Math.round(anchoColumna)}px`);
+
+    check(`A ${ancho}px los colores por categoría se mantienen`,
+      (await pag.locator('.cal-grid .cal-event[title^="Montaje"]').first()
+        .evaluate((el) => getComputedStyle(el).backgroundColor)) === 'rgb(46, 125, 91)');
+
+    if (ancho === 390) {
+      // La vista de día también enseña los títulos, y es la que se usa
+      // para leer el nombre entero de un vistazo.
+      await pag.locator('.chip:has-text("Día")').click();
+      await pag.waitForTimeout(800);
+      check('En la vista de día del móvil se leen los títulos',
+        (await pag.locator('.cal-day-single').innerText()).includes(`PROY-${YEAR}-009`),
+        limpio(await pag.locator('.cal-day-single').innerText()).replace(/\n/g, ' | ').slice(0, 160));
+      // Esta página se reutiliza para la prueba del historial de abajo.
+      chico = pag;
+    } else {
+      await movil.close();
+    }
+  }
   // ============ MEJORA 5.1 · EL HISTORIAL, AL FINAL EN EL MÓVIL ============
   await chico.goto(`http://localhost:${PORT}/#/admin/proyectos/pm`, { waitUntil: 'networkidle' });
   await chico.locator('.panel-historial').waitFor({ timeout: 15000 });

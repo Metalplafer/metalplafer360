@@ -179,6 +179,19 @@ export interface Ficha {
   code: string;
   type: FichaType;
   status: string;
+  /**
+   * MEJORA 3 · En qué punto está la revisión, mientras el estado sea
+   * «por_revisar». Vacío en cualquier otro estado: lo mantiene así la
+   * base de datos, no la pantalla.
+   */
+  review_status: string | null;
+  /**
+   * MEJORA 7 · Solo en avisos terminados: si queda pendiente de
+   * facturar, si ya se facturó, o si se dio por finalizado sin
+   * facturación. Vacío = no está terminado, o se cerró antes de que
+   * existiera esta pregunta.
+   */
+  billing_state: string | null;
   client_id: string | null;
   contact_id: string | null;
   title: string | null;
@@ -466,7 +479,8 @@ export interface Project {
   work_id: string | null;
   invoiced_amount: number | null;
   invoiced_on: string | null;
-  work?: { id: string; code: string; name: string } | null;
+  /** La obra a la que pertenece, con su color para teñir la pastilla. */
+  work?: { id: string; code: string; name: string; color: string | null } | null;
 }
 
 export interface PhaseSuggestion {
@@ -1005,6 +1019,12 @@ export interface Work {
    */
   cal_start: string | null;
   cal_end: string | null;
+  /**
+   * MEJORA 1 · El color de la obra, «#rrggbb» en minúsculas, o nulo si
+   * no se le ha puesto ninguno. Se usa para teñir la pastilla del código
+   * de sus proyectos y verlos agrupados de un vistazo.
+   */
+  color: string | null;
   archived_at: string | null;
   is_demo: boolean;
   created_by: string | null;

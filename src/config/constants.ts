@@ -86,6 +86,58 @@ export function fichaStatus(type: FichaType, key: string): StatusDef {
   return FICHA_STATUSES[type].find((s) => s.key === key) ?? { key, label: key, tone: 'neutral' };
 }
 
+/**
+ * MEJORA 3 · LAS TRES SUBFASES DE UN PRESUPUESTO POR REVISAR.
+ *
+ * NO son estados del presupuesto: son en qué punto está SU REVISIÓN
+ * mientras el estado es «por_revisar». Fuera de ese estado la subfase va
+ * vacía, y de eso se encarga la base de datos.
+ *
+ * El color no es la única señal: cada etiqueta lleva su texto, para
+ * quien no distinga el verde del rojo y para quien lea la pantalla en
+ * voz alta.
+ */
+export const FICHA_REVIEWS = ['por_revisar', 'ok', 'denegado'] as const;
+export type FichaReview = (typeof FICHA_REVIEWS)[number];
+
+export const FICHA_REVIEW_LABEL: Record<FichaReview, string> = {
+  por_revisar: 'Por revisar',
+  ok: 'OK',
+  denegado: 'Denegado',
+};
+
+export const FICHA_REVIEW_TONE: Record<FichaReview, Tone> = {
+  por_revisar: 'steel',
+  ok: 'green',
+  denegado: 'red',
+};
+
+/**
+ * MEJORA 7 · CÓMO TERMINA UN AVISO.
+ *
+ * No todos los avisos se facturan, así que al darlos por hechos hay que
+ * decir cuál de las dos cosas es. Y después, cuando se factura, se marca.
+ *
+ * OJO con lo que significa «facturado» aquí: METALPLAFER360 NO emite
+ * facturas ni habla con ningún programa de contabilidad. Marcarlo deja
+ * constancia dentro de la aplicación y lo saca de la lista de lo que
+ * falta por facturar. Nada más, y nada menos.
+ */
+export const AVISO_BILLINGS = ['pendiente', 'facturado', 'sin_facturacion'] as const;
+export type AvisoBilling = (typeof AVISO_BILLINGS)[number];
+
+export const AVISO_BILLING_LABEL: Record<AvisoBilling, string> = {
+  pendiente: 'Pendiente de facturar',
+  facturado: 'Facturado',
+  sin_facturacion: 'Finalizado sin facturar',
+};
+
+export const AVISO_BILLING_TONE: Record<AvisoBilling, Tone> = {
+  pendiente: 'amber',
+  facturado: 'green',
+  sin_facturacion: 'steel',
+};
+
 /** Estados que significan «ya no hay nada que hacer aquí». */
 export const CLOSED_STATUSES = new Set(['aceptado', 'cancelado', 'realizada', 'cancelada', 'realizado', 'cerrado']);
 
@@ -441,3 +493,27 @@ export const MAIL_STATUS_TONE: Record<MailStatus, Tone> = {
 export const MAIL_STATUSES: MailStatus[] = [
   'pendiente', 'error', 'revisada', 'vinculada', 'descartada',
 ];
+
+/**
+ * LO QUE ESTÁ «EN CURSO», que es lo que se enseña al abrir la bandeja.
+ *
+ * Son las solicitudes en las que queda algo por hacer:
+ *
+ *   · «pendiente»  nadie la ha mirado todavía;
+ *   · «error»      llegó con algún adjunto que no se pudo guardar;
+ *   · «revisada»   alguien la ha completado pero aún no la ha convertido
+ *                  en presupuesto, visita o aviso.
+ *
+ * Y NO están las otras dos, cada una por su motivo:
+ *
+ *   · «vinculada»  ya se convirtió en algo: su trabajo está hecho y lo
+ *                  que haya que seguir haciendo se hace en el
+ *                  presupuesto o el proyecto, no aquí. Antes salía en
+ *                  «En curso» y daba la sensación de que quedaba trabajo
+ *                  pendiente que ya estaba hecho;
+ *   · «descartada» se decidió que no era una petición.
+ *
+ * Las dos siguen teniendo su propia pestaña, así que no se pierde nada
+ * de vista: solo dejan de contar como trabajo por hacer.
+ */
+export const MAIL_STATUSES_EN_CURSO: MailStatus[] = ['pendiente', 'error', 'revisada'];

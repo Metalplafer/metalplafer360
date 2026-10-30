@@ -1,3 +1,4 @@
+import type { AvisoBilling } from '@/config/constants';
 import { supabase, unwrap } from '@/lib/supabase';
 import type {
   Ficha, FichaTeamRow, FichaType, LinkedVisit, Profile, VisitTarget,
@@ -10,7 +11,7 @@ const SELECT =
 export type FichaInput = Partial<Pick<Ficha,
   'type' | 'client_id' | 'contact_id' | 'title' | 'description' | 'address' | 'phone' |
   'email' | 'hours' | 'scheduled_date' | 'scheduled_time' | 'assigned_to' |
-  'amount' | 'status'>>;
+  'amount' | 'status' | 'review_status'>>;
 
 function clean(o: FichaInput) {
   return Object.fromEntries(
@@ -77,6 +78,25 @@ export async function updateFicha(id: string, patch: FichaInput & { archived_at?
   return unwrap(
     await supabase.from('fichas').update(clean(patch)).eq('id', id).select(SELECT).single(),
   ) as unknown as Ficha;
+}
+
+/**
+ * MEJORA 7 · TERMINAR UN AVISO, Y MARCARLO FACTURADO.
+ *
+ * Una función del servidor y no un «update» suelto, porque el estado y
+ * la situación de facturación tienen que moverse a la vez: si se
+ * mandaran por separado, un fallo a medias dejaría un aviso cerrado que
+ * sigue saliendo como pendiente de facturar.
+ *
+ *   · «pendiente»        → realizado, esperando factura;
+ *   · «sin_facturacion»  → cerrado, no se factura;
+ *   · «facturado»        → cerrado y facturado (solo desde «pendiente»);
+ *   · null               → deshace la decisión y lo devuelve a «en curso».
+ */
+export async function setAvisoBilling(id: string, state: AvisoBilling | null) {
+  return unwrap(await supabase.rpc('set_aviso_billing', {
+    p_ficha: id, p_state: state,
+  })) as unknown as Ficha;
 }
 
 /** Cuántas fichas hay de cada tipo pendientes de atención. */

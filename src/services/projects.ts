@@ -9,7 +9,10 @@ const SELECT =
   'contact:client_contacts(id, name, phone), ' +
   'source:fichas!projects_source_ficha_id_fkey(id, code), ' +
   'substatuses:project_substatuses(phase, substatus), ' +
-  'work:works(id, code, name)';
+  // MEJORA 1 · El color viene con la obra: así la pastilla del código
+  // se tiñe sola y cambiar el color de una obra se refleja en TODOS
+  // sus proyectos sin tocarlos uno a uno.
+  'work:works(id, code, name, color)';
 
 export type ProjectInput = Partial<Pick<Project,
   'client_id' | 'contact_id' | 'name' | 'description' | 'measures' | 'finish' | 'location' |

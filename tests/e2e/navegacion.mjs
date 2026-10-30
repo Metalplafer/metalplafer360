@@ -258,7 +258,11 @@ try {
   // MEJORA 6: «Solicitudes» entra ARRIBA, justo detrás del panel y antes
   // de las fichas: es por donde entra el trabajo y lo primero que hay
   // que mirar por la mañana.
-  const expected = ['Dashboard', 'Solicitudes', 'Fichas', 'Obras', 'Proyectos',
+  // Y «Fichas» pasa a llamarse «Presupuestos»: esa pantalla enseña
+  // presupuestos y visitas, y los avisos tienen la suya. «Avisos» va
+  // entre «Calendario» y «Clientes», que es donde se pidió y donde ya
+  // estaba: esta lista lo deja fijado para que no se mueva.
+  const expected = ['Dashboard', 'Solicitudes', 'Presupuestos', 'Obras', 'Proyectos',
     'Partes de trabajo', 'Material pendiente', 'Proveedores', 'Calendario', 'Avisos',
     'Clientes', 'Trabajadores', 'Facturación', 'Informes', 'Configuración'];
   check('Las secciones son exactamente las previstas',
@@ -266,6 +270,16 @@ try {
     && expected.every((label, i) => menu[i].includes(label)), menu.join(' | '));
   check('Y «Órdenes de trabajo» ya no está entre ellas',
     !menu.some((t) => t.includes('Órdenes de trabajo')), menu.join(' | '));
+
+  const iCal = menu.findIndex((t) => t.includes('Calendario'));
+  const iAvi = menu.findIndex((t) => t.includes('Avisos'));
+  const iCli = menu.findIndex((t) => t.includes('Clientes'));
+  check('«Avisos» va justo entre «Calendario» y «Clientes»',
+    iCal >= 0 && iAvi === iCal + 1 && iCli === iAvi + 1,
+    `Calendario ${iCal} · Avisos ${iAvi} · Clientes ${iCli}`);
+
+  check('Y la pantalla de presupuestos ya no se llama «Fichas»',
+    !menu.some((t) => t.includes('Fichas')), menu.join(' | '));
 
   // El panel de inicio reúne producción, proyectos, material, alertas y
   // economía (se prueba a fondo en fase6.mjs). La tarjeta de órdenes se

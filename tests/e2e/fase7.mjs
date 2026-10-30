@@ -129,7 +129,7 @@ try {
 
   // ============================ FICHA · PRESUPUESTO ============================
   console.log('\n   ── FICHA Y PRESUPUESTO ──');
-  await page.locator('.sidebar nav a:has-text("Fichas")').click();
+  await page.locator('.sidebar nav a:has-text("Presupuestos")').click();
   await page.waitForTimeout(800);
   await page.locator('a.btn-primary:has-text("Nuevo presupuesto")').click();
   await page.waitForTimeout(700);

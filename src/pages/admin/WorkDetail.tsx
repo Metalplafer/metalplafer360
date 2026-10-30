@@ -12,12 +12,13 @@ import { Modal } from '@/components/ui/Modal';
 import { CommentsPanel } from '@/components/shared/CommentsPanel';
 import { HistoryPanel } from '@/components/shared/HistoryPanel';
 import { BILLING_LABEL, BILLING_TONE, PHASE_LABEL, PHASE_TONE } from '@/config/constants';
+import { estiloDeObra, normalizaHex } from '@/lib/colores';
 import { fmtDate, fmtEur } from '@/lib/format';
 import { RangoFechas } from '@/components/shared/RangoFechas';
 import { WorkDocumentsPanel } from '@/components/shared/WorkDocumentsPanel';
 import {
   archiveWork, deleteWork, deleteWorkExtra, getWork, listWorkExtras, saveWorkExtra,
-  setProjectInvoiced, setProjectWork, setWorkDates, setWorkExtraInvoiced,
+  setProjectInvoiced, setProjectWork, setWorkColor, setWorkDates, setWorkExtraInvoiced,
   workProjects, workSummary,
 } from '@/services/works';
 import type { WorkExtra } from '@/types/db';
@@ -202,6 +203,21 @@ export default function WorkDetail() {
     catch (e) { toast.error(e); }
   }
 
+  /*
+    MEJORA 1 · EL COLOR DE LA OBRA.
+
+    Se guarda en cuanto se suelta el selector, sin botón de guardar: es
+    un solo campo y el resultado se ve al momento en la pastilla de al
+    lado. Si falla, se avisa y se recarga para que la pantalla no se
+    quede enseñando un color que no se ha guardado.
+  */
+  async function cambiarColor(color: string | null) {
+    try {
+      await setWorkColor(o.id, color);
+      recargar();
+    } catch (e) { toast.error(e); recargar(); }
+  }
+
   async function alternarArchivo() {
     try {
       await archiveWork(o.id, !archivada);
@@ -240,13 +256,32 @@ export default function WorkDetail() {
       </Link>
 
       <PageHeader
-        title={<><span className="plate">{o.code}</span> {o.name}</>}
+        title={<><span className="plate" style={estiloDeObra(o.color)}>{o.code}</span> {o.name}</>}
         sub={<>
           {o.client?.name ?? 'Sin cliente'}
           {o.address ? <> · <MapPin size={13} aria-hidden /> {o.address}</> : null}
         </>}
         actions={
           <span className="row" style={{ gap: 8 }}>
+            {/*
+              MEJORA 1 · El color de la obra, con el mismo selector que
+              los colores del calendario en Configuración: el del
+              navegador más el texto, para quien prefiera escribirlo.
+              «Quitar» lo deja sin color y sus proyectos vuelven a la
+              pastilla de siempre.
+            */}
+            <span className="row" style={{ gap: 6, alignItems: 'center' }}>
+              <label className="sr-only" htmlFor="obra-color">Color de la obra</label>
+              <input id="obra-color" type="color" className="color-input"
+                     value={normalizaHex(o.color ?? '') ?? '#1a2433'}
+                     aria-label={`Color de la obra ${o.code}`}
+                     onChange={(e) => cambiarColor(e.target.value)} />
+              {o.color && (
+                <button className="btn btn-sm btn-ghost" onClick={() => cambiarColor(null)}>
+                  Quitar color
+                </button>
+              )}
+            </span>
             <Link className="btn" to={`/admin/obras/${o.id}/editar`}><Pencil />Editar</Link>
             <button className="btn" onClick={alternarArchivo}>
               {archivada ? <><ArchiveRestore />Recuperar</> : <><Archive />Archivar</>}

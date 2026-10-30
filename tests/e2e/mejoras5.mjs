@@ -324,6 +324,40 @@ try {
     && db.mail_requests[0].body_text.includes('12 metros'),
     String(db.mail_requests.length));
 
+  /*
+    MEJORA 8 · UNA SOLICITUD VINCULADA YA NO ESTÁ «EN CURSO».
+
+    Es la que se acaba de vincular, así que esta comprobación va aquí y
+    no en un juego de pruebas aparte: se mira la bandeja justo después
+    de convertirla. Antes seguía saliendo en «En curso» y parecía que
+    quedaba trabajo por hacer con algo que ya estaba resuelto.
+  */
+  await page.goto(`http://localhost:${PORT}/#/admin/solicitudes`, { waitUntil: 'networkidle' });
+  await page.locator('.table').waitFor({ timeout: 15000 });
+  await page.waitForTimeout(700);
+
+  const enCurso = limpio(await page.locator('.table tbody').innerText());
+  check('MEJORA 8 · La solicitud vinculada ya NO sale en «En curso»',
+    !enCurso.includes(db.mail_requests[0].code),
+    enCurso.replace(/\n/g, ' | ').slice(0, 200));
+
+  // Y las que sí tienen algo pendiente siguen saliendo: sin revisar,
+  // con error y revisadas.
+  const pendientes = db.mail_requests.filter((m) => m.status !== 'vinculada'
+    && m.status !== 'descartada');
+  check('Y las que siguen teniendo algo que hacer, sí',
+    pendientes.length > 0 && pendientes.every((m) => enCurso.includes(m.code)),
+    `${pendientes.map((m) => `${m.code}:${m.status}`).join(' · ')} → `
+    + enCurso.replace(/\n/g, ' | ').slice(0, 160));
+
+  // No se ha perdido: está en su propia pestaña, con su estado.
+  await page.locator('.tabs button:has-text("Vinculada")').click();
+  await page.waitForTimeout(700);
+  const vinculadas = limpio(await page.locator('.table tbody').innerText());
+  check('Pero sigue estando, en la pestaña «Vinculada»',
+    vinculadas.includes(db.mail_requests[0].code),
+    vinculadas.replace(/\n/g, ' | ').slice(0, 160));
+
   // LO QUE IMPORTA: los archivos del correo, desde el presupuesto.
   await page.goto(`http://localhost:${PORT}/#/admin/fichas/${db.fichas[0].id}`,
     { waitUntil: 'networkidle' });
