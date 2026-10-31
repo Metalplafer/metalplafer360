@@ -400,7 +400,16 @@ export interface CommentRow {
 // FASE 3 · Proyectos
 // ---------------------------------------------------------------------
 
-export type ProjectPhase = 'preparacion' | 'fabricacion' | 'montaje' | 'facturacion' | 'finalizado';
+/**
+ * Las fases del proyecto, en el orden del recorrido real del trabajo.
+ *
+ * «pendiente_visita_tecnica» va la primera porque se visita ANTES de
+ * preparar. Antes era un subestado de «En preparación», y el proyecto
+ * aparecía preparándose cuando en realidad esperaba a que alguien fuera
+ * a verlo (migraciones 68 y 69).
+ */
+export type ProjectPhase = 'pendiente_visita_tecnica' | 'preparacion' | 'fabricacion'
+  | 'montaje' | 'facturacion' | 'finalizado';
 export type BillingStatus = 'por_facturar' | 'pendiente_cobro' | 'cobrado_parcial' | 'cobrado';
 
 /**

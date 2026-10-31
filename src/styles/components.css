@@ -836,6 +836,20 @@
    máxima: un correo con veinte respuestas encadenadas no puede empujar
    el resto de la ficha fuera de la pantalla.
    --------------------------------------------------------------------- */
+/* ---------------------------------------------------------------------
+   EL CORREO PLEGADO, en la ficha que salió de una solicitud.
+   Plegado porque ahí es un dato de contexto, no el asunto de la
+   pantalla: a un clic de quien lo necesite y sin estorbar al resto.
+   --------------------------------------------------------------------- */
+.correo-plegado > summary {
+  cursor: pointer;
+  font-size: .86rem; font-weight: 600; color: var(--blue);
+  padding: 4px 0;
+}
+.correo-plegado > summary:hover { text-decoration: underline; }
+.correo-plegado > summary:focus-visible { box-shadow: var(--focus); border-radius: var(--r-sm); }
+.correo-plegado .correo-cuerpo { margin-top: var(--s2); }
+
 .correo-cuerpo {
   margin: var(--s3) 0 var(--s2);
   padding: 12px 14px;

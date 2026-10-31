@@ -68,6 +68,28 @@ export async function getMailRequest(id: string) {
   ) as unknown as MailRequest;
 }
 
+/**
+ * LA SOLICITUD DE LA QUE NACIÓ ESTA FICHA, MIRANDO AL REVÉS.
+ *
+ * El vínculo ya existía, pero solo se podía recorrer en un sentido:
+ * desde la solicitud se veía su presupuesto o su aviso, y desde el aviso
+ * no se veía nada. Así que el correo del cliente —lo que pidió, con sus
+ * palabras— quedaba guardado y a la vez fuera del alcance de quien
+ * tenía que hacer el trabajo.
+ *
+ * No hace falta ninguna columna nueva: «mail_requests.target_ficha_id»
+ * lleva ahí desde la mejora 6. Lo único que faltaba era preguntarlo.
+ *
+ * Devuelve «null» cuando la ficha se creó a mano, que es lo normal.
+ */
+export async function mailRequestForFicha(fichaId: string) {
+  const { data, error } = await supabase.from('mail_requests')
+    .select(SELECT).eq('target_ficha_id', fichaId)
+    .order('received_at', { ascending: false }).limit(1);
+  if (error) throw error;
+  return ((data ?? [])[0] ?? null) as unknown as MailRequest | null;
+}
+
 /** Cuántas hay sin revisar, para el aviso de la navegación. */
 export async function countPendingMailRequests() {
   const { count, error } = await supabase.from('mail_requests')

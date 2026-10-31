@@ -1,4 +1,5 @@
 import { supabase, unwrap } from '@/lib/supabase';
+import { PHASES } from '@/config/constants';
 import type {
   BillingStatus, PhaseSuggestion, Project, ProjectPhase, ProjectProduct,
   ProjectProductDraft,
@@ -146,8 +147,10 @@ export async function phaseSuggestion(projectId: string) {
 
 /** Cuántos proyectos hay en cada fase. */
 export async function projectCounts() {
-  const phases: ProjectPhase[] = ['preparacion', 'fabricacion', 'montaje', 'facturacion', 'finalizado'];
-  const entries = await Promise.all(phases.map(async (phase) => {
+  // Se recorre PHASES y no una lista repetida aquí: así una fase nueva
+  // entra en los contadores sin que nadie tenga que acordarse de este
+  // archivo, que es justo lo que falló al añadir la visita técnica.
+  const entries = await Promise.all(PHASES.map(async (phase) => {
     const { count, error } = await supabase.from('projects')
       .select('id', { count: 'exact', head: true })
       .eq('phase', phase).is('archived_at', null);

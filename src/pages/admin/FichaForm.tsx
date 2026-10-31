@@ -14,7 +14,7 @@ import { listPeople } from '@/services/people';
 import { FICHA_CODE_PREFIX, FICHA_NEW_TITLE, FICHA_TYPE_LABEL } from '@/config/constants';
 import { parseDecimal, parseHours } from '@/lib/format';
 import { parseSolicitud, parseVincular, rutaDestino } from '@/lib/vinculos';
-import { linkMailRequest } from '@/services/mail';
+import { getMailRequest, linkMailRequest } from '@/services/mail';
 import { toUserMessage } from '@/lib/errors';
 import type { FichaType } from '@/types/db';
 
@@ -86,6 +86,52 @@ export default function FichaForm() {
       email: c.email ?? '', address: c.address ?? '', city: c.city ?? '', postal_code: c.postal_code ?? '',
     })).catch(() => undefined);
   }, [params, editing]);
+
+  /**
+   * LO QUE SE TRAE DE LA SOLICITUD, Y LO QUE NO.
+   *
+   * Hasta ahora no se traía NADA: la bandeja abría este formulario en
+   * blanco y había que volver a escribir a mano lo que el cliente ya
+   * había contado. Se copiaba con la vista, con sus erratas, y el
+   * correo original se quedaba atrás.
+   *
+   * Se traen dos cosas, y cada una va al campo que le corresponde:
+   *
+   *   · el ASUNTO del correo → el título de la ficha. Es el nombre que
+   *     le puso quien escribió; si era un reenvío, el asunto original,
+   *     porque el del reenvío suele ser «RV: …»;
+   *   · las OBSERVACIONES INTERNAS → la descripción. Son las notas que
+   *     administración escribió al revisar la solicitud: «instalar cable
+   *     radio», «repasar fotocélula». Eso es exactamente lo que el
+   *     trabajador necesita leer, y la descripción es el único campo de
+   *     la ficha que sirve para decirlo.
+   *
+   * Y NO SE TRAE EL CUERPO DEL CORREO. A propósito. Un correo de cliente
+   * es una conversación entera —saludos, quejas, historia del motor— y
+   * volcarlo en la descripción enterraría las instrucciones de trabajo
+   * en medio de un texto largo. El cuerpo se queda donde ya estaba, en
+   * la solicitud, íntegro, y ahora se lee DESDE la ficha gracias al
+   * panel «De dónde viene» del detalle. Nada se pierde y nada se mezcla.
+   *
+   * Solo rellena campos VACÍOS: si alguien ya ha escrito algo, no se le
+   * pisa. Y si la solicitud no se puede leer, el formulario se queda en
+   * blanco y funciona igual que siempre.
+   */
+  useEffect(() => {
+    if (!solicitud || editing) return;
+    let vigente = true;
+    getMailRequest(solicitud).then((m) => {
+      if (!vigente) return;
+      const asunto = (m.original_subject ?? m.subject ?? '').trim();
+      const notas = (m.notes ?? '').trim();
+      setForm((f) => ({
+        ...f,
+        title: f.title.trim() ? f.title : asunto,
+        description: f.description.trim() ? f.description : notas,
+      }));
+    }).catch(() => undefined);
+    return () => { vigente = false; };
+  }, [solicitud, editing]);
 
   /**
    * MEJORA 2 · La visita se hace EN EL MISMO SITIO que el trabajo, así

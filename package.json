@@ -12,7 +12,7 @@
     "test": "vitest run tests/unit",
     "test:sql": "bash tests/sql/run_all.sh",
     "test:e2e": "node tests/e2e/smoke.mjs",
-    "test:all": "npm run typecheck && npm test && npm run test:sql && npm run test:e2e && npm run test:nav && npm run test:fase2 && npm run test:fase3 && npm run test:fase4 && npm run test:fase5 && npm run test:fase6 && npm run test:fase7 && npm run test:bloque1 && npm run test:bloque2 && npm run test:bloque3 && npm run test:bloque4 && npm run test:bloque5 && npm run test:qa && npm run test:correcciones && npm run test:avisos && npm run test:compartidos && npm run test:publicacion && npm run test:mejoras && npm run test:mejoras2 && npm run test:mejoras3 && npm run test:mejoras4 && npm run test:mejoras5",
+    "test:all": "npm run typecheck && npm test && npm run test:sql && npm run test:e2e && npm run test:nav && npm run test:fase2 && npm run test:fase3 && npm run test:fase4 && npm run test:fase5 && npm run test:fase6 && npm run test:fase7 && npm run test:bloque1 && npm run test:bloque2 && npm run test:bloque3 && npm run test:bloque4 && npm run test:bloque5 && npm run test:qa && npm run test:correcciones && npm run test:avisos && npm run test:compartidos && npm run test:publicacion && npm run test:mejoras && npm run test:mejoras2 && npm run test:mejoras3 && npm run test:mejoras4 && npm run test:mejoras5 && npm run test:mejoras6 && npm run test:mejoras7",
     "test:nav": "node tests/e2e/navegacion.mjs",
     "test:fase2": "node tests/e2e/fase2.mjs",
     "test:fase3": "node tests/e2e/fase3.mjs",
@@ -36,7 +36,8 @@
     "test:mejoras3": "node tests/e2e/mejoras3.mjs",
     "test:mejoras4": "node tests/e2e/mejoras4.mjs",
     "test:mejoras5": "node tests/e2e/mejoras5.mjs",
-    "test:mejoras6": "node tests/e2e/mejoras6.mjs"
+    "test:mejoras6": "node tests/e2e/mejoras6.mjs",
+    "test:mejoras7": "node tests/e2e/mejoras7.mjs"
   },
   "dependencies": {
     "@fontsource/barlow": "^5.1.0",

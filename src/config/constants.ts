@@ -146,9 +146,18 @@ export const CLOSED_STATUSES = new Set(['aceptado', 'cancelado', 'realizada', 'c
 // ---------------------------------------------------------------------
 import type { BillingStatus, ProjectPhase } from '@/types/db';
 
-export const PHASES: ProjectPhase[] = ['preparacion', 'fabricacion', 'montaje', 'facturacion', 'finalizado'];
+/**
+ * El orden de aquí manda en toda la aplicación: el recorrido de fases
+ * del proyecto, las barras del panel, los filtros del listado y el
+ * indicador reducido de los listados se dibujan recorriendo esta lista.
+ * Por eso «Pendiente de visita técnica» entra la PRIMERA y no hace
+ * falta tocar ninguno de esos sitios.
+ */
+export const PHASES: ProjectPhase[] = ['pendiente_visita_tecnica', 'preparacion',
+  'fabricacion', 'montaje', 'facturacion', 'finalizado'];
 
 export const PHASE_LABEL: Record<ProjectPhase, string> = {
+  pendiente_visita_tecnica: 'Pendiente de visita técnica',
   preparacion: 'En preparación',
   fabricacion: 'Fabricación',
   montaje: 'Montaje',
@@ -157,6 +166,10 @@ export const PHASE_LABEL: Record<ProjectPhase, string> = {
 };
 
 export const PHASE_TONE: Record<ProjectPhase, Tone> = {
+  // «signal» es el color que la aplicación usa para lo que espera a
+  // alguien: presupuestos por revisar, pendientes de paga y señal. Un
+  // proyecto esperando visita es eso mismo.
+  pendiente_visita_tecnica: 'signal',
   preparacion: 'amber',
   fabricacion: 'blue',
   montaje: 'green',
@@ -169,8 +182,14 @@ export const PHASE_TONE: Record<ProjectPhase, Tone> = {
  * Facturación y Finalizado no tienen: el estado de facturación va aparte.
  */
 export const SUBSTATUSES: Record<ProjectPhase, { key: string; label: string }[]> = {
+  // La fase de visita técnica no lleva subestados: o se ha ido a ver, o
+  // no. En el servidor sale solo, porque «valid_substatus» termina en
+  // «else false» para cualquier fase que no enumere.
+  pendiente_visita_tecnica: [],
   preparacion: [
-    { key: 'pendiente_visita_tecnica', label: 'Pendiente visita técnica' },
+    // «Pendiente visita técnica» ya NO está aquí: es una fase propia
+    // (migración 69). Dejarlo en los dos sitios daría dos maneras de
+    // apuntar lo mismo.
     { key: 'pendiente_planos',         label: 'Pendiente planos' },
     { key: 'pendiente_material',       label: 'Pendiente material' },
     { key: 'por_empezar',              label: 'Por empezar' },
@@ -195,8 +214,26 @@ export const SUBSTATUSES: Record<ProjectPhase, { key: string; label: string }[]>
   finalizado: [],
 };
 
+/**
+ * SUBESTADOS RETIRADOS · los que ya no se ofrecen pero pueden seguir
+ * guardados en proyectos antiguos.
+ *
+ * «pendiente_visita_tecnica» dejó de ser un subestado para ser una fase
+ * (migraciones 68 y 69). Si alguien ejecuta la 68 y decide no ejecutar
+ * la 69, los proyectos que ya lo tenían siguen teniéndolo, y sin esta
+ * lista la pantalla enseñaría la clave técnica en crudo:
+ * «pendiente_visita_tecnica» en vez de «Pendiente visita técnica».
+ *
+ * No se ofrece para marcar: solo se sabe leer lo que ya estaba escrito.
+ */
+const SUBSTATUSES_RETIRADOS: Record<string, string> = {
+  pendiente_visita_tecnica: 'Pendiente visita técnica',
+};
+
 export function substatusLabel(phase: ProjectPhase, key: string): string {
-  return SUBSTATUSES[phase].find((s) => s.key === key)?.label ?? key;
+  return SUBSTATUSES[phase].find((s) => s.key === key)?.label
+    ?? SUBSTATUSES_RETIRADOS[key]
+    ?? key;
 }
 
 export const BILLING_STATUSES: BillingStatus[] = ['por_facturar', 'pendiente_cobro', 'cobrado_parcial', 'cobrado'];

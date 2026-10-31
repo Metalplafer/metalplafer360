@@ -12,6 +12,7 @@ import { DocumentsPanel } from '@/components/shared/DocumentsPanel';
 import { documentPaths, removeStoredFiles } from '@/services/documents';
 import { CommentsPanel } from '@/components/shared/CommentsPanel';
 import { HistoryPanel } from '@/components/shared/HistoryPanel';
+import { OrigenCorreoPanel } from '@/components/shared/OrigenCorreoPanel';
 import { RelatedDocsPanel } from '@/components/shared/RelatedDocsPanel';
 import { VisitasPanel } from '@/components/shared/VisitasPanel';
 import {
@@ -659,6 +660,13 @@ export default function FichaDetail() {
             </dl>
           </Panel>
 
+          {/*
+            El correo del que salió esta ficha, cuando salió de uno. Va
+            aquí, justo debajo de los datos y encima del historial,
+            porque es el origen de lo que se acaba de leer.
+          */}
+          <OrigenCorreoPanel fichaId={f.id} />
+
           <HistoryPanel entityCode={f.code} reloadKey={String(historyKey)} />
         </div>
 
@@ -668,11 +676,21 @@ export default function FichaDetail() {
           {/*
             MEJORA 2 · Los planos y las fotos de las visitas técnicas
             vinculadas a esta ficha, sin copiar ningún archivo.
+
+            Y TAMBIÉN EN LAS VISITAS, desde ahora. Antes este panel se
+            escondía en las visitas con el argumento de que «una visita
+            no tiene visitas», que es cierto pero se llevó por delante
+            otra cosa: una visita creada desde una solicitud de correo
+            tampoco veía los archivos que había mandado el cliente. La
+            vista «related_documents» sí los devolvía —su rama 5 vale
+            para cualquier ficha—, pero nadie se los pedía.
+
+            Enseñarlo aquí no añade ruido: el panel se esconde solo
+            cuando no hay nada que enseñar, y en una visita lo único que
+            puede haber son precisamente los adjuntos del correo.
           */}
-          {f.type !== 'visita' && (
-            <RelatedDocsPanel paraTipo={f.type === 'aviso' ? 'aviso' : 'presupuesto'}
-                              paraId={f.id} reloadKey={String(historyKey)} />
-          )}
+          <RelatedDocsPanel paraTipo={f.type === 'aviso' ? 'aviso' : 'presupuesto'}
+                            paraId={f.id} reloadKey={String(historyKey)} />
           {/*
             Las visitas se asignan a un presupuesto o a un aviso. Una
             visita no tiene visitas: ahí el panel no se enseña.
