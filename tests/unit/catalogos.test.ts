@@ -1,3 +1,4 @@
+
 /**
  * LA PANTALLA Y LA BASE DE DATOS, DE ACUERDO.
  *
@@ -106,7 +107,9 @@ describe('los subestados de la pantalla son los que admite la base de datos', ()
     // puede faltar fabricando y montando. El resto, no.
     const veces = new Map<string, number>();
     for (const fase of PHASES) {
-      for (const s of SUBSTATUSES[fase] ?? []) veces.set(s.key, (veces.get(s.key) ?? 0) + 1);
+      for (const s of SUBSTATUSES[fase] ?? []) {
+        veces.set(s.key, (veces.get(s.key) ?? 0) + 1);
+      }
     }
     const repetidos = [...veces].filter(([, n]) => n > 1).map(([k]) => k);
     expect(repetidos).toEqual(['falta_material']);
@@ -149,10 +152,43 @@ describe('el historial escribe en castellano lo mismo que enseña la pantalla', 
   });
 
   it('y las fases también', () => {
+    /*
+      ESTA PRUEBA HIZO SU TRABAJO al añadir la fase de visita técnica.
+
+      La clave «pendiente_visita_tecnica» ya existía en «label_es» como
+      SUBESTADO, escrita «Pendiente visita técnica». Al convertirse en
+      fase, la pantalla pasó a llamarla «Pendiente de visita técnica» y
+      la prueba falló: el historial iba a escribir una cosa y la
+      pantalla otra. Se arregló en la migración 68, moviendo esa entrada
+      al bloque de las fases con el «de» puesto.
+
+      La fase nueva se añade aquí con su texto exacto; la comprobación
+      sigue siendo de igualdad para TODAS las fases, así que si alguien
+      vuelve a dejar las dos listas distintas, esto vuelve a fallar.
+    */
+
+    // Catálogo esperado de fases, incluyendo la nueva fase de visita técnica.
     const esperado: Record<string, string> = {
-      preparacion: 'En preparación', fabricacion: 'Fabricación', montaje: 'Montaje',
-      facturacion: 'Facturación', finalizado: 'Finalizado',
+      pendiente_visita_tecnica: 'Pendiente de visita técnica',
+      preparacion: 'En preparación',
+      fabricacion: 'Fabricación',
+      montaje: 'Montaje',
+      facturacion: 'Facturación',
+      finalizado: 'Finalizado',
     };
-    for (const fase of PHASES) expect(etiquetas[fase]).toBe(esperado[fase]);
+
+    // Comprueba que el historial utiliza exactamente la misma etiqueta
+    // que muestra la pantalla para cada fase.
+    for (const fase of PHASES) {
+      expect(
+        etiquetas[fase],
+        `etiqueta de la fase ${fase} en label_es`,
+      ).toBe(esperado[fase]);
+    }
+
+    // Y que no falte ninguna: si mañana entra otra fase, esta línea
+    // obliga a pasar también por aquí.
+    expect(Object.keys(esperado).sort()).toEqual([...PHASES].sort());
   });
 });
+
