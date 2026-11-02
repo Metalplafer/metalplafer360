@@ -207,6 +207,8 @@ function crearDbBase(seed = {}) {
     // MEJORA 6 · La bandeja de entrada: cada correo recibido es una
     // ficha provisional. Las crea el servidor, nunca el navegador.
     mail_requests: [],
+    // GESTIONES INTERNAS · el tablero que sustituye al Trello interno.
+    internal_lists: [], internal_tasks: [], internal_task_items: [],
     counters: { PRES: 0, VIS: 0, AVI: 0, PROY: 0, OT: 0, PT: 0, OBRA: 0 },
     code_counters: [
       { prefix: 'PRES', year: YEAR, last_value: 0 }, { prefix: 'VIS', year: YEAR, last_value: 0 },
@@ -570,8 +572,13 @@ function sembrarDemo(db, people) {
 
 const PREFIX = { presupuesto: 'PRES', visita: 'VIS', aviso: 'AVI' };
 const NEXT_WHEN_ASSIGNED = { presupuesto: 'pendiente', visita: 'asignada', aviso: 'asignado' };
-const PHASES = ['preparacion', 'fabricacion', 'montaje', 'facturacion', 'finalizado'];
+// El orden importa: es el que usa el reparto por fase del panel y el
+// informe de proyectos. «pendiente_visita_tecnica» va la primera desde
+// la migración 68, igual que en el tipo enumerado de la base de datos.
+const PHASES = ['pendiente_visita_tecnica', 'preparacion', 'fabricacion',
+  'montaje', 'facturacion', 'finalizado'];
 const PHASE_LABEL = {
+  pendiente_visita_tecnica: 'Pendiente de visita técnica',
   preparacion: 'En preparación', fabricacion: 'Fabricación', montaje: 'Montaje',
   facturacion: 'Facturación', finalizado: 'Finalizado',
 };
@@ -987,6 +994,10 @@ export async function stubSupabase(context, {
     if (table === 'fichas') return [];
     // MEJORA 6 · La bandeja es de administración, igual que las fichas.
     if (table === 'mail_requests') return [];
+    // GESTIONES INTERNAS · el tablero entero es de administración. Las
+    // tres tablas exigen «is_admin()» en sus políticas, así que a un
+    // trabajador no le llega ni una fila de ninguna.
+    if (table.startsWith('internal_')) return [];
     if (table === 'documents' || table === 'comments') {
       // Los partes que puedo LEER: los míos y los que compartí. Igual
       // que «can_read_report» en la base de datos.
@@ -2541,6 +2552,116 @@ export async function stubSupabase(context, {
       return json(m);
     }
 
+    /* ---------------- GESTIONES INTERNAS · las funciones ----------------
+     *
+     * Las mismas reglas que la migración 70, porque si aquí fueran más
+     * blandas las pruebas dirían que todo va bien mientras la base de
+     * datos de verdad rechaza la operación.
+     */
+    if (path === '/rest/v1/rpc/delete_internal_list') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const lista = db.internal_lists.find((l) => l.id === body()?.p_list);
+      if (!lista) return fail('No se encuentra la lista', 'P0002');
+      // Las ARCHIVADAS cuentan igual que las activas: son el histórico.
+      const dentro = db.internal_tasks.filter((x) => x.list_id === lista.id);
+      if (dentro.length) {
+        return fail(`La lista «${lista.name}» todavía tiene ${dentro.length} tarjeta(s). `
+          + 'Muévelas a otra lista antes de borrarla.');
+      }
+      db.internal_lists = db.internal_lists.filter((l) => l.id !== lista.id);
+      return json(null);
+    }
+
+    if (path === '/rest/v1/rpc/move_internal_task') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const tarea = db.internal_tasks.find((x) => x.id === body()?.p_task);
+      if (!tarea) return fail('No se encuentra la tarea', 'P0002');
+      if (tarea.archived_at) return fail('La tarea está archivada. Recupérala antes de moverla.');
+      const destino = body()?.p_list ?? tarea.list_id;
+      if (!db.internal_lists.some((l) => l.id === destino)) {
+        return fail('No se encuentra la lista de destino', 'P0002');
+      }
+      tarea.list_id = destino;
+      if (body()?.p_position != null) tarea.position = body().p_position * 10;
+      tarea.updated_at = new Date().toISOString();
+      return json(tarea);
+    }
+
+    if (path === '/rest/v1/rpc/archive_internal_task') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const tarea = db.internal_tasks.find((x) => x.id === body()?.p_task);
+      if (!tarea) return fail('No se encuentra la tarea', 'P0002');
+      tarea.archived_at = tarea.archived_at ?? new Date().toISOString();
+      tarea.updated_at = new Date().toISOString();
+      return json(tarea);
+    }
+
+    if (path === '/rest/v1/rpc/restore_internal_task') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const tarea = db.internal_tasks.find((x) => x.id === body()?.p_task);
+      if (!tarea) return fail('No se encuentra la tarea', 'P0002');
+      const destino = body()?.p_list ?? tarea.list_id;
+      if (!db.internal_lists.some((l) => l.id === destino)) {
+        return fail('No se encuentra la lista a la que devolver la tarea', 'P0002');
+      }
+      tarea.archived_at = null;
+      tarea.list_id = destino;
+      tarea.position = Math.max(0, ...db.internal_tasks
+        .filter((x) => x.list_id === destino && !x.archived_at)
+        .map((x) => x.position)) + 10;
+      tarea.updated_at = new Date().toISOString();
+      return json(tarea);
+    }
+
+    if (path === '/rest/v1/rpc/delete_internal_task_item') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const antes = db.internal_task_items.length;
+      db.internal_task_items = db.internal_task_items.filter((i) => i.id !== body()?.p_item);
+      if (db.internal_task_items.length === antes) {
+        return fail('No se encuentra el elemento del checklist', 'P0002');
+      }
+      return json(null);
+    }
+
+    /*
+     * EL EVENTO · lo mismo que hace la función de verdad: NO escribe un
+     * tipo de evento nuevo, crea o actualiza una nota normal de
+     * «calendar_notes». Si la tarjeta ya tenía una, se ACTUALIZA; por
+     * eso editar no duplica.
+     */
+    if (path === '/rest/v1/rpc/set_internal_task_event') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const tarea = db.internal_tasks.find((x) => x.id === body()?.p_task);
+      if (!tarea) return fail('No se encuentra la tarea', 'P0002');
+
+      const dia = body()?.p_day ?? null;
+      if (!dia) {
+        tarea.calendar_note_id = null;
+        tarea.updated_at = new Date().toISOString();
+        return json(tarea);
+      }
+
+      const titulo = (body()?.p_title ?? '').trim() || tarea.title;
+      const existente = db.calendar_notes.find((n) => n.id === tarea.calendar_note_id);
+      if (existente) {
+        existente.day = dia;
+        existente.title = titulo;
+        existente.detail = body()?.p_detail ?? null;
+        existente.updated_at = new Date().toISOString();
+      } else {
+        const nota = {
+          id: `note-${Math.random().toString(36).slice(2, 8)}`,
+          day: dia, title: titulo, detail: body()?.p_detail ?? null,
+          project_id: null, created_by: getUser()?.id ?? null, is_demo: false,
+          created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+        };
+        db.calendar_notes.push(nota);
+        tarea.calendar_note_id = nota.id;
+      }
+      tarea.updated_at = new Date().toISOString();
+      return json(tarea);
+    }
+
     if (path === '/rest/v1/rpc/change_project_phase') {
       const project = db.projects.find((p) => p.id === body()?.p_project);
       const next = body()?.p_phase;
@@ -3429,6 +3550,57 @@ export async function stubSupabase(context, {
      * «fichas» y «projects» son «is_admin()» y la vista se ejecuta con
      * los permisos de quien pregunta: a un trabajador le sale vacía.
      */
+    /*
+     * GESTIONES INTERNAS · el tablero.
+     *
+     * «internal_board» es una vista: la tarjeta con el nombre de su
+     * lista, el progreso de su checklist y los datos de su evento. Aquí
+     * se calcula a mano, igual que hace la vista de verdad.
+     *
+     * Y lo primero, lo que de verdad importa: si quien pregunta no es
+     * administración, no hay nada que enseñar. Es lo que hacen las
+     * políticas de las tres tablas en la base de datos.
+     */
+    if (path === '/rest/v1/internal_board') {
+      const user = getUser();
+      if (user && user.role !== 'admin') return json(applyFilters([], url));
+
+      const filas = db.internal_tasks.map((t) => {
+        const lista = db.internal_lists.find((l) => l.id === t.list_id);
+        const nota = db.calendar_notes.find((n) => n.id === t.calendar_note_id) ?? null;
+        const items = db.internal_task_items.filter((i) => i.task_id === t.id);
+        return {
+          ...t,
+          list_name: lista?.name ?? '',
+          list_position: lista?.position ?? 0,
+          event_day: nota?.day ?? null,
+          event_title: nota?.title ?? null,
+          checklist_total: items.length,
+          checklist_hechos: items.filter((i) => i.done).length,
+        };
+      });
+
+      let out = applyFilters(filas, url);
+      const order = url.searchParams.get('order');
+      if (order) {
+        const keys = order.split(',').map((p) => {
+          const [col, dir] = p.split('.');
+          return { col, sign: dir === 'desc' ? -1 : 1 };
+        });
+        out = [...out].sort((a, b) => {
+          for (const { col, sign } of keys) {
+            const x = a[col] ?? '';
+            const y = b[col] ?? '';
+            const diff = (typeof x === 'number' && typeof y === 'number'
+              ? x - y : String(x).localeCompare(String(y))) * sign;
+            if (diff) return diff;
+          }
+          return 0;
+        });
+      }
+      return json(out);
+    }
+
     if (path === '/rest/v1/related_documents') {
       const user = getUser();
       if (user && user.role !== 'admin') return json(applyFilters([], url));
@@ -4711,6 +4883,10 @@ export async function stubSupabase(context, {
       if (table === 'mail_requests') {
         return fail('No tienes permisos para realizar esta acción', '42501');
       }
+      // GESTIONES INTERNAS · escribir en el tablero es de administración.
+      if (table.startsWith('internal_') && soloAdmin()) {
+        return fail('No tienes permisos para realizar esta acción.', '42501');
+      }
       const payload = Array.isArray(body()) ? body() : [body()];
       const created = payload.map((item) => {
         const row = {
@@ -4809,6 +4985,10 @@ export async function stubSupabase(context, {
     }
 
     if (method === 'PATCH') {
+      // GESTIONES INTERNAS · cambiar el tablero es de administración.
+      if (table.startsWith('internal_') && soloAdmin()) {
+        return fail('No tienes permisos para realizar esta acción.', '42501');
+      }
       const rows = applyFilters(db[table], url);
       const patch = body() ?? {};
       // UNA VISITA ES DE ADMINISTRACIÓN. La regla mira SOLO la

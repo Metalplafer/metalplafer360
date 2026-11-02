@@ -1092,3 +1092,102 @@ Se vio ejecutando `navegacion.mjs`: las 48 comprobaciones salieron bien y
 el proceso murió antes de imprimir el total. Ahora el archivo se lee
 antes de escribir la cabecera, y el `catch` comprueba si la cabecera ya
 se mandó.
+
+
+## GESTIONES INTERNAS · el tablero que sustituye al Trello interno
+
+Las gestiones administrativas —pedir ropa, pagar una multa, cambiar los
+teléfonos— vivían en un Trello aparte. Esto las trae dentro, con los
+usuarios, los permisos y el calendario que ya existen.
+
+### 1. Tres tablas, y ninguna existente tocada
+
+`internal_lists` (las columnas), `internal_tasks` (las tarjetas) y
+`internal_task_items` (el checklist). Migración 70.
+
+No se modificó ni una tabla, ni una función, ni una política de las que
+ya había. Lo único que mira hacia fuera es una clave ajena a
+`calendar_notes`, y apunta **de aquí hacia allí**: el calendario no se
+entera de que este módulo existe.
+
+### 2. El calendario se reutiliza, no se imita
+
+Se pidió expresamente no crear un segundo sistema de eventos. Una
+tarjeta **no guarda un evento**: guarda el identificador de una nota
+normal de `calendar_notes`, de las de la categoría «Otros».
+
+Y `set_internal_task_event` **no escribe en `calendar_notes`**: llama a
+`save_calendar_note`, la misma función que usa el formulario del
+calendario desde el archivo 30. De ahí salen cuatro cosas, que son justo
+las que se pedían:
+
+- el evento aparece en el calendario general sin tocar la vista;
+- **editarlo desde la tarjeta no crea un segundo**, porque se le pasa el
+  identificador que la tarjeta ya tenía y la función de siempre hace un
+  `update`;
+- los eventos manuales de antes siguen funcionando exactamente igual;
+- y si alguien borra el evento **desde el calendario**, la tarjeta no se
+  queda apuntando a un fantasma.
+
+Esto último merece su propio párrafo, porque una mutación enseñó lo que
+pasaba sin ello: sin `on delete set null` en la clave ajena, borrar un
+evento desde el calendario **fallaba con una violación de clave ajena**.
+Es decir, el módulo nuevo habría roto una función que ya existía. Con
+`on delete set null`, la tarjeta se queda sin evento y nadie se entera.
+
+### 3. «Hecha» y «archivada» son dos cosas distintas
+
+Se pidió distinguirlas y están separadas en la propia tabla:
+
+- `done` · está hecha, sigue en su lista, a la vista, y se desmarca;
+- `archived_at` · fuera del tablero, pero **no se ha borrado nada**:
+  sigue entera, con su checklist y con su estado.
+
+Una tarjeta archivada puede estar hecha o pendiente, y las dos se
+recuperan igual, a su lista o a otra.
+
+### 4. Una lista se borra solo si está vacía
+
+«Nunca se deben eliminar tareas accidentalmente». La regla más simple
+que cumple eso: `delete_internal_list` se niega si la lista tiene
+tarjetas, **y las archivadas cuentan igual que las activas**. Si no
+contaran, borrar una lista se llevaría por delante el histórico que se
+pidió conservar.
+
+El error dice el camino: muévelas a otra lista. La clave ajena lleva
+`on delete restrict` como red por si alguien lo intenta desde Supabase.
+
+### 5. Dos maneras de mover una tarjeta, y las dos hacen falta
+
+Arrastrando, con el mismo arrastre nativo que ya usa el calendario
+(`CalendarWeek`), sin añadir ninguna biblioteca. Y con el desplegable
+«Lista» de la tarjeta abierta.
+
+El desplegable **no es un premio de consolación**: el arrastre nativo
+del navegador no funciona con el dedo en una pantalla táctil, así que en
+el móvil es el único camino.
+
+### 6. Lo que se borra de verdad, y lo que lo destapó
+
+La primera versión concedía `delete` a las tres tablas. La prueba
+`borrados` del archivo `70_tests_fase7` falló enseguida: el proyecto
+mantiene una regla —«el único borrado que queda abierto es el de la
+papelera»— que ninguna documentación recogía.
+
+Se respetó. Lo poco que hace falta borrar (una lista vacía, un elemento
+del checklist) va por funciones `security definer`. Las tarjetas no se
+borran nunca.
+
+Otra prueba del mismo archivo, `indices`, exigió índices no parciales
+para cada clave ajena. También se respetó.
+
+### 7. Sin historial y sin datos de ejemplo
+
+`trg_audit` tendría que aprender tres tablas para escribir cosas como
+«marcó una casilla del checklist», que es ruido. El histórico que sí se
+pidió es otro: las tarjetas archivadas, y eso se resuelve con una
+columna.
+
+Y el tablero nace vacío a propósito: las listas las decide
+administración. Sin filas de ejemplo no hay nada que limpiar, así que
+las tablas no llevan `is_demo` y `clear_demo` no se toca.

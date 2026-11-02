@@ -156,8 +156,10 @@ try {
   // FASE 4 · eran 14; se retiró «Órdenes de trabajo» y quedaron 13.
   // M6 · entra «Proveedores» y vuelven a ser 14.
   // MEJORA 6 · entra «Solicitudes» —la bandeja del correo— y son 15.
-  check('El menú de administración tiene las 15 secciones',
-    (await page.locator('.sidebar nav a').count()) === 15,
+  // Y entra «Gestiones internas» —el tablero que sustituye al Trello
+  // interno— y son 16.
+  check('El menú de administración tiene las 16 secciones',
+    (await page.locator('.sidebar nav a').count()) === 16,
     String(await page.locator('.sidebar nav a').count()));
 
   // ---------------------------------------------------------------------
@@ -264,7 +266,10 @@ try {
   // estaba: esta lista lo deja fijado para que no se mueva.
   const expected = ['Dashboard', 'Solicitudes', 'Presupuestos', 'Obras', 'Proyectos',
     'Partes de trabajo', 'Material pendiente', 'Proveedores', 'Calendario', 'Avisos',
-    'Clientes', 'Trabajadores', 'Facturación', 'Informes', 'Configuración'];
+    'Clientes', 'Trabajadores', 'Facturación', 'Informes',
+    // «Gestiones internas» va DEBAJO de Informes y ANTES de
+    // Configuración, que es donde se pidió. Esta lista lo deja fijado.
+    'Gestiones internas', 'Configuración'];
   check('Las secciones son exactamente las previstas',
     menu.length === expected.length
     && expected.every((label, i) => menu[i].includes(label)), menu.join(' | '));
@@ -288,9 +293,27 @@ try {
   check('El panel cuenta los proyectos activos y los finalizados',
     proyectos[0] === '2' && proyectos[2] === '1', proyectos.join(' | '));
 
-  const porFase = await page.locator('.bar-list .bar-value').allInnerTexts();
+  /*
+    EL REPARTO POR FASE, LEÍDO POR SU NOMBRE Y NO POR SU POSICIÓN.
+
+    Antes esto cogía los cuatro primeros valores y los comparaba con
+    «1 1 0 0». Al entrar la fase «Pendiente de visita técnica» delante
+    de todas, las barras se corrieron un sitio y la prueba falló sin que
+    hubiera nada roto. Leer cada barra por su etiqueta dice lo mismo,
+    aguanta que entren más fases y, cuando falla, se entiende por qué.
+  */
+  const barra = async (etiqueta) => (await page
+    .locator('.bar-list .bar-row', { has: page.locator(`.bar-label:text-is("${etiqueta}")`) })
+    .locator('.bar-value').innerText()).trim();
+
+  const filas = await page.locator('.bar-list .bar-row').count();
+  check('El reparto por fase enseña una barra por fase activa', filas === 5, `${filas} barras`);
   check('Y reparte los proyectos por fase',
-    porFase.slice(0, 4).join(' ') === '1 1 0 0', porFase.join(' '));
+    await barra('En preparación') === '1' && await barra('Fabricación') === '1'
+    && await barra('Montaje') === '0' && await barra('Facturación') === '0',
+    (await page.locator('.bar-list').innerText()).replace(/\n+/g, ' | '));
+  check('La fase de visita técnica también tiene su barra, y está vacía',
+    await barra('Pendiente de visita técnica') === '0');
 
   const alertas = await page.locator('.alert-list').innerText();
   // M2: el aviso cuenta SOLO las visitas, porque desde entonces los

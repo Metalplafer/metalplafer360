@@ -33,6 +33,7 @@ const CalendarPage = lazy(() => import('@/pages/admin/CalendarPage'));
 const BillingPage = lazy(() => import('@/pages/admin/BillingPage'));
 const ReportsPage = lazy(() => import('@/pages/admin/ReportsPage'));
 const SettingsPage = lazy(() => import('@/pages/admin/SettingsPage'));
+const InternasPage = lazy(() => import('@/pages/admin/InternasPage'));
 const WorkersPage = lazy(() => import('@/pages/admin/WorkersPage'));
 const AdminModule = lazy(() => import('@/pages/admin/ModulePage'));
 const WorkerHome = lazy(() => import('@/pages/worker/Home'));
@@ -118,6 +119,15 @@ export function App() {
             <Route path="facturacion" element={<Lazy><BillingPage /></Lazy>} />
 
             <Route path="informes" element={<Lazy><ReportsPage /></Lazy>} />
+            {/*
+              GESTIONES INTERNAS · el tablero de administración. Cuelga
+              de «/admin», que ya va dentro de «RequireRole role="admin"»,
+              así que un trabajador que escriba la dirección a mano es
+              devuelto a su zona sin que esta pantalla tenga que
+              comprobar nada. Y aunque llegara, las políticas de las
+              tablas no le darían ni una fila.
+            */}
+            <Route path="internas" element={<Lazy><InternasPage /></Lazy>} />
             <Route path="trabajadores" element={<Lazy><WorkersPage /></Lazy>} />
             <Route path="configuracion" element={<Lazy><SettingsPage /></Lazy>} />
 

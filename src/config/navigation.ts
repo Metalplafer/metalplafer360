@@ -1,6 +1,7 @@
 import {
   BarChart3, Boxes, Building2, CalendarDays, ClipboardList, FileStack, FileText, FolderKanban,
-  HardHat, Home, Inbox, LayoutDashboard, Receipt, Settings, Siren, Truck, UserRound, Users,
+  HardHat, Home, Inbox, LayoutDashboard, ListChecks, Receipt, Settings, Siren, Truck,
+  UserRound, Users,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -40,6 +41,11 @@ export const ADMIN_NAV: NavItem[] = [
   { path: '/admin/trabajadores', label: 'Trabajadores', icon: Users },
   { path: '/admin/facturacion', label: 'Facturación', icon: Receipt },
   { path: '/admin/informes', label: 'Informes', icon: BarChart3 },
+  // GESTIONES INTERNAS · el tablero que sustituye al Trello interno.
+  // Va aquí, entre Informes y Configuración: es trabajo de oficina, no
+  // de obra, y por eso no se mezcla con presupuestos, proyectos y
+  // partes, que es lo que se mira a diario.
+  { path: '/admin/internas', label: 'Gestiones internas', icon: ListChecks },
   { path: '/admin/configuracion', label: 'Configuración', icon: Settings },
 ];
 

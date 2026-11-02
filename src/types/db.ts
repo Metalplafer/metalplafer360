@@ -1084,3 +1084,61 @@ export interface WorkSummary {
   extras_facturados: number;
   extras_pendientes: number;
 }
+
+/* =====================================================================
+   GESTIONES INTERNAS · el tablero que sustituye al Trello interno
+   ===================================================================== */
+
+/** Una columna del tablero: RRHH, MULTAS, lo que haga falta. */
+export interface InternalList {
+  id: string;
+  name: string;
+  position: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Un elemento del checklist de una tarjeta. */
+export interface InternalTaskItem {
+  id: string;
+  task_id: string;
+  text: string;
+  done: boolean;
+  position: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** La tarjeta, tal como está guardada. */
+export interface InternalTask {
+  id: string;
+  list_id: string;
+  title: string;
+  notes: string | null;
+  /** Hecha. NO es lo mismo que archivada: sigue en su lista y se puede desmarcar. */
+  done: boolean;
+  done_at: string | null;
+  position: number;
+  /** Fuera del tablero, pero conservada entera con su checklist. */
+  archived_at: string | null;
+  /** El evento de «Otros» asociado, si lo tiene. */
+  calendar_note_id: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * La tarjeta tal como la pinta el tablero: con el nombre de su lista, el
+ * progreso de su checklist y los datos de su evento. Viene de la vista
+ * «internal_board», que lo resuelve en una sola consulta.
+ */
+export interface InternalCard extends InternalTask {
+  list_name: string;
+  list_position: number;
+  event_day: string | null;
+  event_title: string | null;
+  checklist_total: number;
+  checklist_hechos: number;
+}

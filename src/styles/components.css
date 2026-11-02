@@ -861,3 +861,145 @@
   max-height: 420px; overflow: auto;
   overflow-wrap: anywhere;
 }
+
+/* =====================================================================
+   GESTIONES INTERNAS · EL TABLERO
+   Listas en horizontal con sus tarjetas dentro, al estilo del Trello
+   que sustituye, pero con la paleta y los bordes de METALPLAFER360.
+   ===================================================================== */
+
+/* El carril horizontal. En el móvil se desliza con el dedo, y el
+   «padding» de abajo deja sitio a la barra de desplazamiento sin que
+   tape la última tarjeta. */
+.kanban {
+  display: flex;
+  gap: var(--s3);
+  align-items: flex-start;
+  overflow-x: auto;
+  overflow-y: visible;
+  padding: var(--s3) 0 var(--s4);
+  scroll-snap-type: x proximity;
+}
+
+.kanban-col {
+  flex: 0 0 290px;
+  max-width: 290px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 10px;
+  scroll-snap-align: start;
+  transition: border-color .12s, background .12s;
+}
+/* La columna sobre la que se está soltando una tarjeta. */
+.kanban-col.encima { border-color: var(--blue); background: var(--panel); }
+
+.kanban-head {
+  display: flex; align-items: center; gap: 6px;
+  margin-bottom: 8px; min-height: 30px;
+}
+.kanban-head .input { height: 30px; font-size: .92rem; font-weight: 600; }
+
+/* El nombre es un botón porque al pulsarlo se renombra, pero tiene que
+   leerse como un título, no como un botón. */
+.kanban-nombre {
+  flex: 1; min-width: 0;
+  background: none; border: 0; padding: 2px 4px; margin: 0;
+  font: inherit; font-weight: 700; font-size: .95rem; color: var(--ink);
+  text-align: left; text-transform: uppercase; letter-spacing: .02em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  cursor: text; border-radius: var(--r-sm);
+}
+.kanban-nombre:hover { background: var(--surface); }
+
+.kanban-n {
+  font-size: .78rem; font-weight: 600; color: var(--muted);
+  background: var(--surface); border-radius: 999px; padding: 1px 7px;
+}
+
+.kanban-cards { display: flex; flex-direction: column; gap: 6px; }
+
+.kanban-card {
+  display: flex; align-items: flex-start; gap: 7px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 8px 9px;
+  cursor: grab;
+}
+.kanban-card:hover { border-color: var(--line-strong); }
+.kanban-card.moviendo { opacity: .45; cursor: grabbing; }
+/* Hecha: se ve que está hecha, pero sigue ahí y se puede desmarcar. */
+.kanban-card.hecha .kanban-title { color: var(--muted); text-decoration: line-through; }
+
+.kanban-tick { width: 15px; height: 15px; margin-top: 2px; cursor: pointer; flex: 0 0 auto; }
+
+.kanban-title {
+  flex: 1; min-width: 0;
+  background: none; border: 0; padding: 0; margin: 0;
+  font: inherit; font-size: .88rem; line-height: 1.35; color: var(--ink);
+  text-align: left; cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.kanban-title:hover { text-decoration: underline; }
+
+/* Los avisos de la tarjeta: notas, checklist y fecha del calendario. */
+.kanban-pies {
+  flex-basis: 100%;
+  display: flex; flex-wrap: wrap; gap: 8px;
+  margin-top: 5px; padding-left: 22px;
+  font-size: .74rem; color: var(--muted);
+}
+.kanban-pies span { display: inline-flex; align-items: center; gap: 3px; }
+.kanban-pies .ok { color: var(--ok); font-weight: 600; }
+
+.kanban-add {
+  display: flex; align-items: center; gap: 5px;
+  width: 100%; margin-top: 2px; padding: 7px 9px;
+  background: none; border: 0; border-radius: var(--r-md);
+  font: inherit; font-size: .85rem; color: var(--muted);
+  text-align: left; cursor: pointer;
+}
+.kanban-add:hover { background: var(--surface); color: var(--ink); }
+
+.kanban-nueva { display: flex; flex-direction: column; gap: 6px; }
+.kanban-nueva .textarea { font-size: .88rem; }
+
+.kanban-nueva-lista {
+  display: flex; flex-direction: column; gap: 8px;
+  align-items: flex-start; justify-content: flex-start;
+  min-height: 52px;
+  font: inherit; font-size: .9rem; font-weight: 600; color: var(--muted);
+  cursor: pointer;
+}
+button.kanban-nueva-lista { flex-direction: row; align-items: center; }
+button.kanban-nueva-lista:hover { border-color: var(--line-strong); color: var(--ink); }
+
+/* El checklist, dentro de la tarjeta abierta. */
+.check-barra {
+  height: 5px; border-radius: 999px; background: var(--surface);
+  overflow: hidden; margin-bottom: 10px;
+}
+.check-barra span { display: block; height: 100%; background: var(--ok); transition: width .15s; }
+
+.check-list { list-style: none; margin: 0 0 10px; padding: 0; }
+.check-list li {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 0; border-bottom: 1px solid var(--line);
+}
+.check-list li:last-child { border-bottom: 0; }
+.check-list label {
+  flex: 1; display: flex; align-items: center; gap: 8px;
+  cursor: pointer; font-size: .9rem; overflow-wrap: anywhere;
+}
+.check-list li.hecho label span { color: var(--muted); text-decoration: line-through; }
+.check-nuevo { display: flex; gap: 6px; }
+.check-nuevo .input { flex: 1; }
+
+/* En el móvil las columnas se estrechan para que se intuya que hay más
+   a la derecha. Arrastrar con el dedo NO funciona —el arrastre nativo
+   del navegador es de ratón—, así que ahí se mueve con el desplegable
+   «Lista» de la tarjeta abierta. */
+@media (max-width: 560px) {
+  .kanban-col { flex-basis: 85vw; max-width: 85vw; }
+}
