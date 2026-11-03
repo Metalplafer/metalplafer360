@@ -1141,4 +1141,6 @@ export interface InternalCard extends InternalTask {
   event_title: string | null;
   checklist_total: number;
   checklist_hechos: number;
+  /** Cuántos archivos lleva adjuntos. Lo cuenta la vista, no la pantalla. */
+  adjuntos: number;
 }

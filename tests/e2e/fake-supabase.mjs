@@ -2613,6 +2613,40 @@ export async function stubSupabase(context, {
       return json(tarea);
     }
 
+    /*
+     * PACK 2 · MEJORA 6 · eliminar una tarjeta.
+     *
+     * Las MISMAS reglas que la migración 71: se lleva el checklist y
+     * los adjuntos, devuelve SOLO las rutas de esta tarjeta, y NO toca
+     * el evento del calendario.
+     */
+    if (path === '/rest/v1/rpc/delete_internal_task') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const tarea = db.internal_tasks.find((x) => x.id === body()?.p_task);
+      if (!tarea) return fail('No se encuentra la tarea', 'P0002');
+
+      const mios = (db.documents ?? []).filter((d) => d.internal_task_id === tarea.id);
+      const rutas = mios.map((d) => d.storage_path);
+      db.documents = (db.documents ?? []).filter((d) => d.internal_task_id !== tarea.id);
+      db.internal_task_items = db.internal_task_items.filter((i) => i.task_id !== tarea.id);
+      db.internal_tasks = db.internal_tasks.filter((x) => x.id !== tarea.id);
+      // El evento se queda en «calendar_notes», a propósito.
+      return json(rutas);
+    }
+
+    if (path === '/rest/v1/rpc/delete_internal_task_file') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const doc = (db.documents ?? []).find((d) => d.id === body()?.p_document);
+      if (!doc) return fail('No se encuentra el archivo', 'P0002');
+      // Solo vale para adjuntos de tarjeta: si no, serviría para
+      // saltarse la papelera de cualquier documento.
+      if (!doc.internal_task_id) {
+        return fail('Este archivo no es de una tarjeta de Gestiones internas');
+      }
+      db.documents = db.documents.filter((d) => d.id !== doc.id);
+      return json(doc.storage_path);
+    }
+
     if (path === '/rest/v1/rpc/delete_internal_task_item') {
       if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
       const antes = db.internal_task_items.length;
@@ -3577,6 +3611,9 @@ export async function stubSupabase(context, {
           event_title: nota?.title ?? null,
           checklist_total: items.length,
           checklist_hechos: items.filter((i) => i.done).length,
+          // PACK 2 · MEJORA 5 · cuántos archivos lleva adjuntos.
+          adjuntos: (db.documents ?? []).filter(
+            (d) => d.internal_task_id === t.id && !d.deleted_at).length,
         };
       });
 
@@ -3680,6 +3717,43 @@ export async function stubSupabase(context, {
             delCorreo(sol).forEach((d) => rows.push(filaCorreo('proyecto', pr.id, sol, d)));
           }
         });
+      });
+
+      /*
+       * PACK 2 · MEJORA 3 · las fotos de un PARTE, vistas desde el
+       * proyecto o el aviso sobre el que se hizo. Las ramas 7 y 8 de la
+       * vista.
+       *
+       * Un parte sin proyecto ni aviso no entra por ningún lado: no hay
+       * con qué emparejarlo, y eso es lo correcto.
+       */
+      const delParte = (parte) => db.documents.filter(
+        (d) => d.report_id === parte.id && !d.deleted_at,
+      );
+      const filaParte = (paraTipo, paraId, parte, d) => {
+        const quien = people.find((x) => x.id === d.uploaded_by) ?? null;
+        return {
+          para_tipo: paraTipo, para_id: paraId,
+          origen_tipo: 'parte', origen_id: parte.id, origen_code: parte.code,
+          origen_fecha: parte.work_date ?? null,
+          id: d.id, bucket: d.bucket, storage_path: d.storage_path,
+          file_name: d.file_name, mime_type: d.mime_type, size_bytes: d.size_bytes,
+          category: d.category, scope: d.scope, uploaded_by: d.uploaded_by ?? null,
+          uploader_name: quien?.full_name ?? null, created_at: d.created_at,
+        };
+      };
+      (db.work_reports ?? []).forEach((parte) => {
+        if (parte.project_id && db.projects.some((p) => p.id === parte.project_id)) {
+          delParte(parte).forEach((d) => rows.push(
+            filaParte('proyecto', parte.project_id, parte, d)));
+        }
+        if (parte.ficha_id) {
+          const o = db.fichas.find((f) => f.id === parte.ficha_id);
+          if (o) {
+            const tipo = o.type === 'aviso' ? 'aviso' : 'presupuesto';
+            delParte(parte).forEach((d) => rows.push(filaParte(tipo, o.id, parte, d)));
+          }
+        }
       });
 
       return json(applyFilters(rows, url));

@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
-import { Archive, CalendarPlus, Check, Plus, Trash2 } from 'lucide-react';
+import { Archive, CalendarPlus, Check, Plus, Trash2, X } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { Field } from '@/components/ui/Layout';
+import { DocumentsPanel } from '@/components/shared/DocumentsPanel';
 import { useDialogs } from '@/components/ui/Dialogs';
 import { fmtDate, todayMadrid } from '@/lib/format';
 import {
-  addTaskItem, archiveInternalTask, clearTaskEvent, deleteTaskItem, listTaskItems,
-  moveInternalTask, setInternalTaskDone, setTaskEvent, updateInternalTask, updateTaskItem,
+  addTaskItem, archiveInternalTask, clearTaskEvent, deleteInternalTask, deleteTaskItem,
+  listTaskItems, moveInternalTask, setInternalTaskDone, setTaskEvent, updateInternalTask,
+  updateTaskItem,
 } from '@/services/internas';
 import type { InternalCard, InternalList, InternalTaskItem } from '@/types/db';
 
@@ -87,6 +89,30 @@ export function InternalTaskModal({ card, lists, onClose, onChange }: {
     });
     if (!ok) return;
     await intentar(() => archiveInternalTask(card.id), 'Tarjeta archivada');
+    onClose();
+  }
+
+  /**
+   * ELIMINAR · se explica lo que se lleva y lo que NO se lleva, porque
+   * es justo lo que la gente no espera: el evento del calendario se
+   * queda. Y se dice en qué se diferencia de archivar, que está al
+   * lado y hace otra cosa.
+   */
+  async function eliminar() {
+    const ok = await confirm({
+      title: 'Eliminar la tarjeta',
+      message: <>
+        «{card.title}» <strong>se eliminará para siempre</strong>, con su checklist y sus
+        archivos adjuntos. No es lo mismo que archivarla: una tarjeta archivada se conserva
+        y se puede recuperar; esta no aparecerá ni en el tablero ni en «Tareas archivadas».
+        {card.event_day ? <> Su evento del calendario <strong>no se borra</strong>: se queda
+          en el calendario y se quita desde allí.</> : null}
+      </>,
+      confirmLabel: 'Eliminar para siempre',
+      danger: true,
+    });
+    if (!ok) return;
+    await intentar(() => deleteInternalTask(card.id), 'Tarjeta eliminada');
     onClose();
   }
 
@@ -179,6 +205,21 @@ export function InternalTaskModal({ card, lists, onClose, onChange }: {
           </div>
         </section>
 
+        {/*
+          ---------------- LOS ADJUNTOS ----------------
+
+          EL MISMO panel de documentos que usan los presupuestos, los
+          proyectos y la bandeja de correo. No es un sistema aparte: un
+          dueño más en «documents» (migración 71), con su categoría, su
+          visor, su descarga y sus permisos.
+
+          Van a «internas/<tarjeta>/…», una carpeta que la función de
+          permisos del almacén no reconoce, así que solo administración
+          llega a lo que hay dentro.
+        */}
+        <DocumentsPanel owner={{ internalTaskId: card.id }} title="Archivos adjuntos"
+                        onChange={onChange} />
+
         {/* ---------------- EL CALENDARIO ---------------- */}
         <section className="panel" style={{ margin: 0 }}>
           <div className="panel-head"><h2>Calendario</h2></div>
@@ -238,9 +279,16 @@ export function InternalTaskModal({ card, lists, onClose, onChange }: {
           </div>
         </section>
 
+        {/*
+          ARCHIVAR Y ELIMINAR, uno al lado del otro y bien distintos.
+          Archivar es gris y guarda; eliminar es rojo y no se deshace.
+        */}
         <div className="row">
           <button type="button" className="btn btn-ghost" onClick={archivar} disabled={busy}>
             <Archive size={15} />Archivar la tarjeta
+          </button>
+          <button type="button" className="btn btn-danger" onClick={eliminar} disabled={busy}>
+            <X size={15} />Eliminar la tarjeta
           </button>
         </div>
       </div>

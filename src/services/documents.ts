@@ -18,7 +18,13 @@ export type DocOwner =
    * MISMO panel de documentos que los presupuestos: un dueño más, no un
    * segundo sistema de archivos.
    */
-  | { mailRequestId: string };
+  | { mailRequestId: string }
+  /**
+   * PACK 2 · MEJORA 5 · Los adjuntos de una tarjeta de Gestiones
+   * internas. Un dueño más, igual que el correo: no hay un segundo
+   * sistema de archivos ni un «bucket» nuevo.
+   */
+  | { internalTaskId: string };
 
 function ownerColumn(owner: DocOwner) {
   if ('fichaId' in owner) return { column: 'ficha_id', id: owner.fichaId, folder: `fichas/${owner.fichaId}` };
@@ -31,6 +37,16 @@ function ownerColumn(owner: DocOwner) {
   // dentro. Se comprobó leyendo «storage_can_read»: cae en «else false».
   if ('mailRequestId' in owner) {
     return { column: 'mail_request_id', id: owner.mailRequestId, folder: `mail/${owner.mailRequestId}` };
+  }
+  // PACK 2 · MEJORA 5 · «internas/» tampoco la conoce
+  // «storage_can_read», así que cae en «else false» y solo
+  // administración lee lo que hay dentro. Se comprobó leyendo la
+  // función; no se ha modificado.
+  if ('internalTaskId' in owner) {
+    return {
+      column: 'internal_task_id', id: owner.internalTaskId,
+      folder: `internas/${owner.internalTaskId}`,
+    };
   }
   return { column: 'order_id', id: owner.orderId, folder: `orders/${owner.orderId}` };
 }

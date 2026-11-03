@@ -1191,3 +1191,106 @@ columna.
 Y el tablero nace vacío a propósito: las listas las decide
 administración. Sin filas de ejemplo no hay nada que limpiar, así que
 las tablas no llevan `is_demo` y `clear_demo` no se toca.
+
+
+## PACK 2 · Documentos, permisos de trabajadores y Gestiones internas
+
+### 1. Por qué los PDF de origen no tenían ojo
+
+No era cosa de los PDF ni de Storage. `RelatedDocsPanel` condicionaba el
+botón a `isViewable(d)`, que solo admite fotos y vídeos. El panel de
+documentos de siempre lo pinta **sin condición** y deja que `ver()`
+decida el destino: al visor si es foto o vídeo, a una pestaña con enlace
+firmado si no.
+
+Por eso el mismo PDF subido a mano sí se abría y el llegado por correo
+no. Se igualaron los dos paneles. No hay un segundo visor, y los
+permisos no se tocan: el enlace lo firma Supabase o no lo firma.
+
+### 2. La mejora de los trabajadores era solo backend
+
+Las páginas del trabajador **ya tenían** `DocumentsPanel` y
+`CommentsPanel`, y ninguno de los dos mira el rol. Lo que faltaba era
+permiso, y solo en un sitio:
+
+| | Antes | Ahora |
+|---|---|---|
+| Comentar en su proyecto o aviso | ya se podía | igual |
+| Subir a su proyecto | ya se podía | igual |
+| **Leer** archivos de su aviso | ya se podía | igual |
+| **Subir** a su aviso | **no** | sí, si está asignado |
+
+Esa asimetría era todo el agujero. Se cierra con una rama en
+`documents_insert` y otra en `storage_can_upload`, porque son **dos
+puertas**: con la política sola, la fila entra y el archivo no.
+
+No se abrió nada más. Sigue exigiéndose `uploaded_by = auth.uid()`,
+`scope = 'tecnica'` y que el aviso sea suyo y no esté archivado.
+
+### 3. Las fotos de los partes no se copian
+
+Dos ramas más en `related_documents`, que es la que ya hacía esto con
+presupuestos, visitas y correos. Cero archivos duplicados y cero cambios
+de esquema: el archivo sigue siendo del parte, y se mira desde el
+proyecto o el aviso.
+
+Un parte sin proyecto ni aviso no empareja con nada y no aparece. Ni
+error, ni fila con el destino en nulo —que sería peor, porque se colaría
+en cualquier consulta—.
+
+### 4. El texto vertical era una línea de CSS
+
+`.kanban-card` era `display: flex` sin `flex-wrap`. La línea de pies
+—notas, checklist, fecha— lleva `flex-basis: 100%` para ocupar su propia
+línea, pero sin `wrap` intentaba caber **al lado** del título y lo dejaba
+en **0 px de ancho**. Con `overflow-wrap: anywhere` puesto, el navegador
+hace lo único que puede: partir cada palabra letra a letra.
+
+De ahí que solo pasara en tarjetas **con** nota o checklist: sin ellas no
+se dibujan los pies y no hay quien estruje.
+
+La prueba lo mide en píxeles, no en texto. Una comprobación de contenido
+no habría visto nada: el texto estaba, solo que en columna. Al quitar el
+`flex-wrap`, la prueba dice «título 0 px de 268 px».
+
+Y se le puso techo de cuatro líneas al título, para que una nota larga no
+estire la tarjeta sin fin. El texto completo está al abrirla y en el
+`title` del botón.
+
+### 5. Los adjuntos de una tarjeta son archivos normales
+
+Una columna de dueño más en `documents` —`internal_task_id`—, como se
+hizo con los proyectos, las órdenes, los partes, las obras y los correos.
+Mismo panel, mismo visor, misma cuota. No hay bucket nuevo ni rutas
+inventadas.
+
+Y **no hizo falta tocar Storage**: las dos funciones de permisos empiezan
+por `is_admin()`, así que administración ya llegaba; y `internas/` no
+está entre las carpetas que reconocen, así que cae en su `else false` y
+ningún trabajador llega. Se comprobó leyendo las funciones, y hay pruebas
+que lo fijan.
+
+Lo que sí hubo que regenerar es `documents_one_owner`: sin contar la
+columna nueva, `num_nonnulls` habría dado cero y ningún adjunto habría
+entrado.
+
+### 6. Eliminar una tarjeta: qué se lleva y qué no
+
+- el **checklist**, por su clave ajena en cascada;
+- los **adjuntos**, por la clave ajena nueva;
+- el **evento del calendario, NO**.
+
+Lo último es la decisión que importa. Una tarjeta apunta a una nota
+normal de `calendar_notes`: puede haberse mirado, comentado o contado con
+ella. Borrar la tarjeta no es decir que la reunión no existe. Se queda, y
+de ahí se quita desde el calendario.
+
+Los archivos del almacén no se borran a ciegas: la función devuelve **las
+rutas de esa tarjeta y solo de esa**, y la pantalla las retira. Si la
+retirada fallara, lo peor que queda es un archivo sin dueño; lo que no
+puede pasar es llevarse el de otro. Una mutación lo comprobó: al
+devolver todas las rutas en vez de las suyas, la prueba cayó.
+
+`delete_internal_task_file` lleva la misma vigilancia: se niega si el
+documento no es de una tarjeta. Sin eso, serviría para borrar el plano de
+cualquier obra saltándose la papelera.

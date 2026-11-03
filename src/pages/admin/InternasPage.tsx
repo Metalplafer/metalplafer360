@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
-import { Archive, CalendarDays, CheckSquare, ListChecks, Plus, Undo2, X } from 'lucide-react';
+import {
+  Archive, CalendarDays, CheckSquare, ListChecks, Paperclip, Plus, Undo2, X,
+} from 'lucide-react';
 import { useAsync } from '@/hooks/useAsync';
 import { useDialogs } from '@/components/ui/Dialogs';
 import { Badge, PageHeader, Tabs } from '@/components/ui/Layout';
@@ -238,10 +240,16 @@ export default function InternasPage() {
                         <input type="checkbox" className="kanban-tick" checked={c.done}
                                aria-label={`Marcar «${c.title}» como realizada`}
                                onChange={() => intentar(() => setInternalTaskDone(c.id, !c.done))} />
-                        <button type="button" className="kanban-title" onClick={() => setAbierta(c.id)}>
+                        {/*
+                          El «title» completo, porque la tarjeta recorta
+                          a cuatro líneas: así se lee entero al pasar el
+                          ratón sin tener que abrirla.
+                        */}
+                        <button type="button" className="kanban-title" title={c.title}
+                                onClick={() => setAbierta(c.id)}>
                           {c.title}
                         </button>
-                        {(c.checklist_total > 0 || c.event_day || c.notes) && (
+                        {(c.checklist_total > 0 || c.event_day || c.notes || c.adjuntos > 0) && (
                           <div className="kanban-pies">
                             {c.notes && <span title="Tiene notas" aria-label="Tiene notas">≡</span>}
                             {c.checklist_total > 0 && (
@@ -253,6 +261,12 @@ export default function InternasPage() {
                             {c.event_day && (
                               <span title={`En el calendario el ${fmtDate(c.event_day)}`}>
                                 <CalendarDays size={12} />{fmtDate(c.event_day)}
+                              </span>
+                            )}
+                            {/* Discreto: el clip y el número, nada más. */}
+                            {c.adjuntos > 0 && (
+                              <span title={`${c.adjuntos} archivo(s) adjunto(s)`}>
+                                <Paperclip size={12} />{c.adjuntos}
                               </span>
                             )}
                           </div>

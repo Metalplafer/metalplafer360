@@ -70,6 +70,17 @@ export function RelatedDocsPanel({ paraTipo, paraId, reloadKey }: {
     } catch (e) { toast.error(e); }
   }
 
+  /**
+   * A dónde lleva el ojo. La MISMA decisión que toma «ver» en el panel
+   * de documentos de siempre: si es una foto o un vídeo que ya tiene su
+   * enlace, al visor de la aplicación; si no —un PDF, un plano—, a otra
+   * pestaña con un enlace firmado.
+   */
+  function ver(d: RelatedDocument) {
+    const i = verlos.findIndex((v) => v.id === d.id);
+    if (i >= 0) setViendo(i); else abrir(d);
+  }
+
   // Mientras carga por primera vez no se enseña nada: si al final no hay
   // nada heredado, habría aparecido y desaparecido un panel vacío.
   if (docs.loading && !docs.data) return null;
@@ -130,11 +141,27 @@ export function RelatedDocsPanel({ paraTipo, paraId, reloadKey }: {
                   </Link>
                 </span>
               </span>
-              {isViewable(d) && enlaces[d.storage_path] && (
-                <button className="btn btn-ghost icon-btn"
-                        onClick={() => setViendo(verlos.findIndex((v) => v.id === d.id))}
-                        aria-label={`Ver ${d.file_name}`}><Eye /></button>
-              )}
+              {/*
+                EL OJO VA SIEMPRE, igual que en el panel de documentos
+                de siempre.
+
+                Antes estaba condicionado a «isViewable», que solo dice
+                que sí a fotos y vídeos. Por eso un PDF llegado por
+                correo solo se podía descargar, mientras que el MISMO
+                PDF subido a mano a la ficha sí se abría: el panel de
+                siempre pinta el ojo sin condición y deja que «ver»
+                decida a dónde va.
+
+                Aquí se hace lo mismo y con las piezas que ya había:
+                foto o vídeo → el visor de la aplicación; cualquier otra
+                cosa → «abrir», que pide un enlace firmado y lo abre en
+                otra pestaña. Es el camino que ya usaba el botón de
+                descargar, así que los permisos son exactamente los
+                mismos: sin derecho sobre el archivo, Supabase no firma
+                el enlace y no hay nada que abrir.
+              */}
+              <button className="btn btn-ghost icon-btn" onClick={() => ver(d)}
+                      aria-label={`Ver ${d.file_name}`}><Eye /></button>
               <button className="btn btn-ghost icon-btn" onClick={() => abrir(d, true)}
                       aria-label={`Descargar ${d.file_name}`}><Download /></button>
             </li>

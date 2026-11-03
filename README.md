@@ -80,6 +80,8 @@ documentos e historial.
 | Restauración completa o por apartados, con aviso y confirmación | ✅ Funcionando |
 | Alta de trabajadores y cambio de contraseña | ✅ Funcionando |
 | Gestiones internas: tablero tipo Trello para RRHH, multas y papeleo | ✅ Funcionando |
+| Gestiones internas: adjuntos en las tarjetas y eliminación | ✅ Funcionando |
+| El trabajador documenta su proyecto o aviso sin crear un parte | ✅ Funcionando |
 | Configuración: empresa, numeración, copias y almacenamiento | ✅ Funcionando |
 | Aplicación instalable en el móvil (PWA) | ✅ Funcionando |
 | Papelera de documentos, con recuperación | ✅ Funcionando |

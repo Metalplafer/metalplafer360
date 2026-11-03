@@ -919,8 +919,23 @@
 
 .kanban-cards { display: flex; flex-direction: column; gap: 6px; }
 
+/* El «flex-wrap» NO es decorativo: sin él, el texto sale en vertical.
+
+   «.kanban-pies» —las notas, el checklist y la fecha— lleva
+   «flex-basis: 100%» para ocupar su propia línea. Pero una fila flex es
+   «nowrap» por omisión, así que esa línea entera intentaba caber AL
+   LADO del título y lo estrujaba hasta dejarlo sin anchura. Con
+   «overflow-wrap: anywhere» puesto en el título, el navegador hace lo
+   único que puede: partir cada palabra letra a letra. De ahí la
+   columna de caracteres de la captura.
+
+   Por eso solo pasaba en las tarjetas CON nota, checklist o fecha: sin
+   nada de eso, «.kanban-pies» no se dibuja y no hay quien estruje.
+
+   Con «wrap», los pies bajan a su línea y el título recupera el ancho
+   de la tarjeta. El arreglo es esta línea; lo demás es explicarlo. */
 .kanban-card {
-  display: flex; align-items: flex-start; gap: 7px;
+  display: flex; flex-wrap: wrap; align-items: flex-start; gap: 7px;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--r-md);
@@ -939,7 +954,17 @@
   background: none; border: 0; padding: 0; margin: 0;
   font: inherit; font-size: .88rem; line-height: 1.35; color: var(--ink);
   text-align: left; cursor: pointer;
+  /* Parte las palabras largas para que una URL o una referencia sin
+     espacios no desborde la columna. Con el «flex-wrap» de la tarjeta
+     puesto, aquí ya hay anchura de sobra y no degenera en una letra
+     por línea. */
   overflow-wrap: anywhere;
+  /* Y un techo de cuatro líneas: una tarjeta no puede crecer sin fin.
+     Lo que no quepa se corta con puntos suspensivos y se lee entero al
+     abrirla, que es donde está el texto completo. El título va en el
+     «title» del botón, así que también se ve al pasar el ratón. */
+  display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .kanban-title:hover { text-decoration: underline; }
 

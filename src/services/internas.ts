@@ -1,4 +1,5 @@
 import { supabase, unwrap } from '@/lib/supabase';
+import { removeStoredFiles } from '@/services/documents';
 import type { InternalCard, InternalList, InternalTask, InternalTaskItem } from '@/types/db';
 
 /**
@@ -123,6 +124,36 @@ export async function restoreInternalTask(id: string, listId?: string | null) {
   return unwrap(await supabase.rpc('restore_internal_task', {
     p_task: id, p_list: listId ?? null,
   })) as InternalTask;
+}
+
+/**
+ * ELIMINAR UNA TARJETA · NO ES ARCHIVAR.
+ *
+ * Archivar la saca del tablero y la conserva entera. Esto la quita de
+ * los dos sitios, con su checklist y sus adjuntos.
+ *
+ * Lo que NO se lleva es su evento del calendario: una reunión que ya
+ * estaba puesta no deja de existir porque se borre la nota que la
+ * recordaba. Se queda en el calendario y de ahí se quita.
+ *
+ * El servidor devuelve las rutas de los archivos que quedan sueltos en
+ * el almacén y se retiran aquí. Si esa retirada fallara, lo peor que
+ * queda es un archivo sin dueño; lo que no puede pasar —y por eso el
+ * servidor filtra por la tarjeta— es llevarse el archivo de otro.
+ */
+export async function deleteInternalTask(id: string) {
+  const rutas = unwrap(await supabase.rpc('delete_internal_task', { p_task: id })) as string[];
+  if (rutas?.length) await removeStoredFiles(rutas);
+  return rutas ?? [];
+}
+
+/** Quita un adjunto de una tarjeta. Estos no van a la papelera. */
+export async function deleteInternalTaskFile(documentId: string) {
+  const ruta = unwrap(
+    await supabase.rpc('delete_internal_task_file', { p_document: documentId }),
+  ) as string | null;
+  if (ruta) await removeStoredFiles([ruta]);
+  return ruta;
 }
 
 // ---------------------------------------------------------------------
