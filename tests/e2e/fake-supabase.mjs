@@ -1895,21 +1895,122 @@ export async function stubSupabase(context, {
 
       if (!inicio) {
         // Sin fecha: la fase vuelve al cálculo automático.
-        if (esFab) { pr.fab_start = null; pr.fab_end = null; pr.fab_manual = false; }
-        else { pr.mont_start = null; pr.mont_end = null; pr.mont_manual = false; }
+        // PACK 3 · quitar las fechas se lleva la nota del tramo.
+        if (esFab) {
+          pr.fab_start = null; pr.fab_end = null; pr.fab_manual = false; pr.fab_note = null;
+        } else {
+          pr.mont_start = null; pr.mont_end = null; pr.mont_manual = false; pr.mont_note = null;
+        }
       } else {
         const dias = Math.max(diasDeTrabajo(
           esFab ? pr.budget_hours_fab : pr.budget_hours_mont,
           esFab ? pr.fab_workers : pr.mont_workers), 1);
         const hasta = fin ?? finDeTramo(inicio, dias);
-        if (esFab) { pr.fab_start = inicio; pr.fab_end = hasta; pr.fab_manual = true; }
-        else { pr.mont_start = inicio; pr.mont_end = hasta; pr.mont_manual = true; }
+        const nota = (body()?.p_note ?? '').trim() || null;
+        if (esFab) {
+          pr.fab_start = inicio; pr.fab_end = hasta; pr.fab_manual = true; pr.fab_note = nota;
+        } else {
+          pr.mont_start = inicio; pr.mont_end = hasta; pr.mont_manual = true; pr.mont_note = nota;
+        }
       }
       pr.updated_at = new Date().toISOString();
       registrar(`${actorName()} cambió a mano las fechas de `
         + `${esFab ? 'la fabricación' : 'el montaje'} de ${pr.code}: `
         + `${antes ?? 'sin fecha'} ⟶ ${inicio ?? 'sin fecha'}`, pr.code, 'projects');
       return json(pr);
+    }
+
+    /*
+     * PACK 3 · MOVER UN TRAMO DE UN PROYECTO A OTRO.
+     * Igual que la migración 72: se apoya en «set_phase_dates» en vez
+     * de repetir sus reglas, y lo hace de una sola vez.
+     */
+    if (path === '/rest/v1/rpc/move_phase_dates') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const fase = body()?.p_phase;
+      if (fase !== 'fabricacion' && fase !== 'montaje') return fail(`Fase desconocida: ${fase}`);
+      const destino = db.projects.find((x) => x.id === body()?.p_to);
+      if (!destino) return fail('No se encuentra el proyecto', 'P0002');
+
+      const origen = db.projects.find((x) => x.id === body()?.p_from);
+      const esFab = fase === 'fabricacion';
+      if (origen && origen.id !== destino.id) {
+        if (esFab) {
+          origen.fab_start = null; origen.fab_end = null;
+          origen.fab_manual = false; origen.fab_note = null;
+        } else {
+          origen.mont_start = null; origen.mont_end = null;
+          origen.mont_manual = false; origen.mont_note = null;
+        }
+      }
+      const inicio = body()?.p_start;
+      const fin = body()?.p_end ?? inicio;
+      const nota = (body()?.p_note ?? '').trim() || null;
+      if (esFab) {
+        destino.fab_start = inicio; destino.fab_end = fin;
+        destino.fab_manual = true; destino.fab_note = nota;
+      } else {
+        destino.mont_start = inicio; destino.mont_end = fin;
+        destino.mont_manual = true; destino.mont_note = nota;
+      }
+      destino.updated_at = new Date().toISOString();
+      return json(destino);
+    }
+
+    /*
+     * PACK 3 · EL BUSCADOR DE ADMINISTRACIÓN.
+     *
+     * Las MISMAS reglas que la función de la migración 72: solo
+     * administración, dos letras mínimo, busca también por el nombre
+     * del cliente, y una cosa que encaje por dos motivos sale UNA vez
+     * con la puntuación más alta.
+     */
+    if (path === '/rest/v1/rpc/search_admin') {
+      if (soloAdmin()) return fail('No tienes permisos para realizar esta acción.', '42501');
+      const v = (body()?.p_text ?? '').trim().toLowerCase();
+      if (v.length < 2) return json([]);
+
+      const nombreCliente = (id) => (db.clients.find((c) => c.id === id)?.name ?? '');
+      const punto = (code, titulo, cliente, extra) => Math.max(
+        code.toLowerCase() === v ? 100 : 0,
+        code.toLowerCase().startsWith(v) ? 90 : 0,
+        (titulo ?? '').toLowerCase().startsWith(v) ? 70 : 0,
+        (titulo ?? '').toLowerCase().includes(v) ? 50 : 0,
+        (cliente ?? '').toLowerCase().includes(v) ? 30 : 0,
+        (extra ?? '').toLowerCase().includes(v) ? 30 : 0,
+      );
+
+      const filas = [];
+      db.projects.filter((p) => !p.archived_at).forEach((p) => {
+        const cliente = nombreCliente(p.client_id);
+        const r = punto(p.code, p.name, cliente, `${p.address ?? ''} ${p.description ?? ''}`);
+        if (r > 0) {
+          filas.push({
+            tipo: 'proyecto', id: p.id, code: p.code, titulo: p.name, cliente,
+            estado: SUBSTATUS_ES[p.phase] ?? p.phase, extra: p.address ?? '',
+            fecha: p.fab_start ?? p.mont_start ?? (p.created_at ?? '').slice(0, 10),
+            relevancia: r,
+          });
+        }
+      });
+      db.fichas.filter((f) => !f.archived_at && (f.type === 'presupuesto' || f.type === 'aviso'))
+        .forEach((f) => {
+          const cliente = nombreCliente(f.client_id);
+          const r = punto(f.code, f.title, cliente, `${f.address ?? ''} ${f.description ?? ''}`);
+          if (r > 0) {
+            filas.push({
+              tipo: f.type, id: f.id, code: f.code, titulo: f.title, cliente,
+              estado: f.status, extra: f.address ?? '',
+              fecha: f.scheduled_date ?? (f.created_at ?? '').slice(0, 10),
+              relevancia: r,
+            });
+          }
+        });
+
+      filas.sort((a, b) => b.relevancia - a.relevancia
+        || String(b.fecha ?? '').localeCompare(String(a.fecha ?? ''))
+        || a.code.localeCompare(b.code));
+      return json(filas.slice(0, Math.min(body()?.p_limit ?? 20, 50)));
     }
 
     // FASE 1.3 · El periodo propio de la obra en el calendario.

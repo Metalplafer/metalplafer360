@@ -1294,3 +1294,104 @@ devolver todas las rutas en vez de las suyas, la prueba cayó.
 `delete_internal_task_file` lleva la misma vigilancia: se niega si el
 documento no es de una tarjeta. Sin eso, serviría para borrar el plano de
 cualquier obra saltándose la papelera.
+
+
+## PACK 3 · Buscador, calendario y notificaciones
+
+### 1. El calendario no necesitaba un sistema de eventos
+
+Se pedía «crear eventos de fabricación y montaje desde el calendario»,
+pero la planificación ya existía desde el archivo 30 y estaba donde
+tocaba: `projects.fab_start/fab_end` y `mont_start/mont_end`, con
+`set_phase_dates` (archivo 34) para ponerla y quitarla, y el calendario
+ya pintando esos tramos en todos sus días.
+
+Así que **no se creó ninguna tabla de eventos**. La ventana de
+planificar llama a la función de siempre. Consecuencia directa: la
+asignación queda vinculada al proyecto **por construcción**, no por una
+relación que haya que mantener, y se ve en su ficha sin hacer nada más.
+
+Una tabla de eventos habría dejado las fechas de un proyecto en dos
+sitios, y tarde o temprano discrepando.
+
+### 2. Un tramo por fase, y es una decisión, no una limitación
+
+La estructura guarda un periodo de fabricación y uno de montaje por
+proyecto. Partir la fabricación en dos tramos separados exigiría una
+tabla nueva y migrar lo que hay, y afectaría al calendario, al panel y
+a la planificación automática.
+
+Se preguntó expresamente antes de implementar y se confirmó que no hace
+falta. Volver a asignar **mueve** el tramo, y la pantalla avisa antes de
+hacerlo.
+
+### 3. La observación del tramo necesitaba columna propia
+
+`projects.observations` ya existía, pero es del proyecto entero: la nota
+de la fabricación la habría mezclado con todo lo demás y la del montaje
+la habría pisado. Dos columnas, `fab_note` y `mont_note`, que es lo
+mínimo que distingue las dos cosas.
+
+Quitar las fechas del tramo borra su nota: una observación sobre un
+montaje que ya no está planificado no le sirve a nadie.
+
+### 4. Mover un tramo entre proyectos es una sola operación
+
+Cambiar el proyecto de una asignación es quitar las fechas de uno y
+ponerlas en otro. En dos llamadas desde la pantalla, un fallo a medio
+camino deja el tramo sin asignar a nadie y nadie se entera.
+`move_phase_dates` lo hace dentro de una sola operación, apoyándose en
+`set_phase_dates` en vez de repetir sus reglas.
+
+Una mutación lo comprobó: al dejar de limpiar el proyecto de origen, el
+tramo aparecía en los dos y la prueba cayó.
+
+### 5. El buscador es una función, no tres consultas
+
+Lo que se pedía —buscar por el nombre del cliente y que salgan sus
+proyectos, presupuestos y avisos— cruza tablas: el nombre no está en el
+proyecto, está en `clients`. Ningún buscador de listado lo hacía.
+
+Desde el navegador serían tres consultas con sus cruces, tres viajes y
+la relevancia mezclada a mano. `search_admin` lo hace en uno, ordenado
+por relevancia y sin duplicados por construcción: cada proyecto y cada
+ficha salen de **una** fila con todas las condiciones en un `or`, así
+que lo que encaja por dos motivos aparece una vez con la puntuación más
+alta.
+
+Y la puerta está en el servidor. La función empieza por
+`assert_admin()`, de modo que un trabajador no saca nada aunque llame a
+la API por su cuenta. Esconder la caja de búsqueda no habría protegido
+nada. Es `security definer` —se salta las políticas de fila— y por eso
+esa comprobación es lo primero que hace: solo responde a quien ya podía
+ver todo eso por su cuenta.
+
+### 6. Las notificaciones: claves ajenas, no un «tipo + id» genérico
+
+`notifications` solo sabía apuntar a una orden de trabajo —módulo
+retirado en la fase 4, por eso la campana no enseñaba ningún enlace— y a
+un parte. Faltaban el presupuesto o aviso y el proyecto.
+
+Se añadieron con el mismo patrón con el que se añadió `report_id`: una
+columna con clave ajena por destino. Un par genérico `tipo + id` aguanta
+cualquier destino futuro, pero no tiene integridad: si el elemento se
+borra, la notificación apunta a un fantasma y hay que comprobarlo a mano
+cada vez. Con clave ajena, `on delete cascade` se lleva la notificación
+con su elemento, y así el requisito de «si ya no existe, no provocar
+errores» se cumple solo: no hay enlace roto porque no hay notificación.
+
+### 7. Lo que se enlaza es lo que existe
+
+El encargo citaba «Nuevo presupuesto pendiente de aprobación», pero hoy
+**no hay ninguna notificación que nazca de un presupuesto ni de un
+aviso**. Las únicas que se generan son de partes, de comentarios y de
+material retrasado.
+
+Se preguntó antes de inventar nada y se decidió enlazar solo lo que ya
+existe: los avisos de parte abren el parte, y los de material retrasado
+abren su proyecto —ese aviso **nombraba** el proyecto en su texto pero
+no lo enlazaba—. Las columnas quedan listas para cuando haya avisos de
+presupuesto, si algún día se crean.
+
+Y una notificación sin destino **no se vuelve pulsable**: mandar a
+alguien a una pantalla que ya no existe es peor que no ofrecerle nada.

@@ -21,6 +21,7 @@ import {
 import { SemanaCalendario, tramosDelDia } from '@/components/shared/CalendarWeek';
 import { diasEntre, masDias, semanasDeLaRejilla } from '@/lib/calendario';
 import { textoSobre } from '@/lib/colores';
+import { PlanificarModal } from '@/components/shared/PlanificarModal';
 import {
   addDays, addMonths, fmtDate, longDate, mondayOf, monthLabel,
   relativeDay, startOfMonth, todayMadrid,
@@ -173,7 +174,30 @@ export default function CalendarPage({ worker }: { worker?: boolean }) {
       if (e.kind === 'fabricacion' || e.kind === 'montaje') navigate(`/t/proyectos/${e.id}`);
       return;
     }
-    if (e.kind === 'fabricacion' || e.kind === 'montaje') navigate(`/admin/proyectos/${e.id}`);
+    /*
+      PACK 3 · Pulsar un tramo de fabricación o montaje lo ABRE PARA
+      EDITARLO, sin salir del calendario: fechas, observación, tipo y
+      hasta el proyecto. Antes llevaba a la ficha del proyecto, y ese
+      camino sigue estando: hay un enlace dentro de la ventana.
+
+      Los tramos que coloca el cálculo automático no se editan aquí: lo
+      que se toca a mano queda marcado como manual, y mezclar las dos
+      cosas sin querer es justo lo que la planificación evita. Por eso
+      solo se abre si ya era manual; si no, se va al proyecto como
+      siempre.
+    */
+    if (e.kind === 'fabricacion' || e.kind === 'montaje') {
+      if (e.movable) {
+        setPlanificando({
+          dia: e.starts,
+          inicial: {
+            projectId: e.id, fase: e.kind,
+            start: e.starts, end: e.ends ?? e.starts,
+            note: e.detail ?? null,
+          },
+        });
+      } else navigate(`/admin/proyectos/${e.id}`);
+    }
     // BLOQUE 4: la obra es un elemento más del calendario; abre su pantalla.
     else if (e.kind === 'obra') navigate(`/admin/obras/${e.id}`);
     else if (e.kind === 'material') navigate('/admin/material');
@@ -286,6 +310,14 @@ export default function CalendarPage({ worker }: { worker?: boolean }) {
 
   const canDrag = !worker;
 
+  /**
+   * PACK 3 · La ventana de planificar. Guarda el día pulsado y, si se
+   * abrió desde un tramo que ya existe, lo que hay que editar.
+   */
+  const [planificando, setPlanificando] = useState<
+    { dia: string; inicial?: Parameters<typeof PlanificarModal>[0]['inicial'] } | null
+  >(null);
+
   /** Lo que necesita cada semana para pintarse. */
   const semanaProps = {
     tramos: shown,
@@ -303,6 +335,10 @@ export default function CalendarPage({ worker }: { worker?: boolean }) {
     onDrop: drop,
     onOpen: openEvent,
     onFestivo: worker ? undefined : alternarFestivo,
+    // PACK 3 · El «+» del día. Solo para administración: al trabajador
+    // no se le pasa, así que ni se dibuja. Y la función del servidor
+    // empieza por «assert_admin()», que es lo que de verdad protege.
+    onNuevo: worker ? undefined : (dia: string) => setPlanificando({ dia }),
     onVerDia: (d: string) => { setAnchor(d); setView('dia'); },
   };
 
@@ -565,6 +601,20 @@ export default function CalendarPage({ worker }: { worker?: boolean }) {
             </span>
           </div>
         </Modal>
+      )}
+
+      {/*
+        PACK 3 · Planificar fabricación o montaje sin salir del
+        calendario. Al guardar se recargan los tramos, así que la barra
+        aparece en el acto sobre los días que ocupa.
+      */}
+      {planificando && (
+        <PlanificarModal
+          dia={planificando.dia}
+          inicial={planificando.inicial}
+          onClose={() => setPlanificando(null)}
+          onGuardado={() => events.reload()}
+        />
       )}
     </>
   );

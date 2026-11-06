@@ -126,9 +126,11 @@ export async function planProject(projectId: string, phase: 'fabricacion' | 'mon
 export async function setPhaseDates(
   projectId: string, phase: 'fabricacion' | 'montaje',
   start: string | null, end: string | null = null,
+  /** PACK 3 · La observación del tramo. Se borra sola al quitar las fechas. */
+  note: string | null = null,
 ) {
   const p = unwrap(await supabase.rpc('set_phase_dates', {
-    p_project: projectId, p_phase: phase, p_start: start, p_end: end,
+    p_project: projectId, p_phase: phase, p_start: start, p_end: end, p_note: note,
   })) as { fab_start: string | null; mont_start: string | null } | null;
 
   // Se comprueba contra lo que ha devuelto la base de datos, no contra lo
@@ -193,4 +195,26 @@ export async function saveCalendarNote(input: {
 
 export async function deleteCalendarNote(id: string) {
   return unwrap(await supabase.rpc('delete_calendar_note', { p_id: id }));
+}
+
+/**
+ * PACK 3 · MOVER UN TRAMO DE UN PROYECTO A OTRO.
+ *
+ * Quitar las fechas de uno y ponerlas en otro, en UNA sola operación
+ * del servidor. Hecho en dos llamadas, un fallo a medio camino dejaría
+ * el tramo sin asignar a nadie.
+ */
+export async function movePhaseDates(
+  fromProjectId: string | null, toProjectId: string,
+  phase: 'fabricacion' | 'montaje',
+  start: string, end: string | null = null, note: string | null = null,
+) {
+  const p = unwrap(await supabase.rpc('move_phase_dates', {
+    p_from: fromProjectId, p_to: toProjectId, p_phase: phase,
+    p_start: start, p_end: end, p_note: note,
+  })) as { fab_start: string | null; mont_start: string | null } | null;
+
+  const guardado = phase === 'fabricacion' ? p?.fab_start : p?.mont_start;
+  if (!p || guardado !== start) throw new Aviso(NO_GUARDADO);
+  return p;
 }

@@ -7,6 +7,7 @@ import { registraActividad } from '@/lib/supabase';
 import { ADMIN_NAV } from '@/config/navigation';
 import { AppMark } from '@/components/ui/Brand';
 import { NotificationsBell } from '@/components/ui/NotificationsBell';
+import { BuscadorGeneral } from '@/components/shared/BuscadorGeneral';
 
 /** Estructura de la zona de administración: pensada para ordenador y tablet. */
 export function AdminLayout() {
@@ -75,6 +76,14 @@ export function AdminLayout() {
             <Menu />
           </button>
           <span className="title">{current?.label ?? 'METALPLAFER360'}</span>
+          {/*
+            PACK 3 · El buscador, arriba y siempre a mano. Vive solo en
+            esta barra: la del trabajador es otro componente y no lo
+            monta, así que no hay nada que esconder por rol. Y aunque lo
+            hubiera, la función del servidor solo responde a
+            administración.
+          */}
+          <BuscadorGeneral />
           <div className="row" style={{ marginLeft: 'auto', flexWrap: 'nowrap' }}>
             {!online && <span className="badge tone-red"><WifiOff size={14} aria-hidden />Sin conexión</span>}
             <NotificationsBell />
