@@ -45,6 +45,12 @@ export interface SemanaProps {
   onOpen: (s: CalendarSpan) => void;
   onFestivo?: (dia: string) => void;
   onVerDia?: (dia: string) => void;
+  /**
+   * PACK 3 · Planificar fabricación o montaje en ese día, sin salir del
+   * calendario. Solo se pasa desde la pantalla de administración: si no
+   * llega, el «+» ni se dibuja.
+   */
+  onNuevo?: (dia: string) => void;
 }
 
 /** Cuántos carriles se pintan antes de empezar a resumir en «+N». */
@@ -103,7 +109,7 @@ function Pastilla({ s, uid, dragging, canDrag, estiloDe, onDragStart, onOpen }: 
 export const SemanaCalendario = memo(function SemanaCalendario({
   lunes, tramos, hoy, mes, noLaborables, canDrag, dragging, over, estiloDe,
   carriles = CARRILES, altoDia = 104, mostrarDiaSemana, uid,
-  onDragStart, onOver, onDrop, onOpen, onFestivo, onVerDia,
+  onDragStart, onOver, onDrop, onOpen, onFestivo, onVerDia, onNuevo,
 }: SemanaProps) {
   const dias = Array.from({ length: 7 }, (_, i) => masDias(lunes, i));
   const conUid = tramos.map((t) => ({ ...t, uid: uid(t) }));
@@ -150,6 +156,17 @@ export const SemanaCalendario = memo(function SemanaCalendario({
             <div className="cal-day-head">
               <span className="num">{dayNumber(d)}</span>
               {mostrarDiaSemana && <span className="faint">{weekdayShort(d)}</span>}
+              {/*
+                PACK 3 · El «+» del día. Va el primero de los dos
+                botones porque es el que se usa a diario; el de festivo
+                es de cuando toca.
+              */}
+              {onNuevo && (
+                <button type="button" className="cal-nuevo"
+                        title="Planificar fabricación o montaje este día"
+                        aria-label={`Planificar trabajo el ${d}`}
+                        onClick={() => onNuevo(d)}>+</button>
+              )}
               {onFestivo && (
                 <button type="button" className="cal-festivo"
                         aria-pressed={noLaborables.has(d)}

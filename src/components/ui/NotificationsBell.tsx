@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Bell, CheckCircle2 } from 'lucide-react';
 import { useAsync } from '@/hooks/useAsync';
 import { Empty, Loading } from '@/components/ui/Feedback';
 import { listNotifications, markRead } from '@/services/notifications';
 import { checkLateMaterials } from '@/services/materials';
 import { fmtDateTime } from '@/lib/format';
+import { rutaDelAviso } from '@/lib/avisos';
 
 /**
  * Avisos internos de la aplicación.
@@ -14,6 +16,7 @@ export function NotificationsBell() {
   const [open, setOpen] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const box = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
 
   // Al abrir la aplicación se comprueba si algún material se ha retrasado.
   // La base de datos solo avisa una vez al día de cada uno.
@@ -67,16 +70,39 @@ export function NotificationsBell() {
               </Empty>
             ) : (
               <ul className="notice-list">
-                {notices.data.map((n) => (
-                  <li key={n.id} className={n.read_at ? '' : 'unread'}>
-                    {/* FASE 4 · Los avisos antiguos llevaban a la pantalla
-                        de la orden, que ya no existe. Se siguen leyendo,
-                        pero sin un enlace que no va a ninguna parte. */}
-                    <strong>{n.title}</strong>
-                    {n.body && <span>{n.body}</span>}
-                    <small>{fmtDateTime(n.created_at)}</small>
-                  </li>
-                ))}
+                {notices.data.map((n) => {
+                  const ruta = rutaDelAviso(n);
+                  /*
+                    PACK 3 · EL AVISO LLEVA A SU ELEMENTO.
+
+                    Solo se vuelve pulsable si de verdad hay a dónde ir.
+                    Los avisos antiguos de órdenes de trabajo —módulo
+                    retirado en la fase 4— siguen leyéndose sin enlace,
+                    porque mandar a alguien a una pantalla que no existe
+                    es peor que no ofrecerle nada.
+
+                    Y PULSAR NO MARCA COMO LEÍDO, a propósito: el
+                    encargo pide que las dos cosas sigan separadas, y
+                    «Marcar leídos» sigue siendo el único que lo hace.
+                  */
+                  const contenido = (
+                    <>
+                      <strong>{n.title}</strong>
+                      {n.body && <span>{n.body}</span>}
+                      <small>{fmtDateTime(n.created_at)}</small>
+                    </>
+                  );
+                  return (
+                    <li key={n.id} className={n.read_at ? '' : 'unread'}>
+                      {ruta ? (
+                        <button type="button" className="notice-link"
+                                onClick={() => { setOpen(false); navigate(ruta); }}>
+                          {contenido}
+                        </button>
+                      ) : contenido}
+                    </li>
+                  );
+                })}
               </ul>
             )}
         </div>

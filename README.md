@@ -81,6 +81,9 @@ documentos e historial.
 | Alta de trabajadores y cambio de contraseña | ✅ Funcionando |
 | Gestiones internas: tablero tipo Trello para RRHH, multas y papeleo | ✅ Funcionando |
 | Gestiones internas: adjuntos en las tarjetas y eliminación | ✅ Funcionando |
+| Buscador general de administración: proyectos, presupuestos y avisos | ✅ Funcionando |
+| Planificar fabricación y montaje desde el calendario | ✅ Funcionando |
+| Las notificaciones llevan al elemento que las generó | ✅ Funcionando |
 | El trabajador documenta su proyecto o aviso sin crear un parte | ✅ Funcionando |
 | Configuración: empresa, numeración, copias y almacenamiento | ✅ Funcionando |
 | Aplicación instalable en el móvil (PWA) | ✅ Funcionando |

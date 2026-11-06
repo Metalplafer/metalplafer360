@@ -482,6 +482,10 @@ export interface Project {
   fab_workers: number;
   mont_workers: number;
   fab_manual: boolean;
+  /** PACK 3 · Observación del tramo de fabricación, escrita al planificar. */
+  fab_note?: string | null;
+  /** PACK 3 · Observación del tramo de montaje. */
+  mont_note?: string | null;
   mont_manual: boolean;
   autoplan: boolean;
   // BLOQUE 4 · obra y facturación manual
@@ -587,7 +591,14 @@ export interface NotificationRow {
   kind: NotificationKind;
   title: string;
   body: string | null;
+  /** Orden de trabajo · módulo retirado en la fase 4. No lleva a ninguna parte. */
   order_id: string | null;
+  /** El parte de trabajo que generó el aviso. */
+  report_id: string | null;
+  /** PACK 3 · El presupuesto, la visita o el aviso que lo generó. */
+  ficha_id: string | null;
+  /** PACK 3 · El proyecto que lo generó (por ejemplo, su material retrasado). */
+  project_id: string | null;
   read_at: string | null;
   created_at: string;
 }
@@ -1143,4 +1154,22 @@ export interface InternalCard extends InternalTask {
   checklist_hechos: number;
   /** Cuántos archivos lleva adjuntos. Lo cuenta la vista, no la pantalla. */
   adjuntos: number;
+}
+
+/* =====================================================================
+   PACK 3 · El buscador de administración
+   ===================================================================== */
+
+/** Un resultado del buscador, venga de donde venga. */
+export interface SearchHit {
+  tipo: 'proyecto' | 'presupuesto' | 'aviso';
+  id: string;
+  code: string;
+  titulo: string | null;
+  cliente: string | null;
+  estado: string | null;
+  extra: string | null;
+  fecha: string | null;
+  /** Cuánto encaja con lo buscado. La ordena el servidor. */
+  relevancia: number;
 }

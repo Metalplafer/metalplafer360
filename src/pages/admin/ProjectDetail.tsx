@@ -540,6 +540,10 @@ export default function ProjectDetail() {
                 const gente = esFab ? p.fab_workers : p.mont_workers;
                 const aMano = esFab ? p.fab_manual : p.mont_manual;
                 const horas = esFab ? p.budget_hours_fab : p.budget_hours_mont;
+                // PACK 3 · La observación que se escribió al planificar
+                // este tramo desde el calendario. Aquí es donde tiene
+                // que leerse: en el proyecto, no solo en el calendario.
+                const nota = esFab ? p.fab_note : p.mont_note;
                 return (
                   <div key={fase} className="plan-fase">
                     <div className="row-between" style={{ gap: 10, alignItems: 'flex-start' }}>
@@ -556,6 +560,8 @@ export default function ProjectDetail() {
                       </div>
                       {aMano && <Badge tone="amber">Fijado a mano</Badge>}
                     </div>
+
+                    {nota && <p className="hint pre" style={{ margin: '6px 0 0' }}>{nota}</p>}
 
                     <div className="row" style={{ gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
                       <label className="row" style={{ gap: 6 }}>
